@@ -1,0 +1,34 @@
+import { Routes } from '@nestjs/core';
+import { AuthModule } from '../auth/auth.module';
+import { UsersModule } from '../modules/users/users.module';
+import { OrganizationsModule } from '../modules/organizations/organizations.module';
+import { RolesModule } from '../modules/roles/roles.module';
+import { PermissionsModule } from '../modules/permissions/permissions.module';
+
+export const appRoutes: Routes = [
+  {
+    path: 'v1',
+    children: [
+      {
+        path: 'auth',
+        module: AuthModule,
+      },
+      {
+        path: 'users',
+        module: UsersModule,
+      },
+      {
+        path: 'organizations',
+        module: OrganizationsModule,
+      },
+      {
+        path: 'roles',
+        module: RolesModule,
+      },
+      {
+        path: 'permissions',
+        module: PermissionsModule,
+      },
+    ],
+  },
+];
