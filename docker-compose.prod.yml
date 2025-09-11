@@ -1,0 +1,35 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ems
+      TZ: Europe/Paris
+    volumes:
+      - ems_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ems"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    # Lance migrations/seeders au démarrage si RUN_MIGRATIONS=true
+    environment:
+      RUN_MIGRATIONS: "true"
+
+volumes:
+  ems_pgdata:

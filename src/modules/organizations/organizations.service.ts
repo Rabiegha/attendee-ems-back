@@ -11,7 +11,7 @@ export class OrganizationsService {
   ) {}
 
   async create(createOrganizationDto: CreateOrganizationDto): Promise<Organization> {
-    return this.organizationModel.create(createOrganizationDto);
+    return this.organizationModel.create(createOrganizationDto as any);
   }
 
   async findById(id: string): Promise<Organization> {
