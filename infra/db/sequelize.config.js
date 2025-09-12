@@ -7,7 +7,12 @@ const envFile = process.env.DOTENV_PATH ||
     path.resolve(__dirname, '../../.env.development') : 
     path.resolve(__dirname, '../../.env.docker'));
 
-require('dotenv').config({ path: envFile });
+// Try to load dotenv, but don't fail if it's not available (e.g., in Docker)
+try {
+  require('dotenv').config({ path: envFile });
+} catch (error) {
+  console.log('dotenv not available, using environment variables directly');
+}
 
 const config = {
   development: {
