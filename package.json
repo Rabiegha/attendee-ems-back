@@ -19,6 +19,9 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
 
+    "docker:up": "docker compose up -d db api",
+    "docker:down": "docker compose down",
+
     "db:migrate": "sequelize-cli db:migrate --config infra/db/sequelize.config.js",
     "db:migrate:undo": "sequelize-cli db:migrate:undo --config infra/db/sequelize.config.js",
     "db:seed": "sequelize-cli db:seed:all --config infra/db/sequelize.config.js",
