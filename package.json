@@ -18,10 +18,21 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
+
     "db:migrate": "sequelize-cli db:migrate --config infra/db/sequelize.config.js",
     "db:migrate:undo": "sequelize-cli db:migrate:undo --config infra/db/sequelize.config.js",
     "db:seed": "sequelize-cli db:seed:all --config infra/db/sequelize.config.js",
-    "db:seed:undo": "sequelize-cli db:seed:undo:all --config infra/db/sequelize.config.js"
+    "db:seed:undo": "sequelize-cli db:seed:undo:all --config infra/db/sequelize.config.js",
+
+    "db:migrate:test": "sequelize-cli db:migrate --env test --config infra/db/sequelize.config.js",
+    "db:migrate:undo:test": "sequelize-cli db:migrate:undo --env test --config infra/db/sequelize.config.js",
+    "db:seed:test": "sequelize-cli db:seed:all --env test --config infra/db/sequelize.config.js",
+    "db:seed:undo:test": "sequelize-cli db:seed:undo:all --env test --config infra/db/sequelize.config.js",
+
+    "db:migrate:prod": "sequelize-cli db:migrate --env production --config infra/db/sequelize.config.js",
+    "db:migrate:undo:prod": "sequelize-cli db:migrate:undo --env production --config infra/db/sequelize.config.js",
+    "db:seed:prod": "sequelize-cli db:seed:all --env production --config infra/db/sequelize.config.js",
+    "db:seed:undo:prod": "sequelize-cli db:seed:undo:all --env production --config infra/db/sequelize.config.js"
   },
   "dependencies": {
     "@casl/ability": "^6.5.0",
