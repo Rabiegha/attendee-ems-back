@@ -15,7 +15,7 @@ import { OrgScopeGuard } from '../../common/guards/org-scope.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 
-@Controller('users')
+@Controller()
 @UseGuards(JwtAuthGuard, OrgScopeGuard, PermissionsGuard)
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
@@ -31,11 +31,13 @@ export class UsersController {
   @Permissions('users.read')
   async findAll(
     @Request() req,
-    @Query('page', new ParseIntPipe({ optional: true })) page: number = 1,
-    @Query('limit', new ParseIntPipe({ optional: true })) limit: number = 10,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
     @Query('q') search?: string,
   ) {
     const orgId = req.user.org_id;
-    return this.usersService.findAll(orgId, page, limit, search);
+    const pageNumber = page ? parseInt(page, 10) : 1;
+    const limitNumber = limit ? parseInt(limit, 10) : 10;
+    return this.usersService.findAll(orgId, pageNumber, limitNumber, search);
   }
 }

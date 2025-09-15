@@ -8,6 +8,7 @@ import { UsersModule } from './modules/users/users.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { RolesModule } from './modules/roles/roles.module';
 import { PermissionsModule } from './modules/permissions/permissions.module';
+import { HealthModule } from './health/health.module';
 import { RequestLoggerMiddleware } from './common/middleware/request-logger.middleware';
 import { appRoutes } from './router/app.routes';
 
@@ -21,6 +22,7 @@ import { appRoutes } from './router/app.routes';
     OrganizationsModule,
     RolesModule,
     PermissionsModule,
+    HealthModule,
     RouterModule.register(appRoutes),
   ],
 })
