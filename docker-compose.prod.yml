@@ -25,8 +25,8 @@ services:
     env_file:
       - .env
     # Suppression de l'exposition directe du port 3000
-    # expose:
-    #   - "3000"
+    expose:
+      - "3000"
     depends_on:
       db:
         condition: service_healthy
@@ -58,7 +58,7 @@ services:
     volumes:
       - ./certbot/www:/var/www/certbot
       - ./certbot/conf:/etc/letsencrypt
-    command: certonly --webroot --webroot-path=/var/www/certbot --email votre-email@example.com --agree-tos --no-eff-email -d api.attendee.fr
+    command: certonly --webroot --webroot-path=/var/www/certbot --email rabiigha@gmail.com --agree-tos --no-eff-email -d api.attendee.fr
     depends_on:
       - nginx
 

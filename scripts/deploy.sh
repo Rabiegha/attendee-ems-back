@@ -195,7 +195,7 @@ deploy_with_ssl() {
     mv docker-compose.prod.yml.backup docker-compose.prod.yml
     
     # Mettre à jour l'email dans docker-compose.prod.yml
-    sed -i "s/votre-email@example.com/$EMAIL/g" docker-compose.prod.yml
+    sed -i "s/rabiigha@gmail.com/$EMAIL/g" docker-compose.prod.yml
     
     # Démarrer avec la configuration complète
     docker-compose -f docker-compose.prod.yml up -d
