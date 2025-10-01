@@ -30,8 +30,19 @@
     "db:seed:deploy": "dotenv -e .env.prod -- prisma db seed",
     "db:migrate:test": "dotenv -e .env.test -- prisma migrate deploy",
     "db:seed:test": "dotenv -e .env.test -- prisma db seed",
-    "docker:seed": "docker-compose -f docker-compose.dev.yml run --rm migrate",
-    "docker:migrate": "docker-compose -f docker-compose.dev.yml run --rm migrate"
+    "docker:seed": "docker-compose -f docker-compose.dev.yml exec api npm run db:seed",
+    "docker:migrate": "docker-compose -f docker-compose.dev.yml exec api npm run db:migrate",
+    "docker:migrate:reset": "docker-compose -f docker-compose.dev.yml exec api npm run db:migrate:reset",
+    "docker:migrate:deploy": "docker-compose -f docker-compose.dev.yml exec api npx prisma migrate deploy",
+    "docker:generate": "docker-compose -f docker-compose.dev.yml exec api npx prisma generate",
+    "docker:studio": "docker-compose -f docker-compose.dev.yml exec api npm run db:studio",
+    "docker:db:push": "docker-compose -f docker-compose.dev.yml exec api npm run db:push",
+    "docker:db:reset": "docker-compose -f docker-compose.dev.yml exec api npx prisma migrate reset --force",
+    "docker:db:status": "docker-compose -f docker-compose.dev.yml exec api npx prisma migrate status",
+    "docker:logs": "docker-compose -f docker-compose.dev.yml logs -f api",
+    "docker:logs:db": "docker-compose -f docker-compose.dev.yml logs -f db",
+    "docker:shell": "docker-compose -f docker-compose.dev.yml exec api bash",
+    "docker:shell:db": "docker-compose -f docker-compose.dev.yml exec db psql -U postgres -d ems"
   },
   "dependencies": {
     "@casl/ability": "^6.5.0",
