@@ -61,7 +61,7 @@ async function runAllSeeders() {
     ];
     
     const adminPermResults = await assignPermissionsToRole(
-      demoOrg.id, 
+      demoOrg.id,
       adminRole.id, 
       allPermissionCodes
     );
@@ -74,7 +74,7 @@ async function runAllSeeders() {
     ];
     
     const userPermResults = await assignPermissionsToRole(
-      demoOrg.id, 
+      demoOrg.id,
       userRole.id, 
       userPermissionCodes
     );

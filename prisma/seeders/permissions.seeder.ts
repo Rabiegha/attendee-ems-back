@@ -6,33 +6,35 @@ export interface PermissionSeedData {
 }
 
 const permissionsData: PermissionSeedData[] = [
-  { code: 'users.create', name: 'Create Users' },
-  { code: 'users.read', name: 'Read Users' },
-  { code: 'users.update', name: 'Update Users' },
-  { code: 'users.delete', name: 'Delete Users' },
-  { code: 'organizations.read', name: 'Read Organizations' },
-  { code: 'organizations.update', name: 'Update Organizations' },
-  { code: 'roles.read', name: 'Read Roles' },
-  { code: 'permissions.read', name: 'Read Permissions' },
+  { code: 'users.create', name: 'Create new users' },
+  { code: 'users.read', name: 'View user information' },
+  { code: 'users.update', name: 'Update user information' },
+  { code: 'users.delete', name: 'Delete users' },
+  { code: 'organizations.read', name: 'View organization information' },
+  { code: 'organizations.update', name: 'Update organization settings' },
+  { code: 'roles.read', name: 'View roles and permissions' },
+  { code: 'permissions.read', name: 'View permission definitions' },
   // Vous pouvez ajouter d'autres permissions ici
 ];
 
-export async function seedPermissions(organizationId: string): Promise<SeedResult[]> {
+export async function seedPermissions(orgId: string): Promise<SeedResult[]> {
   const results: SeedResult[] = [];
   
   try {
     for (const permData of permissionsData) {
-      let permission = await prisma.permission.findFirst({
+      let permission = await prisma.permission.findUnique({
         where: { 
-          org_id: organizationId,
-          code: permData.code
+          org_id_code: {
+            org_id: orgId,
+            code: permData.code
+          }
         }
       });
       
       if (!permission) {
         permission = await prisma.permission.create({
           data: {
-            org_id: organizationId,
+            org_id: orgId,
             code: permData.code,
             name: permData.name,
           },
@@ -61,28 +63,30 @@ export async function seedPermissions(organizationId: string): Promise<SeedResul
   }
 }
 
-// Fonction pour obtenir une permission par code
-export async function getPermissionByCode(organizationId: string, code: string) {
-  return await prisma.permission.findFirst({
+// Fonction pour obtenir une permission par code et org_id
+export async function getPermissionByCode(orgId: string, code: string) {
+  return await prisma.permission.findUnique({
     where: {
-      org_id: organizationId,
-      code: code,
+      org_id_code: {
+        org_id: orgId,
+        code: code,
+      },
     },
   });
 }
 
 // Fonction pour obtenir toutes les permissions d'une organisation
-export async function getPermissionsByOrganization(organizationId: string) {
+export async function getAllPermissions(orgId: string) {
   return await prisma.permission.findMany({
     where: {
-      org_id: organizationId,
+      org_id: orgId,
     },
   });
 }
 
 // Fonction pour assigner des permissions à un rôle
 export async function assignPermissionsToRole(
-  organizationId: string,
+  orgId: string,
   roleId: string,
   permissionCodes: string[]
 ): Promise<SeedResult[]> {
@@ -90,7 +94,7 @@ export async function assignPermissionsToRole(
   
   try {
     for (const permissionCode of permissionCodes) {
-      const permission = await getPermissionByCode(organizationId, permissionCode);
+      const permission = await getPermissionByCode(orgId, permissionCode);
       
       if (!permission) {
         results.push({
@@ -100,18 +104,20 @@ export async function assignPermissionsToRole(
         continue;
       }
 
-      const existing = await prisma.rolePermission.findFirst({
+      const existing = await prisma.rolePermission.findUnique({
         where: {
-          org_id: organizationId,
-          role_id: roleId,
-          permission_id: permission.id,
+          org_id_role_id_permission_id: {
+            org_id: orgId,
+            role_id: roleId,
+            permission_id: permission.id,
+          }
         }
       });
       
       if (!existing) {
         await prisma.rolePermission.create({
           data: {
-            org_id: organizationId,
+            org_id: orgId,
             role_id: roleId,
             permission_id: permission.id,
           },

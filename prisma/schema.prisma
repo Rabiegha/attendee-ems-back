@@ -19,7 +19,10 @@ model Organization {
   updated_at DateTime @updatedAt @map("updated_at")
 
   // Relations
-  users       User[]
+  users           User[]
+  roles           Role[]
+  permissions     Permission[]
+  rolePermissions RolePermission[]
 
   @@map("organizations")
 }
@@ -45,43 +48,53 @@ model User {
 
 model Role {
   id          String   @id @default(uuid()) @db.Uuid
-  code        String   @unique
+  org_id      String   @db.Uuid
+  code        String
   name        String
-  description String?
   created_at  DateTime @default(now()) @map("created_at")
   updated_at  DateTime @updatedAt @map("updated_at")
 
   // Relations
+  organization    Organization     @relation(fields: [org_id], references: [id])
   users          User[]
   rolePermissions RolePermission[]
 
+  @@unique([org_id, code])
+  @@index([org_id])
   @@map("roles")
 }
 
 model Permission {
-  code        String @id
-  description String
-  resource    String
-  action      String
+  id          String   @id @default(uuid()) @db.Uuid
+  org_id      String   @db.Uuid
+  code        String
+  name        String
+  created_at  DateTime @default(now()) @map("created_at")
+  updated_at  DateTime @updatedAt @map("updated_at")
 
   // Relations
+  organization    Organization     @relation(fields: [org_id], references: [id])
   rolePermissions RolePermission[]
 
+  @@unique([org_id, code])
+  @@index([org_id])
   @@map("permissions")
 }
 
 model RolePermission {
-  role_id         String   @db.Uuid
-  permission_code String
-  effect          String
-  conditions      Json?
-  created_at      DateTime @default(now()) @map("created_at")
-  updated_at      DateTime @updatedAt @map("updated_at")
+  id            String   @id @default(uuid()) @db.Uuid
+  org_id        String   @db.Uuid
+  role_id       String   @db.Uuid
+  permission_id String   @db.Uuid
+  created_at    DateTime @default(now()) @map("created_at")
+  updated_at    DateTime @updatedAt @map("updated_at")
 
   // Relations
-  role       Role       @relation(fields: [role_id], references: [id])
-  permission Permission @relation(fields: [permission_code], references: [code])
+  organization Organization @relation(fields: [org_id], references: [id])
+  role         Role         @relation(fields: [role_id], references: [id])
+  permission   Permission   @relation(fields: [permission_id], references: [id])
 
-  @@id([role_id, permission_code])
+  @@unique([org_id, role_id, permission_id])
+  @@index([org_id])
   @@map("role_permissions")
 }
