@@ -44,11 +44,12 @@ model User {
 }
 
 model Role {
-  id         String   @id @default(uuid()) @db.Uuid
-  code       String   @unique
-  name       String
-  created_at DateTime @default(now()) @map("created_at")
-  updated_at DateTime @updatedAt @map("updated_at")
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  name        String
+  description String?
+  created_at  DateTime @default(now()) @map("created_at")
+  updated_at  DateTime @updatedAt @map("updated_at")
 
   // Relations
   users          User[]
@@ -58,11 +59,10 @@ model Role {
 }
 
 model Permission {
-  id         String   @id @default(uuid()) @db.Uuid
-  code       String   @unique
-  name       String
-  created_at DateTime @default(now()) @map("created_at")
-  updated_at DateTime @updatedAt @map("updated_at")
+  code        String @id
+  description String
+  resource    String
+  action      String
 
   // Relations
   rolePermissions RolePermission[]
@@ -71,16 +71,17 @@ model Permission {
 }
 
 model RolePermission {
-  id            String   @id @default(uuid()) @db.Uuid
-  role_id       String   @db.Uuid
-  permission_id String   @db.Uuid
-  created_at    DateTime @default(now()) @map("created_at")
-  updated_at    DateTime @updatedAt @map("updated_at")
+  role_id         String   @db.Uuid
+  permission_code String
+  effect          String
+  conditions      Json?
+  created_at      DateTime @default(now()) @map("created_at")
+  updated_at      DateTime @updatedAt @map("updated_at")
 
   // Relations
-  role         Role         @relation(fields: [role_id], references: [id])
-  permission   Permission   @relation(fields: [permission_id], references: [id])
+  role       Role       @relation(fields: [role_id], references: [id])
+  permission Permission @relation(fields: [permission_code], references: [code])
 
-  @@unique([role_id, permission_id])
+  @@id([role_id, permission_code])
   @@map("role_permissions")
 }
