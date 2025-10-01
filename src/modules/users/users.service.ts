@@ -1,23 +1,23 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
-import { InjectModel } from '@nestjs/sequelize';
-import { Op } from 'sequelize';
-import { User } from './users.model';
-import { Role } from '../roles/roles.model';
+import { PrismaService } from '../../infra/db/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { AuthService } from '../../auth/auth.service';
+import { User } from '@prisma/client';
 
 @Injectable()
 export class UsersService {
   constructor(
-    @InjectModel(User)
-    private userModel: typeof User,
+    private prisma: PrismaService,
     private authService: AuthService,
   ) {}
 
   async create(createUserDto: CreateUserDto, orgId: string): Promise<User> {
     // Check if user already exists in this organization
-    const existingUser = await this.userModel.findOne({
-      where: { email: createUserDto.email, org_id: orgId },
+    const existingUser = await this.prisma.user.findFirst({
+      where: { 
+        email: createUserDto.email, 
+        org_id: orgId 
+      },
     });
 
     if (existingUser) {
@@ -26,10 +26,12 @@ export class UsersService {
 
     const hashedPassword = await this.authService.hashPassword(createUserDto.password);
 
-    return this.userModel.create({
-      ...createUserDto,
-      org_id: orgId,
-      password_hash: hashedPassword,
+    return this.prisma.user.create({
+      data: {
+        ...createUserDto,
+        org_id: orgId,
+        password_hash: hashedPassword,
+      },
     });
   }
 
@@ -38,36 +40,58 @@ export class UsersService {
     page: number = 1,
     limit: number = 10,
     search?: string,
-  ): Promise<{ users: User[]; total: number; page: number; limit: number }> {
-    const offset = (page - 1) * limit;
+  ): Promise<{ users: any[]; total: number; page: number; limit: number }> {
+    const skip = (page - 1) * limit;
     const whereClause: any = { org_id: orgId };
 
     if (search) {
-      whereClause.email = { [Op.iLike]: `%${search}%` };
+      whereClause.email = {
+        contains: search,
+        mode: 'insensitive',
+      };
     }
 
-    const { rows: users, count: total } = await this.userModel.findAndCountAll({
-      where: whereClause,
-      include: [Role],
-      limit,
-      offset,
-      order: [['created_at', 'DESC']],
-    });
+    const [users, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where: whereClause,
+        include: {
+          role: true,
+        },
+        take: limit,
+        skip,
+        orderBy: {
+          created_at: 'desc',
+        },
+      }),
+      this.prisma.user.count({
+        where: whereClause,
+      }),
+    ]);
 
     return { users, total, page, limit };
   }
 
-  async findById(id: string, orgId: string): Promise<User> {
-    return this.userModel.findOne({
-      where: { id, org_id: orgId },
-      include: [Role],
+  async findById(id: string, orgId: string): Promise<any> {
+    return this.prisma.user.findFirst({
+      where: { 
+        id, 
+        org_id: orgId 
+      },
+      include: {
+        role: true,
+      },
     });
   }
 
-  async findByEmail(email: string, orgId: string): Promise<User> {
-    return this.userModel.findOne({
-      where: { email, org_id: orgId },
-      include: [Role],
+  async findByEmail(email: string, orgId: string): Promise<any> {
+    return this.prisma.user.findFirst({
+      where: { 
+        email, 
+        org_id: orgId 
+      },
+      include: {
+        role: true,
+      },
     });
   }
 }

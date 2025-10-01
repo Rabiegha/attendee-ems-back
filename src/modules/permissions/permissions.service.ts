@@ -1,29 +1,32 @@
 import { Injectable } from '@nestjs/common';
-import { InjectModel } from '@nestjs/sequelize';
-import { Permission } from './permissions.model';
+import { PrismaService } from '../../infra/db/prisma.service';
+import { Permission } from '@prisma/client';
 
 @Injectable()
 export class PermissionsService {
-  constructor(
-    @InjectModel(Permission)
-    private permissionModel: typeof Permission,
-  ) {}
+  constructor(private prisma: PrismaService) {}
 
   async findAll(orgId: string): Promise<Permission[]> {
-    return this.permissionModel.findAll({
+    return this.prisma.permission.findMany({
       where: { org_id: orgId },
     });
   }
 
-  async findById(id: string, orgId: string): Promise<Permission> {
-    return this.permissionModel.findOne({
-      where: { id, org_id: orgId },
+  async findById(id: string, orgId: string): Promise<Permission | null> {
+    return this.prisma.permission.findFirst({
+      where: { 
+        id, 
+        org_id: orgId 
+      },
     });
   }
 
-  async findByCode(code: string, orgId: string): Promise<Permission> {
-    return this.permissionModel.findOne({
-      where: { code, org_id: orgId },
+  async findByCode(code: string, orgId: string): Promise<Permission | null> {
+    return this.prisma.permission.findFirst({
+      where: { 
+        code, 
+        org_id: orgId 
+      },
     });
   }
 }

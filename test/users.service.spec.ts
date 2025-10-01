@@ -1,13 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { getModelToken } from '@nestjs/sequelize';
 import { BadRequestException } from '@nestjs/common';
 import { UsersService } from '../src/modules/users/users.service';
-import { User } from '../src/modules/users/users.model';
 import { AuthService } from '../src/auth/auth.service';
+import { PrismaService } from '../src/infra/db/prisma.service';
 
 describe('UsersService', () => {
   let service: UsersService;
-  let userModel: typeof User;
+  let prismaService: PrismaService;
   let authService: AuthService;
 
   const mockUser = {
@@ -21,10 +20,13 @@ describe('UsersService', () => {
     updated_at: new Date(),
   };
 
-  const mockUserModel = {
-    findOne: jest.fn(),
-    findAndCountAll: jest.fn(),
-    create: jest.fn(),
+  const mockPrismaService = {
+    user: {
+      findFirst: jest.fn(),
+      findMany: jest.fn(),
+      count: jest.fn(),
+      create: jest.fn(),
+    },
   };
 
   const mockAuthService = {
@@ -36,8 +38,8 @@ describe('UsersService', () => {
       providers: [
         UsersService,
         {
-          provide: getModelToken(User),
-          useValue: mockUserModel,
+          provide: PrismaService,
+          useValue: mockPrismaService,
         },
         {
           provide: AuthService,
@@ -47,7 +49,7 @@ describe('UsersService', () => {
     }).compile();
 
     service = module.get<UsersService>(UsersService);
-    userModel = module.get<typeof User>(getModelToken(User));
+    prismaService = module.get<PrismaService>(PrismaService);
     authService = module.get<AuthService>(AuthService);
   });
 
@@ -68,48 +70,52 @@ describe('UsersService', () => {
     const orgId = '123e4567-e89b-12d3-a456-426614174001';
 
     it('should create a new user successfully', async () => {
-      mockUserModel.findOne.mockResolvedValue(null); // No existing user
+      mockPrismaService.user.findFirst.mockResolvedValue(null);
       mockAuthService.hashPassword.mockResolvedValue('hashed-password');
-      mockUserModel.create.mockResolvedValue({ ...mockUser, ...createUserDto });
+      mockPrismaService.user.create.mockResolvedValue({ ...mockUser, ...createUserDto });
 
       const result = await service.create(createUserDto, orgId);
 
-      expect(mockUserModel.findOne).toHaveBeenCalledWith({
+      expect(mockPrismaService.user.findFirst).toHaveBeenCalledWith({
         where: { email: createUserDto.email, org_id: orgId },
       });
       expect(mockAuthService.hashPassword).toHaveBeenCalledWith(createUserDto.password);
-      expect(mockUserModel.create).toHaveBeenCalledWith({
-        ...createUserDto,
-        org_id: orgId,
-        password_hash: 'hashed-password',
+      expect(mockPrismaService.user.create).toHaveBeenCalledWith({
+        data: {
+          ...createUserDto,
+          org_id: orgId,
+          password_hash: 'hashed-password',
+        },
       });
       expect(result).toBeDefined();
     });
 
     it('should throw BadRequestException if user already exists', async () => {
-      mockUserModel.findOne.mockResolvedValue(mockUser); // Existing user
+      mockPrismaService.user.findFirst.mockResolvedValue(mockUser);
 
       await expect(service.create(createUserDto, orgId)).rejects.toThrow(
         BadRequestException,
       );
-      expect(mockUserModel.findOne).toHaveBeenCalledWith({
+      expect(mockPrismaService.user.findFirst).toHaveBeenCalledWith({
         where: { email: createUserDto.email, org_id: orgId },
       });
       expect(mockAuthService.hashPassword).not.toHaveBeenCalled();
-      expect(mockUserModel.create).not.toHaveBeenCalled();
+      expect(mockPrismaService.user.create).not.toHaveBeenCalled();
     });
 
     it('should hash password before creating user', async () => {
-      mockUserModel.findOne.mockResolvedValue(null);
+      mockPrismaService.user.findFirst.mockResolvedValue(null);
       mockAuthService.hashPassword.mockResolvedValue('super-secure-hash');
-      mockUserModel.create.mockResolvedValue(mockUser);
+      mockPrismaService.user.create.mockResolvedValue(mockUser);
 
       await service.create(createUserDto, orgId);
 
       expect(mockAuthService.hashPassword).toHaveBeenCalledWith('password123');
-      expect(mockUserModel.create).toHaveBeenCalledWith(
+      expect(mockPrismaService.user.create).toHaveBeenCalledWith(
         expect.objectContaining({
-          password_hash: 'super-secure-hash',
+          data: expect.objectContaining({
+            password_hash: 'super-secure-hash',
+          }),
         }),
       );
     });
@@ -120,19 +126,20 @@ describe('UsersService', () => {
 
     it('should return paginated users for organization', async () => {
       const mockUsers = [mockUser];
-      mockUserModel.findAndCountAll.mockResolvedValue({
-        rows: mockUsers,
-        count: 1,
-      });
+      mockPrismaService.user.findMany.mockResolvedValue(mockUsers);
+      mockPrismaService.user.count.mockResolvedValue(1);
 
       const result = await service.findAll(orgId, 1, 10);
 
-      expect(mockUserModel.findAndCountAll).toHaveBeenCalledWith({
+      expect(mockPrismaService.user.findMany).toHaveBeenCalledWith({
         where: { org_id: orgId },
-        include: expect.any(Array),
-        limit: 10,
-        offset: 0,
-        order: [['created_at', 'DESC']],
+        include: { role: true },
+        take: 10,
+        skip: 0,
+        orderBy: { created_at: 'desc' },
+      });
+      expect(mockPrismaService.user.count).toHaveBeenCalledWith({
+        where: { org_id: orgId },
       });
       expect(result).toEqual({
         users: mockUsers,
@@ -144,37 +151,36 @@ describe('UsersService', () => {
 
     it('should filter users by search term', async () => {
       const mockUsers = [mockUser];
-      mockUserModel.findAndCountAll.mockResolvedValue({
-        rows: mockUsers,
-        count: 1,
-      });
+      mockPrismaService.user.findMany.mockResolvedValue(mockUsers);
+      mockPrismaService.user.count.mockResolvedValue(1);
 
       await service.findAll(orgId, 1, 10, 'test');
 
-      expect(mockUserModel.findAndCountAll).toHaveBeenCalledWith({
+      expect(mockPrismaService.user.findMany).toHaveBeenCalledWith({
         where: {
           org_id: orgId,
-          email: { [expect.any(Symbol)]: '%test%' }, // Op.iLike
+          email: {
+            contains: 'test',
+            mode: 'insensitive',
+          },
         },
-        include: expect.any(Array),
-        limit: 10,
-        offset: 0,
-        order: [['created_at', 'DESC']],
+        include: { role: true },
+        take: 10,
+        skip: 0,
+        orderBy: { created_at: 'desc' },
       });
     });
 
     it('should handle pagination correctly', async () => {
-      mockUserModel.findAndCountAll.mockResolvedValue({
-        rows: [],
-        count: 0,
-      });
+      mockPrismaService.user.findMany.mockResolvedValue([]);
+      mockPrismaService.user.count.mockResolvedValue(0);
 
       await service.findAll(orgId, 3, 5);
 
-      expect(mockUserModel.findAndCountAll).toHaveBeenCalledWith(
+      expect(mockPrismaService.user.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          limit: 5,
-          offset: 10, // (3-1) * 5
+          take: 5,
+          skip: 10, // (3-1) * 5
         }),
       );
     });
@@ -185,19 +191,19 @@ describe('UsersService', () => {
     const orgId = '123e4567-e89b-12d3-a456-426614174001';
 
     it('should find user by id and org scope', async () => {
-      mockUserModel.findOne.mockResolvedValue(mockUser);
+      mockPrismaService.user.findFirst.mockResolvedValue(mockUser);
 
       const result = await service.findById(userId, orgId);
 
-      expect(mockUserModel.findOne).toHaveBeenCalledWith({
+      expect(mockPrismaService.user.findFirst).toHaveBeenCalledWith({
         where: { id: userId, org_id: orgId },
-        include: expect.any(Array),
+        include: { role: true },
       });
       expect(result).toEqual(mockUser);
     });
 
     it('should return null if user not found', async () => {
-      mockUserModel.findOne.mockResolvedValue(null);
+      mockPrismaService.user.findFirst.mockResolvedValue(null);
 
       const result = await service.findById(userId, orgId);
 
@@ -210,23 +216,23 @@ describe('UsersService', () => {
     const orgId = '123e4567-e89b-12d3-a456-426614174001';
 
     it('should find user by email and org scope', async () => {
-      mockUserModel.findOne.mockResolvedValue(mockUser);
+      mockPrismaService.user.findFirst.mockResolvedValue(mockUser);
 
       const result = await service.findByEmail(email, orgId);
 
-      expect(mockUserModel.findOne).toHaveBeenCalledWith({
+      expect(mockPrismaService.user.findFirst).toHaveBeenCalledWith({
         where: { email, org_id: orgId },
-        include: expect.any(Array),
+        include: { role: true },
       });
       expect(result).toEqual(mockUser);
     });
 
     it('should enforce org scope in query', async () => {
-      mockUserModel.findOne.mockResolvedValue(null);
+      mockPrismaService.user.findFirst.mockResolvedValue(null);
 
       await service.findByEmail(email, orgId);
 
-      expect(mockUserModel.findOne).toHaveBeenCalledWith(
+      expect(mockPrismaService.user.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({
           where: expect.objectContaining({
             org_id: orgId,

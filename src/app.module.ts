@@ -1,7 +1,7 @@
 import { Module, MiddlewareConsumer } from '@nestjs/common';
 import { RouterModule } from '@nestjs/core';
 import { ConfigModule } from './config/config.module';
-import { DatabaseModule } from './infra/db/sequelize.module';
+import { PrismaModule } from './infra/db/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { RbacModule } from './rbac/rbac.module';
 import { UsersModule } from './modules/users/users.module';
@@ -15,7 +15,7 @@ import { appRoutes } from './router/app.routes';
 @Module({
   imports: [
     ConfigModule,
-    DatabaseModule,
+    PrismaModule,
     AuthModule,
     RbacModule,
     UsersModule,

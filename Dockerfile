@@ -1,24 +1,24 @@
 # Build stage
 FROM node:20-alpine AS builder
 WORKDIR /app
-RUN apk add --no-cache python3 make g++ bash
+RUN apk add --no-cache python3 make g++ bash openssl
 COPY package*.json ./
 RUN npm ci
 COPY . .
+# Generate Prisma client
+RUN npx prisma generate
 RUN npm run build
 
 # Runtime
 FROM node:20-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
-RUN apk add --no-cache bash
+RUN apk add --no-cache bash openssl
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
-# Pour exécuter migrations/seeders en prod si besoin
-COPY --from=builder /app/migrations ./migrations
-COPY --from=builder /app/seeders ./seeders
-COPY --from=builder /app/infra/db/sequelize.config.js ./infra/db/sequelize.config.js
+# Copy Prisma files for migrations/seeding in production
+COPY --from=builder /app/prisma ./prisma
 COPY scripts/entrypoint.sh ./scripts/entrypoint.sh
 RUN chmod +x ./scripts/entrypoint.sh
 

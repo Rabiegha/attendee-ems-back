@@ -2,11 +2,8 @@ services:
   db:
     image: postgres:16-alpine
     container_name: ems_db
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: ems
-      TZ: Europe/Paris
+    env_file:
+      - .env
     ports:
       - "5432:5432"
     volumes:
@@ -23,7 +20,7 @@ services:
       dockerfile: Dockerfile.dev
     container_name: ems_api
     env_file:
-      - .env.docker
+      - .env
     ports:
       - "3000:3000"
     volumes:
@@ -41,7 +38,7 @@ services:
       dockerfile: Dockerfile.dev
     working_dir: /usr/src/app
     env_file:
-      - .env.docker
+      - .env
     depends_on:
       db:
         condition: service_healthy

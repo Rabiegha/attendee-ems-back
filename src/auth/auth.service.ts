@@ -1,34 +1,32 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { InjectModel } from '@nestjs/sequelize';
+import { PrismaService } from '../infra/db/prisma.service';
 import * as bcrypt from 'bcrypt';
-import { User } from '../modules/users/users.model';
-import { Role } from '../modules/roles/roles.model';
-import { Permission } from '../modules/permissions/permissions.model';
-import { RolePermission } from '../modules/role-permissions/role-permissions.model';
 
 @Injectable()
 export class AuthService {
   constructor(
-    @InjectModel(User)
-    private userModel: typeof User,
+    private prisma: PrismaService,
     private jwtService: JwtService,
   ) {}
 
   async validateUser(email: string, password: string): Promise<any> {
-    const user = await this.userModel.findOne({
-      where: { email, is_active: true },
-      include: [
-        {
-          model: Role,
-          include: [
-            {
-              model: RolePermission,
-              include: [Permission],
+    const user = await this.prisma.user.findFirst({
+      where: { 
+        email, 
+        is_active: true 
+      },
+      include: {
+        role: {
+          include: {
+            rolePermissions: {
+              include: {
+                permission: true,
+              },
             },
-          ],
+          },
         },
-      ],
+      },
     });
 
     if (!user) {
@@ -44,19 +42,22 @@ export class AuthService {
   }
 
   async validateUserById(userId: string): Promise<any> {
-    const user = await this.userModel.findOne({
-      where: { id: userId, is_active: true },
-      include: [
-        {
-          model: Role,
-          include: [
-            {
-              model: RolePermission,
-              include: [Permission],
+    const user = await this.prisma.user.findFirst({
+      where: { 
+        id: userId, 
+        is_active: true 
+      },
+      include: {
+        role: {
+          include: {
+            rolePermissions: {
+              include: {
+                permission: true,
+              },
             },
-          ],
+          },
         },
-      ],
+      },
     });
 
     return user;

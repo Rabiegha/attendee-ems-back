@@ -15,10 +15,10 @@ fi
 
 if [ "${RUN_MIGRATIONS}" = "true" ]; then
   echo "Running migrations..."
-  npx sequelize-cli db:migrate --config infra/db/sequelize.config.js
+  npx prisma migrate deploy
   if [ "${RUN_SEEDERS}" = "true" ]; then
     echo "Running seeders..."
-    npx sequelize-cli db:seed:all --config infra/db/sequelize.config.js
+    npx prisma db seed
   fi
 fi
 

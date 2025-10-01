@@ -1,29 +1,32 @@
 import { Injectable } from '@nestjs/common';
-import { InjectModel } from '@nestjs/sequelize';
-import { Role } from './roles.model';
+import { PrismaService } from '../../infra/db/prisma.service';
+import { Role } from '@prisma/client';
 
 @Injectable()
 export class RolesService {
-  constructor(
-    @InjectModel(Role)
-    private roleModel: typeof Role,
-  ) {}
+  constructor(private prisma: PrismaService) {}
 
   async findAll(orgId: string): Promise<Role[]> {
-    return this.roleModel.findAll({
+    return this.prisma.role.findMany({
       where: { org_id: orgId },
     });
   }
 
-  async findById(id: string, orgId: string): Promise<Role> {
-    return this.roleModel.findOne({
-      where: { id, org_id: orgId },
+  async findById(id: string, orgId: string): Promise<Role | null> {
+    return this.prisma.role.findFirst({
+      where: { 
+        id, 
+        org_id: orgId 
+      },
     });
   }
 
-  async findByCode(code: string, orgId: string): Promise<Role> {
-    return this.roleModel.findOne({
-      where: { code, org_id: orgId },
+  async findByCode(code: string, orgId: string): Promise<Role | null> {
+    return this.prisma.role.findFirst({
+      where: { 
+        code, 
+        org_id: orgId 
+      },
     });
   }
 }

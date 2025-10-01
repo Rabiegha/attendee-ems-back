@@ -1,28 +1,31 @@
 import { Injectable } from '@nestjs/common';
-import { InjectModel } from '@nestjs/sequelize';
-import { Organization } from './organizations.model';
+import { PrismaService } from '../../infra/db/prisma.service';
 import { CreateOrganizationDto } from './dto/create-organization.dto';
+import { Organization } from '@prisma/client';
 
 @Injectable()
 export class OrganizationsService {
-  constructor(
-    @InjectModel(Organization)
-    private organizationModel: typeof Organization,
-  ) {}
+  constructor(private prisma: PrismaService) {}
 
   async create(createOrganizationDto: CreateOrganizationDto): Promise<Organization> {
-    return this.organizationModel.create(createOrganizationDto as any);
+    return this.prisma.organization.create({
+      data: createOrganizationDto,
+    });
   }
 
-  async findById(id: string): Promise<Organization> {
-    return this.organizationModel.findByPk(id);
+  async findById(id: string): Promise<Organization | null> {
+    return this.prisma.organization.findUnique({
+      where: { id },
+    });
   }
 
-  async findBySlug(slug: string): Promise<Organization> {
-    return this.organizationModel.findOne({ where: { slug } });
+  async findBySlug(slug: string): Promise<Organization | null> {
+    return this.prisma.organization.findUnique({
+      where: { slug },
+    });
   }
 
   async findAll(): Promise<Organization[]> {
-    return this.organizationModel.findAll();
+    return this.prisma.organization.findMany();
   }
 }

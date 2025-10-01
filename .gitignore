@@ -41,7 +41,10 @@ lerna-debug.log*
 .env.test.local
 .env.production.local
 .env.docker
+.env.test.docker
 
 # temp
 /tmp
 /temp
+
+/generated/prisma
