@@ -20,9 +20,6 @@ model Organization {
 
   // Relations
   users       User[]
-  roles       Role[]
-  permissions Permission[]
-  rolePermissions RolePermission[]
 
   @@map("organizations")
 }
@@ -47,48 +44,43 @@ model User {
 }
 
 model Role {
-  id      String @id @default(uuid()) @db.Uuid
-  org_id  String @db.Uuid
-  code    String
-  name    String
+  id         String   @id @default(uuid()) @db.Uuid
+  code       String   @unique
+  name       String
+  created_at DateTime @default(now()) @map("created_at")
+  updated_at DateTime @updatedAt @map("updated_at")
 
   // Relations
-  organization    Organization     @relation(fields: [org_id], references: [id])
   users          User[]
   rolePermissions RolePermission[]
 
-  @@unique([org_id, code])
-  @@index([org_id])
   @@map("roles")
 }
 
 model Permission {
-  id      String @id @default(uuid()) @db.Uuid
-  org_id  String @db.Uuid
-  code    String
-  name    String
+  id         String   @id @default(uuid()) @db.Uuid
+  code       String   @unique
+  name       String
+  created_at DateTime @default(now()) @map("created_at")
+  updated_at DateTime @updatedAt @map("updated_at")
 
   // Relations
-  organization    Organization     @relation(fields: [org_id], references: [id])
   rolePermissions RolePermission[]
 
-  @@unique([org_id, code])
-  @@index([org_id])
   @@map("permissions")
 }
 
 model RolePermission {
-  id            String @id @default(uuid()) @db.Uuid
-  org_id        String @db.Uuid
-  role_id       String @db.Uuid
-  permission_id String @db.Uuid
+  id            String   @id @default(uuid()) @db.Uuid
+  role_id       String   @db.Uuid
+  permission_id String   @db.Uuid
+  created_at    DateTime @default(now()) @map("created_at")
+  updated_at    DateTime @updatedAt @map("updated_at")
 
   // Relations
-  organization Organization @relation(fields: [org_id], references: [id])
   role         Role         @relation(fields: [role_id], references: [id])
   permission   Permission   @relation(fields: [permission_id], references: [id])
 
-  @@unique([org_id, role_id, permission_id])
-  @@index([org_id])
+  @@unique([role_id, permission_id])
   @@map("role_permissions")
 }
