@@ -3,26 +3,25 @@
 
 generator client {
   provider = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  extensions = [citext]
 }
 
 model Organization {
   id         String   @id @default(uuid()) @db.Uuid
   name       String
-  slug       String   @unique
+  slug       String   @unique @db.Citext
   timezone   String?
   created_at DateTime @default(now()) @map("created_at")
   updated_at DateTime @updatedAt @map("updated_at")
 
   // Relations
-  users           User[]
-  roles           Role[]
-  permissions     Permission[]
-  rolePermissions RolePermission[]
+  users       User[]
 
   @@map("organizations")
 }
@@ -30,7 +29,7 @@ model Organization {
 model User {
   id            String   @id @default(uuid()) @db.Uuid
   org_id        String   @db.Uuid
-  email         String
+  email         String   @db.Citext
   password_hash String
   role_id       String   @db.Uuid
   is_active     Boolean  @default(true)
@@ -38,63 +37,61 @@ model User {
   updated_at    DateTime @updatedAt @map("updated_at")
 
   // Relations
-  organization Organization @relation(fields: [org_id], references: [id])
-  role         Role         @relation(fields: [role_id], references: [id])
+  // Cascade: Si l'organisation est supprimée, tous ses utilisateurs sont supprimés
+  organization Organization @relation(fields: [org_id], references: [id], onDelete: Cascade)
+  // Restrict: Empêche la suppression d'un rôle s'il a des utilisateurs assignés
+  role         Role         @relation(fields: [role_id], references: [id], onDelete: Restrict)
 
-  @@unique([org_id, email])
+  @@unique([email, org_id])
   @@index([org_id])
+  @@index([role_id])
   @@map("users")
 }
 
 model Role {
   id          String   @id @default(uuid()) @db.Uuid
-  org_id      String   @db.Uuid
   code        String
   name        String
+  description String?
   created_at  DateTime @default(now()) @map("created_at")
   updated_at  DateTime @updatedAt @map("updated_at")
 
   // Relations
-  organization    Organization     @relation(fields: [org_id], references: [id])
-  users          User[]
+  users           User[]
   rolePermissions RolePermission[]
 
-  @@unique([org_id, code])
-  @@index([org_id])
+  @@unique([code])
   @@map("roles")
 }
 
 model Permission {
   id          String   @id @default(uuid()) @db.Uuid
-  org_id      String   @db.Uuid
   code        String
   name        String
+  description String?
   created_at  DateTime @default(now()) @map("created_at")
   updated_at  DateTime @updatedAt @map("updated_at")
 
   // Relations
-  organization    Organization     @relation(fields: [org_id], references: [id])
   rolePermissions RolePermission[]
 
-  @@unique([org_id, code])
-  @@index([org_id])
+  @@unique([code])
   @@map("permissions")
 }
 
 model RolePermission {
-  id            String   @id @default(uuid()) @db.Uuid
-  org_id        String   @db.Uuid
   role_id       String   @db.Uuid
   permission_id String   @db.Uuid
   created_at    DateTime @default(now()) @map("created_at")
   updated_at    DateTime @updatedAt @map("updated_at")
 
   // Relations
-  organization Organization @relation(fields: [org_id], references: [id])
-  role         Role         @relation(fields: [role_id], references: [id])
-  permission   Permission   @relation(fields: [permission_id], references: [id])
+  // Cascade: Si le rôle ou la permission est supprimé, les associations sont supprimées
+  role         Role         @relation(fields: [role_id], references: [id], onDelete: Cascade)
+  permission   Permission   @relation(fields: [permission_id], references: [id], onDelete: Cascade)
 
-  @@unique([org_id, role_id, permission_id])
-  @@index([org_id])
+  @@id([role_id, permission_id])
+  @@index([role_id])
+  @@index([permission_id])
   @@map("role_permissions")
 }
