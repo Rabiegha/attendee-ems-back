@@ -32,6 +32,13 @@ model User {
   email         String   @db.Citext
   password_hash String
   role_id       String   @db.Uuid
+  first_name    String?
+  last_name     String?
+  phone         String?
+  company       String?
+  job_title     String?
+  country       String?
+  metadata      Json?
   is_active     Boolean  @default(true)
   created_at    DateTime @default(now()) @map("created_at")
   updated_at    DateTime @updatedAt @map("updated_at")
@@ -95,3 +102,4 @@ model RolePermission {
   @@index([permission_id])
   @@map("role_permissions")
 }
+
