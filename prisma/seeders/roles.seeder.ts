@@ -3,43 +3,61 @@ import { prisma, SeedResult, logSuccess, logError } from './utils';
 export interface RoleSeedData {
   code: string;
   name: string;
+  description?: string;
 }
 
 const rolesData: RoleSeedData[] = [
   {
-    code: 'org_admin',
-    name: 'Organization Administrator',
+    code: 'SUPER_ADMIN',
+    name: 'Super Administrator',
+    description: 'Full system access across all organizations',
   },
   {
-    code: 'user',
-    name: 'Standard User',
+    code: 'ADMIN',
+    name: 'Administrator',
+    description: 'Full access within organization',
   },
-  // Vous pouvez ajouter d'autres rôles ici
+  {
+    code: 'MANAGER',
+    name: 'Manager',
+    description: 'Management access within organization',
+  },
+  {
+    code: 'VIEWER',
+    name: 'Viewer',
+    description: 'Read-only access to events and attendees',
+  },
+  {
+    code: 'PARTNER',
+    name: 'Partner',
+    description: 'Access to assigned events as partner',
+  },
+  {
+    code: 'HOSTESS',
+    name: 'Hostess',
+    description: 'Access to assigned events as hostess',
+  },
 ];
 
-export async function seedRoles(orgId: string): Promise<SeedResult[]> {
+export async function seedRoles(): Promise<SeedResult[]> {
   const results: SeedResult[] = [];
   
   try {
     for (const roleData of rolesData) {
-      let role = await prisma.role.findUnique({
+      const role = await prisma.role.upsert({
         where: { 
-          org_id_code: {
-            org_id: orgId,
-            code: roleData.code
-          }
-        }
+          code: roleData.code
+        },
+        update: {
+          name: roleData.name,
+          description: roleData.description,
+        },
+        create: {
+          code: roleData.code,
+          name: roleData.name,
+          description: roleData.description,
+        },
       });
-      
-      if (!role) {
-        role = await prisma.role.create({
-          data: {
-            org_id: orgId,
-            code: roleData.code,
-            name: roleData.name,
-          },
-        });
-      }
 
       results.push({
         success: true,
@@ -47,7 +65,7 @@ export async function seedRoles(orgId: string): Promise<SeedResult[]> {
         data: role,
       });
       
-      logSuccess(`Created role: ${role.name}`);
+      logSuccess(`Upserted role: ${role.name}`);
     }
     
     return results;
@@ -63,23 +81,16 @@ export async function seedRoles(orgId: string): Promise<SeedResult[]> {
   }
 }
 
-// Fonction pour obtenir un rôle par code et org_id (utile pour les autres seeders)
-export async function getRoleByCode(orgId: string, code: string) {
+// Fonction pour obtenir un rôle par code
+export async function getRoleByCode(code: string) {
   return await prisma.role.findUnique({
     where: {
-      org_id_code: {
-        org_id: orgId,
-        code: code,
-      },
+      code: code,
     },
   });
 }
 
-// Fonction pour obtenir tous les rôles d'une organisation
-export async function getAllRoles(orgId: string) {
-  return await prisma.role.findMany({
-    where: {
-      org_id: orgId,
-    },
-  });
+// Fonction pour obtenir tous les rôles
+export async function getAllRoles() {
+  return await prisma.role.findMany();
 }

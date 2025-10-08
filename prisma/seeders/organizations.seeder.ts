@@ -9,6 +9,11 @@ export interface OrganizationSeedData {
 
 const organizationsData: OrganizationSeedData[] = [
   {
+    name: 'System',
+    slug: 'system',
+    timezone: 'UTC',
+  },
+  {
     name: 'Acme Corp',
     slug: 'acme-corp',
     timezone: 'UTC',

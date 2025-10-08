@@ -50,9 +50,9 @@ export async function seedForSpecificOrganization(orgSlug: string) {
     }
     
     // Seeder les rôles, permissions et utilisateurs pour cette organisation
-    const roleResults = await seedRoles(organization.id);
-    const permResults = await seedPermissions(organization.id);
-    const userResults = await seedUsers(organization.id);
+    const roleResults = await seedRoles();
+    const permResults = await seedPermissions();
+    const userResults = await seedUsers();
     
     logSuccess(`Seeded data for organization: ${organization.name}`);
     
@@ -82,7 +82,7 @@ export async function seedTestUsers(orgSlug: string = 'acme-corp') {
       throw new Error(`Organization with slug '${orgSlug}' not found`);
     }
     
-    const results = await seedUsers(organization.id);
+    const results = await seedUsers();
     
     const successful = results.filter(r => r.success);
     logSuccess(`Created ${successful.length} test users`);
@@ -112,18 +112,18 @@ export async function seedMinimal() {
     }
     
     // 2. Rôles (seulement admin)
-    const roleResults = await seedRoles(org.id);
-    const adminRole = await getRoleByCode(org.id, 'org_admin');
+    const roleResults = await seedRoles();
+    const adminRole = await getRoleByCode('org_admin');
     
     if (!adminRole) {
       throw new Error('Failed to create admin role');
     }
     
     // 3. Permissions basiques
-    const permResults = await seedPermissions(org.id);
+    const permResults = await seedPermissions();
     
     // 4. Utilisateur admin seulement
-    const userResults = await seedUsers(org.id);
+    const userResults = await seedUsers();
     
     logSuccess('Minimal seed completed');
     
