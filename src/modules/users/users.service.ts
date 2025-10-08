@@ -28,9 +28,18 @@ export class UsersService {
 
     return this.prisma.user.create({
       data: {
-        ...createUserDto,
-        org_id: orgId,
+        email: createUserDto.email,
         password_hash: hashedPassword,
+        role_id: createUserDto.role_id,
+        first_name: createUserDto.first_name,
+        last_name: createUserDto.last_name,
+        phone: createUserDto.phone,
+        company: createUserDto.company,
+        job_title: createUserDto.job_title,
+        country: createUserDto.country,
+        metadata: createUserDto.metadata,
+        is_active: createUserDto.is_active,
+        org_id: orgId,
       },
     });
   }
