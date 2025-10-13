@@ -98,34 +98,37 @@ export async function getAllPermissions() {
 export const rolePermissionMapping: Record<string, string[]> = {
   'SUPER_ADMIN': [
     'organizations.read:any', 'organizations.create',
-    'users.create', 'users.read:any',
+    'users.create', 'users.read:any', 'users.read:own',
     'event:read:any', 'event:create', 'event:update', 'event:assign-partner', 'event:assign-host',
     'attendee:read', 'attendee:create',
     'roles.read', 'roles.assign',
     'permissions.read'
   ],
   'ADMIN': [
-    'users.create', 'users.read:any',
+    'users.create', 'users.read:any', 'users.read:own',
     'event:read:any', 'event:create', 'event:update', 'event:assign-partner', 'event:assign-host',
     'attendee:read', 'attendee:create',
     'roles.read', 'roles.assign',
     'permissions.read'
   ],
   'MANAGER': [
-    'users.read:any',
+    'users.read:any', 'users.read:own',
     'event:read:any', 'event:create', 'event:update', 'event:assign-partner', 'event:assign-host',
     'attendee:read', 'attendee:create',
     'roles.read', 'roles.assign',
     'permissions.read'
   ],
   'VIEWER': [
+    'users.read:own',
     'event:read:any',
     'attendee:read'
   ],
   'PARTNER': [
+    'users.read:own',
     'event:read:any'
   ],
   'HOSTESS': [
+    'users.read:own',
     'event:read:any'
   ]
 };

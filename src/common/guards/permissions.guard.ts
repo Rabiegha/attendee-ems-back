@@ -53,7 +53,11 @@ export class PermissionsGuard implements CanActivate {
       throw new Error(`Invalid permission format: ${permission}`);
     }
 
-    const [subject, action] = parts;
+    const [subject, actionWithCondition] = parts;
+    
+    // Extraire l'action en supprimant les conditions (:own, :any, etc.)
+    const action = actionWithCondition.split(':')[0];
+    
     const actionMap: Record<string, Action> = {
       'create': Action.Create,
       'read': Action.Read,

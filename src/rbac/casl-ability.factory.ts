@@ -33,7 +33,10 @@ export class CaslAbilityFactory {
       return null;
     }
 
-    const [subject, action] = parts;
+    const [subject, actionWithCondition] = parts;
+    
+    // Extraire l'action en supprimant les conditions (:own, :any, etc.)
+    const action = actionWithCondition.split(':')[0];
 
     const actionMap: Record<string, Action> = {
       'create': Action.Create,

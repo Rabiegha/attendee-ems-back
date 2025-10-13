@@ -4,6 +4,7 @@ import { UsersModule } from '../modules/users/users.module';
 import { OrganizationsModule } from '../modules/organizations/organizations.module';
 import { RolesModule } from '../modules/roles/roles.module';
 import { PermissionsModule } from '../modules/permissions/permissions.module';
+import { InvitationModule } from '../modules/invitation/invitation.module';
 
 export const appRoutes: Routes = [
   {
@@ -28,6 +29,10 @@ export const appRoutes: Routes = [
       {
         path: 'permissions',
         module: PermissionsModule,
+      },
+      {
+        path: 'invitations',
+        module: InvitationModule,
       },
     ],
   },
