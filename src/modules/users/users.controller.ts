@@ -6,6 +6,7 @@ import {
   UseGuards,
   Request,
   Query,
+  Param,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -14,6 +15,7 @@ import {
   ApiBearerAuth,
   ApiQuery,
   ApiBody,
+  ApiParam,
 } from '@nestjs/swagger';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
@@ -60,7 +62,7 @@ export class UsersController {
   }
 
   @Get()
-  @Permissions('users.read')
+  @Permissions('users.read:any')
   @ApiOperation({
     summary: 'Récupérer la liste des utilisateurs',
     description: 'Récupère la liste paginée des utilisateurs de l\'organisation'
@@ -106,5 +108,63 @@ export class UsersController {
     const pageNumber = page ? parseInt(page, 10) : 1;
     const limitNumber = limit ? parseInt(limit, 10) : 10;
     return this.usersService.findAll(orgId, pageNumber, limitNumber, search);
+  }
+
+  @Get('me')
+  @Permissions('users.read:own')
+  @ApiOperation({
+    summary: 'Récupérer ses propres informations utilisateur',
+    description: 'Récupère les informations de l\'utilisateur actuellement connecté'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Informations utilisateur récupérées avec succès',
+    type: UserResponseDto
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Non autorisé'
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Permissions insuffisantes'
+  })
+  async getMe(@Request() req) {
+    const userId = req.user.id;
+    const orgId = req.user.org_id;
+    return this.usersService.findOne(userId, orgId);
+  }
+
+  @Get(':id')
+  @Permissions('users.read:any')
+  @ApiOperation({
+    summary: 'Récupérer un utilisateur par ID',
+    description: 'Récupère les informations d\'un utilisateur spécifique par son ID'
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'ID de l\'utilisateur à récupérer',
+    example: '123e4567-e89b-12d3-a456-426614174000'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Utilisateur récupéré avec succès',
+    type: UserResponseDto
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Non autorisé'
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Permissions insuffisantes'
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Utilisateur non trouvé'
+  })
+  async findOne(@Param('id') id: string, @Request() req) {
+    const orgId = req.user.org_id;
+    return this.usersService.findOne(id, orgId);
   }
 }

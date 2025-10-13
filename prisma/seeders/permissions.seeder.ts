@@ -9,11 +9,15 @@ export interface PermissionSeedData {
 const permissionsData: PermissionSeedData[] = [
   // Organization permissions
   { code: 'organizations.read', name: 'Read organization', description: 'View organization information' },
+  { code: 'organizations.read:any', name: 'Read any organization', description: 'View any organization information' },
+  { code: 'organizations.read:own', name: 'Read own organization', description: 'View own organization information' },
   { code: 'organizations.create', name: 'Create organization', description: 'Create new organizations' },
   
   // User permissions
   { code: 'users.create', name: 'Create users', description: 'Create users in organization' },
   { code: 'users.read', name: 'Read users', description: 'View user information in organization' },
+  { code: 'users.read:own', name: 'Read own user info', description: 'View own user information' },
+  { code: 'users.read:any', name: 'Read any user info', description: 'View any user information in organization' },
   
   // Event permissions
   { code: 'event:read:any', name: 'Read any event', description: 'View event information' },
@@ -93,22 +97,22 @@ export async function getAllPermissions() {
 // Mapping des permissions par rôle selon les spécifications
 export const rolePermissionMapping: Record<string, string[]> = {
   'SUPER_ADMIN': [
-    'organizations.read', 'organizations.create',
-    'users.create', 'users.read',
+    'organizations.read:any', 'organizations.create',
+    'users.create', 'users.read:any',
     'event:read:any', 'event:create', 'event:update', 'event:assign-partner', 'event:assign-host',
     'attendee:read', 'attendee:create',
     'roles.read', 'roles.assign',
     'permissions.read'
   ],
   'ADMIN': [
-    'users.create', 'users.read',
+    'users.create', 'users.read:any',
     'event:read:any', 'event:create', 'event:update', 'event:assign-partner', 'event:assign-host',
     'attendee:read', 'attendee:create',
     'roles.read', 'roles.assign',
     'permissions.read'
   ],
   'MANAGER': [
-    'users.read',
+    'users.read:any',
     'event:read:any', 'event:create', 'event:update', 'event:assign-partner', 'event:assign-host',
     'attendee:read', 'attendee:create',
     'roles.read', 'roles.assign',

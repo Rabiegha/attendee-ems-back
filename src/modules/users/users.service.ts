@@ -92,6 +92,10 @@ export class UsersService {
     });
   }
 
+  async findOne(id: string, orgId: string): Promise<any> {
+    return this.findById(id, orgId);
+  }
+
   async findByEmail(email: string, orgId: string): Promise<any> {
     return this.prisma.user.findFirst({
       where: { 
