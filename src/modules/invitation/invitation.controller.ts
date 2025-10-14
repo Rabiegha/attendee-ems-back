@@ -31,7 +31,7 @@ export class InvitationController {
   @ApiResponse({ status: 404, description: 'Organisation ou rôle non trouvé' })
   async sendInvitation(@Body() sendInvitationDto: SendInvitationDto, @Request() req: any) {
     const { email, roleId, orgId } = sendInvitationDto;
-    const invitedByUserId = req.user.sub; // ID de l'utilisateur qui envoie l'invitation
+    const invitedByUserId = req.user.id; // ID de l'utilisateur qui envoie l'invitation
     return this.invitationService.sendInvitation(email, roleId, orgId, invitedByUserId);
   }
 
@@ -62,7 +62,7 @@ export class InvitationController {
   @ApiResponse({ status: 404, description: 'Invitation non trouvée' })
   async resendInvitation(@Param('id') invitationId: string, @Request() req: any) {
     const orgId = req.user.org_id;
-    const invitedByUserId = req.user.sub;
+    const invitedByUserId = req.user.id;
     return this.invitationService.resendInvitation(invitationId, orgId, invitedByUserId);
   }
 
