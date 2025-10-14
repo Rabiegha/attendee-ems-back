@@ -79,15 +79,10 @@ export class InvitationService {
         email,
         token: invitationToken,
         expires_at: expiresAt,
-        org_id: orgId,
-        role_id: roleId,
-        invited_by_user_id: invitedByUserId,
+        organization: { connect: { id: orgId } },
+        role: { connect: { id: roleId } },
+        invited_by: { connect: { id: invitedByUserId } },
         status: InvitationStatus.PENDING,
-      },
-      include: {
-        organization: true,
-        role: true,
-        invited_by: true,
       }
     });
 
@@ -390,7 +385,6 @@ export class InvitationService {
       await this.transporter.sendMail(mailOptions);
       return true;
     } catch (error) {
-      console.error('Erreur lors de l\'envoi de l\'email:', error);
       return false;
     }
   }
