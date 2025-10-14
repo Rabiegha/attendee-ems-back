@@ -53,6 +53,7 @@ model User {
   organization Organization @relation(fields: [org_id], references: [id], onDelete: Cascade)
   // Restrict: Empêche la suppression d'un rôle s'il a des utilisateurs assignés
   role         Role         @relation(fields: [role_id], references: [id], onDelete: Restrict)
+  refreshTokens RefreshToken[]
 
   @@unique([email, org_id])
   @@unique([reset_token])
@@ -108,5 +109,25 @@ model RolePermission {
   @@index([role_id])
   @@index([permission_id])
   @@map("role_permissions")
+}
+
+model RefreshToken {
+  id           String   @id @default(cuid())
+  userId       String   @db.Uuid
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  jti          String   @unique              // ID logique du refresh (JWT ID)
+  tokenHash    String                        // hash du refresh token (pas de stockage en clair)
+  userAgent    String?                       // forensics / device management
+  ip           String?                       // forensics
+  createdAt    DateTime @default(now())
+  expiresAt    DateTime
+  revokedAt    DateTime?                     // null = actif
+  replacedById String?                       // jti du nouveau token (pour détecter la réutilisation)
+
+  @@index([userId])
+  @@index([jti])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
 }
 

@@ -21,12 +21,52 @@ export class ConfigService {
     return this.config.DATABASE_URL;
   }
 
+  // JWT Configuration
+  get jwtAccessSecret(): string {
+    return this.config.JWT_ACCESS_SECRET;
+  }
+
+  get jwtRefreshSecret(): string {
+    return this.config.JWT_REFRESH_SECRET;
+  }
+
+  get jwtAccessTtl(): string {
+    return this.config.JWT_ACCESS_TTL;
+  }
+
+  get jwtRefreshTtl(): string {
+    return this.config.JWT_REFRESH_TTL;
+  }
+
+  // Legacy JWT (for backward compatibility)
   get jwtSecret(): string {
     return this.config.JWT_SECRET;
   }
 
   get jwtExpiresIn(): string {
     return this.config.JWT_EXPIRES_IN;
+  }
+
+  // Auth Cookie Configuration
+  get authCookieName(): string {
+    return this.config.AUTH_COOKIE_NAME;
+  }
+
+  get authCookieDomain(): string | undefined {
+    return this.config.AUTH_COOKIE_DOMAIN;
+  }
+
+  get authCookieSecure(): boolean {
+    return this.config.AUTH_COOKIE_SECURE;
+  }
+
+  get authCookieSameSite(): 'strict' | 'lax' | 'none' {
+    return this.config.AUTH_COOKIE_SAMESITE;
+  }
+
+  // CORS Configuration
+  get apiCorsOrigin(): string {
+    return this.config.API_CORS_ORIGIN;
   }
 
   get nodeEnv(): string {
