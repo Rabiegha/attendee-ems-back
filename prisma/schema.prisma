@@ -22,6 +22,7 @@ model Organization {
 
   // Relations
   users       User[]
+  invitations Invitation[]
 
   @@map("organizations")
 }
@@ -40,11 +41,8 @@ model User {
   country       String?
   metadata      Json?
   is_active     Boolean  @default(true)
-  must_change_password Boolean @default(false)
   reset_token String?
   reset_token_expires_at DateTime?
-  invitation_token String?
-  invitation_token_expires_at DateTime?
   created_at    DateTime @default(now()) @map("created_at")
   updated_at    DateTime @updatedAt @map("updated_at")
 
@@ -53,10 +51,11 @@ model User {
   organization Organization @relation(fields: [org_id], references: [id], onDelete: Cascade)
   // Restrict: Empêche la suppression d'un rôle s'il a des utilisateurs assignés
   role         Role         @relation(fields: [role_id], references: [id], onDelete: Restrict)
+  // Relations inverses pour les invitations envoyées
+  sent_invitations Invitation[]
 
   @@unique([email, org_id])
   @@unique([reset_token])
-  @@unique([invitation_token])
   @@index([org_id])
   @@index([role_id])
   @@map("users")
@@ -72,6 +71,7 @@ model Role {
 
   // Relations
   users           User[]
+  invitations     Invitation[]
   rolePermissions RolePermission[]
 
   @@unique([code])
@@ -108,5 +108,42 @@ model RolePermission {
   @@index([role_id])
   @@index([permission_id])
   @@map("role_permissions")
+}
+
+model Invitation {
+  id               String            @id @default(uuid()) @db.Uuid
+  email            String            @db.Citext
+  token            String            @unique
+  expires_at       DateTime
+  org_id           String            @db.Uuid
+  role_id          String            @db.Uuid
+  invited_by_user_id String          @db.Uuid
+  status           InvitationStatus  @default(PENDING)
+  created_at       DateTime          @default(now()) @map("created_at")
+  updated_at       DateTime          @updatedAt @map("updated_at")
+
+  // Relations
+  // Cascade: Si l'organisation est supprimée, ses invitations sont supprimées
+  organization     Organization      @relation(fields: [org_id], references: [id], onDelete: Cascade)
+  // Restrict: Empêche la suppression d'un rôle s'il a des invitations en cours
+  role             Role              @relation(fields: [role_id], references: [id], onDelete: Restrict)
+  // Restrict: Empêche la suppression d'un utilisateur s'il a envoyé des invitations
+  invited_by       User              @relation(fields: [invited_by_user_id], references: [id], onDelete: Restrict)
+
+  @@unique([email, org_id]) // Un email ne peut avoir qu'une invitation active par organisation
+  @@index([org_id])
+  @@index([role_id])
+  @@index([invited_by_user_id])
+  @@index([token])
+  @@index([status])
+  @@index([expires_at])
+  @@map("invitations")
+}
+
+enum InvitationStatus {
+  PENDING   // En attente de validation
+  ACCEPTED  // Acceptée (compte créé)
+  EXPIRED   // Expirée
+  CANCELLED // Annulée par l'admin
 }
 

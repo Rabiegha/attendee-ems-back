@@ -1,5 +1,6 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../infra/db/prisma.service';
+import { InvitationStatus, GetInvitationsQueryDto, InvitationResponseDto, GetInvitationsResponseDto } from './dto/invitation.dto';
 import * as crypto from 'crypto';
 import * as nodemailer from 'nodemailer';
 
@@ -23,7 +24,7 @@ export class InvitationService {
   /**
    * Envoie une invitation à un utilisateur
    */
-  async sendInvitation(email: string, roleId: string, orgId: string) {
+  async sendInvitation(email: string, roleId: string, orgId: string, invitedByUserId: string) {
     // Vérifier que l'organisation existe
     const organization = await this.prisma.organization.findUnique({
       where: { id: orgId },
@@ -44,33 +45,50 @@ export class InvitationService {
     const existingUser = await this.prisma.user.findFirst({
       where: { email, org_id: orgId },
     });
-    if (existingUser && existingUser.is_active) {
-      throw new BadRequestException('Un utilisateur actif avec cet email existe déjà');
+    if (existingUser) {
+      throw new BadRequestException('Un utilisateur avec cet email existe déjà dans cette organisation');
     }
+
+    // Vérifier s'il y a déjà une invitation en cours pour cet email
+    const existingInvitation = await this.prisma.invitation.findFirst({
+      where: { 
+        email, 
+        org_id: orgId, 
+        status: InvitationStatus.PENDING,
+        expires_at: { gte: new Date() }
+      },
+    });
+    if (existingInvitation) {
+      throw new BadRequestException('Une invitation est déjà en cours pour cet email');
+    }
+
+    // Annuler les anciennes invitations pour cet email (si il y en a)
+    await this.prisma.invitation.updateMany({
+      where: { email, org_id: orgId },
+      data: { status: InvitationStatus.CANCELLED }
+    });
 
     // Générer un token unique d'invitation
     const invitationToken = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date();
     expiresAt.setHours(expiresAt.getHours() + 48); // Expire dans 48h
 
-    // Créer ou mettre à jour l'utilisateur incomplet
-    const user = await this.prisma.user.upsert({
-      where: { email_org_id: { email, org_id: orgId } },
-      update: {
-        invitation_token: invitationToken,
-        invitation_token_expires_at: expiresAt,
-        role_id: roleId,
-        is_active: false,
-      },
-      create: {
+    // Créer la nouvelle invitation
+    const invitation = await this.prisma.invitation.create({
+      data: {
         email,
+        token: invitationToken,
+        expires_at: expiresAt,
         org_id: orgId,
         role_id: roleId,
-        password_hash: '', // Vide, sera défini lors de la complétion
-        invitation_token: invitationToken,
-        invitation_token_expires_at: expiresAt,
-        is_active: false,
+        invited_by_user_id: invitedByUserId,
+        status: InvitationStatus.PENDING,
       },
+      include: {
+        organization: true,
+        role: true,
+        invited_by: true,
+      }
     });
 
     // Construire l'URL d'invitation
@@ -86,13 +104,59 @@ export class InvitationService {
     );
 
     return {
-      id: user.id,
-      email: user.email,
+      id: invitation.id,
+      email: invitation.email,
       invitationToken,
       expiresAt,
       emailSent,
       organization: organization.name,
       role: role.name,
+    };
+  }
+
+  /**
+   * Valide un token d'invitation (sans le consommer)
+   */
+  async validateInvitationToken(token: string) {
+    // Trouver l'invitation avec ce token
+    const invitation = await this.prisma.invitation.findUnique({
+      where: { token },
+      include: {
+        organization: true,
+        role: true,
+      },
+    });
+
+    if (!invitation) {
+      throw new BadRequestException('Token d\'invitation invalide');
+    }
+
+    // Vérifier l'expiration
+    if (invitation.expires_at < new Date()) {
+      // Marquer l'invitation comme expirée
+      await this.prisma.invitation.update({
+        where: { id: invitation.id },
+        data: { status: InvitationStatus.EXPIRED }
+      });
+      throw new BadRequestException('Le token d\'invitation a expiré');
+    }
+
+    // Vérifier si l'invitation a déjà été utilisée
+    if (invitation.status === InvitationStatus.ACCEPTED) {
+      throw new BadRequestException('Ce lien d\'invitation a déjà été utilisé');
+    }
+
+    // Vérifier si l'invitation a été annulée
+    if (invitation.status === InvitationStatus.CANCELLED) {
+      throw new BadRequestException('Cette invitation a été annulée');
+    }
+
+    return {
+      valid: true,
+      email: invitation.email,
+      organization: invitation.organization?.name,
+      role: invitation.role?.name,
+      expiresAt: invitation.expires_at,
     };
   }
 
@@ -104,39 +168,53 @@ export class InvitationService {
     lastName: string;
     password: string;
   }) {
-    // Trouver l'utilisateur avec ce token
-    const user = await this.prisma.user.findUnique({
-      where: { invitation_token: token },
+    // Trouver l'invitation avec ce token
+    const invitation = await this.prisma.invitation.findUnique({
+      where: { token },
       include: {
         organization: true,
         role: true,
       },
     });
 
-    if (!user) {
+    if (!invitation) {
       throw new BadRequestException('Token d\'invitation invalide');
     }
 
     // Vérifier l'expiration
-    if (user.invitation_token_expires_at && user.invitation_token_expires_at < new Date()) {
+    if (invitation.expires_at < new Date()) {
+      // Marquer l'invitation comme expirée
+      await this.prisma.invitation.update({
+        where: { id: invitation.id },
+        data: { status: InvitationStatus.EXPIRED }
+      });
       throw new BadRequestException('Le token d\'invitation a expiré');
+    }
+
+    // Vérifier si l'invitation a déjà été utilisée
+    if (invitation.status === InvitationStatus.ACCEPTED) {
+      throw new BadRequestException('Ce lien d\'invitation a déjà été utilisé');
+    }
+
+    // Vérifier si l'invitation a été annulée
+    if (invitation.status === InvitationStatus.CANCELLED) {
+      throw new BadRequestException('Cette invitation a été annulée');
     }
 
     // Hasher le mot de passe
     const bcrypt = require('bcrypt');
     const hashedPassword = await bcrypt.hash(userData.password, 10);
 
-    // Finaliser le compte utilisateur
-    const updatedUser = await this.prisma.user.update({
-      where: { id: user.id },
+    // Créer le compte utilisateur
+    const newUser = await this.prisma.user.create({
       data: {
+        email: invitation.email,
         first_name: userData.firstName,
         last_name: userData.lastName,
         password_hash: hashedPassword,
-        invitation_token: null,
-        invitation_token_expires_at: null,
+        org_id: invitation.org_id,
+        role_id: invitation.role_id,
         is_active: true,
-        must_change_password: false,
       },
       include: {
         organization: true,
@@ -144,10 +222,125 @@ export class InvitationService {
       },
     });
 
+    // Marquer l'invitation comme acceptée
+    await this.prisma.invitation.update({
+      where: { id: invitation.id },
+      data: { status: InvitationStatus.ACCEPTED }
+    });
+
     return {
-      user: updatedUser,
-      message: 'Compte activé avec succès',
+      user: newUser,
+      message: 'Compte créé avec succès',
     };
+  }
+
+  /**
+   * Récupère la liste des invitations avec pagination et filtres
+   */
+  async getInvitations(query: GetInvitationsQueryDto, orgId: string): Promise<GetInvitationsResponseDto> {
+    const { status, limit = 20, offset = 0 } = query;
+
+    const where: any = { org_id: orgId };
+    if (status) {
+      where.status = status;
+    }
+
+    const [invitations, total, pending] = await Promise.all([
+      this.prisma.invitation.findMany({
+        where,
+        include: {
+          organization: true,
+          role: true,
+          invited_by: {
+            select: {
+              id: true,
+              first_name: true,
+              last_name: true,
+              email: true
+            }
+          }
+        },
+        orderBy: { created_at: 'desc' },
+        take: limit,
+        skip: offset,
+      }),
+      this.prisma.invitation.count({ where }),
+      this.prisma.invitation.count({ 
+        where: { ...where, status: InvitationStatus.PENDING } 
+      }),
+    ]);
+
+    return {
+      invitations: invitations.map(invitation => ({
+        id: invitation.id,
+        email: invitation.email,
+        token: invitation.token,
+        expiresAt: invitation.expires_at,
+        orgId: invitation.org_id,
+        organizationName: invitation.organization.name,
+        roleId: invitation.role_id,
+        roleName: invitation.role.name,
+        invitedByUserId: invitation.invited_by_user_id,
+        invitedByUserName: `${invitation.invited_by.first_name || ''} ${invitation.invited_by.last_name || ''}`.trim() || invitation.invited_by.email,
+        status: invitation.status as InvitationStatus,
+        createdAt: invitation.created_at,
+        updatedAt: invitation.updated_at,
+      })),
+      total,
+      pending,
+    };
+  }
+
+  /**
+   * Annule une invitation
+   */
+  async cancelInvitation(invitationId: string, orgId: string): Promise<void> {
+    const invitation = await this.prisma.invitation.findFirst({
+      where: { id: invitationId, org_id: orgId },
+    });
+
+    if (!invitation) {
+      throw new NotFoundException('Invitation non trouvée');
+    }
+
+    if (invitation.status === InvitationStatus.ACCEPTED) {
+      throw new BadRequestException('Cette invitation a déjà été acceptée');
+    }
+
+    await this.prisma.invitation.update({
+      where: { id: invitationId },
+      data: { status: InvitationStatus.CANCELLED },
+    });
+  }
+
+  /**
+   * Renvoie une invitation (crée une nouvelle invitation avec un nouveau token)
+   */
+  async resendInvitation(invitationId: string, orgId: string, invitedByUserId: string) {
+    const invitation = await this.prisma.invitation.findFirst({
+      where: { id: invitationId, org_id: orgId },
+      include: {
+        organization: true,
+        role: true,
+      },
+    });
+
+    if (!invitation) {
+      throw new NotFoundException('Invitation non trouvée');
+    }
+
+    if (invitation.status === InvitationStatus.ACCEPTED) {
+      throw new BadRequestException('Cette invitation a déjà été acceptée');
+    }
+
+    // Annuler l'ancienne invitation
+    await this.prisma.invitation.update({
+      where: { id: invitationId },
+      data: { status: InvitationStatus.CANCELLED },
+    });
+
+    // Créer une nouvelle invitation
+    return this.sendInvitation(invitation.email, invitation.role_id, orgId, invitedByUserId);
   }
 
   /**
