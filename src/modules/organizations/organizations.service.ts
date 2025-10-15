@@ -28,4 +28,15 @@ export class OrganizationsService {
   async findAll(): Promise<Organization[]> {
     return this.prisma.organization.findMany();
   }
+
+  async getOrganizationUsers(orgId: string) {
+    const users = await this.prisma.user.findMany({
+      where: { org_id: orgId },
+      include: {
+        role: true,
+      },
+    });
+    
+    return { users };
+  }
 }

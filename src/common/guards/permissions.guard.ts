@@ -30,17 +30,30 @@ export class PermissionsGuard implements CanActivate {
     const user = request.user;
 
     if (!user) {
+      console.log('❌ PermissionsGuard: User not authenticated');
       throw new ForbiddenException('User not authenticated');
     }
+
+    console.log('🔍 PermissionsGuard DEBUG:', {
+      userId: user.sub,
+      role: user.role,
+      permissions: user.permissions,
+      requiredPermissions,
+    });
 
     const ability = this.caslAbilityFactory.createForUser(user);
 
     const hasPermission = requiredPermissions.some(permission => {
       const [action, subject] = this.parsePermission(permission);
-      return ability.can(action, subject);
+      const canAccess = ability.can(action, subject);
+      console.log(`🔍 Permission check: ${permission} -> ${action} on ${subject} = ${canAccess}`);
+      return canAccess;
     });
 
+    console.log('🔍 Final permission result:', hasPermission);
+
     if (!hasPermission) {
+      console.log('❌ PermissionsGuard: Insufficient permissions');
       throw new ForbiddenException('Insufficient permissions');
     }
 

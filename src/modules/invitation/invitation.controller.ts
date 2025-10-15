@@ -30,9 +30,9 @@ export class InvitationController {
   @ApiResponse({ status: 400, description: 'Données invalides' })
   @ApiResponse({ status: 404, description: 'Organisation ou rôle non trouvé' })
   async sendInvitation(@Body() sendInvitationDto: SendInvitationDto, @Request() req: any) {
-    const { email, roleId, orgId } = sendInvitationDto;
+    const { email, roleId, orgId, organizationName } = sendInvitationDto;
     const invitedByUserId = req.user.id; // ID de l'utilisateur qui envoie l'invitation
-    return this.invitationService.sendInvitation(email, roleId, orgId, invitedByUserId);
+    return this.invitationService.sendInvitation(email, roleId, orgId, invitedByUserId, organizationName);
   }
 
   @Get('validate/:token')

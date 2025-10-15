@@ -24,13 +24,48 @@ export class InvitationService {
   /**
    * Envoie une invitation à un utilisateur
    */
-  async sendInvitation(email: string, roleId: string, orgId: string, invitedByUserId: string) {
+  async sendInvitation(email: string, roleId: string, orgId: string, invitedByUserId: string, organizationName?: string) {
+    // Récupérer l'utilisateur qui envoie l'invitation pour vérifier ses permissions
+    const invitingUser = await this.prisma.user.findUnique({
+      where: { id: invitedByUserId },
+      include: { role: true }
+    });
+    
+    if (!invitingUser) {
+      throw new NotFoundException('Utilisateur invitant non trouvé');
+    }
+
+    const isSuperAdmin = invitingUser.role.code === 'SUPER_ADMIN';
+
     // Vérifier que l'organisation existe
-    const organization = await this.prisma.organization.findUnique({
+    let organization = await this.prisma.organization.findUnique({
       where: { id: orgId },
     });
+    
+    // Si l'organisation n'existe pas
     if (!organization) {
-      throw new NotFoundException('Organisation non trouvée');
+      // Si c'est un super admin et qu'un nom d'organisation est fourni, créer l'organisation
+      if (isSuperAdmin && organizationName) {
+        // Générer un slug à partir du nom
+        const slug = organizationName
+          .toLowerCase()
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '') // Supprimer les accents
+          .replace(/[^a-z0-9\s-]/g, '') // Garder seulement lettres, chiffres, espaces et tirets
+          .trim()
+          .replace(/\s+/g, '-') // Remplacer les espaces par des tirets
+          .replace(/-+/g, '-'); // Éviter les tirets multiples
+        
+        organization = await this.prisma.organization.create({
+          data: {
+            id: orgId, // Utiliser l'ID fourni
+            name: organizationName,
+            slug: slug,
+          }
+        });
+      } else {
+        throw new NotFoundException('Organisation non trouvée');
+      }
     }
 
     // Vérifier que le rôle existe
@@ -49,22 +84,33 @@ export class InvitationService {
       throw new BadRequestException('Un utilisateur avec cet email existe déjà dans cette organisation');
     }
 
-    // Vérifier s'il y a déjà une invitation en cours pour cet email
+    // Vérifier s'il existe déjà une invitation en cours pour cet email dans cette organisation
     const existingInvitation = await this.prisma.invitation.findFirst({
       where: { 
         email, 
-        org_id: orgId, 
-        status: InvitationStatus.PENDING,
-        expires_at: { gte: new Date() }
+        org_id: orgId,
+        status: InvitationStatus.PENDING
       },
     });
+
+    let isReplacement = false;
     if (existingInvitation) {
-      throw new BadRequestException('Une invitation est déjà en cours pour cet email');
+      isReplacement = true;
+      // Annuler l'invitation existante
+      await this.prisma.invitation.update({
+        where: { id: existingInvitation.id },
+        data: { status: InvitationStatus.CANCELLED }
+      });
     }
 
-    // Annuler les anciennes invitations pour cet email (si il y en a)
+    // Annuler toutes les autres anciennes invitations pour cet email dans cette organisation
+    // (peu importe leur statut - cela évite les conflits de contrainte unique)
     await this.prisma.invitation.updateMany({
-      where: { email, org_id: orgId },
+      where: { 
+        email, 
+        org_id: orgId,
+        status: { not: InvitationStatus.CANCELLED }
+      },
       data: { status: InvitationStatus.CANCELLED }
     });
 
@@ -106,6 +152,7 @@ export class InvitationService {
       emailSent,
       organization: organization.name,
       role: role.name,
+      isReplacement,
     };
   }
 

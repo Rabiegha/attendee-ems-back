@@ -19,8 +19,8 @@ export class CaslAbilityFactory {
       }
     });
 
-    // Special case for org_admin role - can manage all
-    if (user.role === 'org_admin') {
+    // Special case for admin roles - can manage all
+    if (user.role === 'org_admin' || user.role === 'SUPER_ADMIN') {
       can(Action.Manage, 'all');
     }
 

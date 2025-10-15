@@ -29,6 +29,15 @@ export class SendInvitationDto {
   })
   @IsUUID()
   orgId: string;
+
+  @ApiProperty({
+    description: 'Nom de l\'organisation à créer (optionnel, Super Admin uniquement)',
+    example: 'Nouvelle Organisation',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  organizationName?: string;
 }
 
 export class CompleteInvitationDto {

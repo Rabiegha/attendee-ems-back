@@ -120,4 +120,35 @@ export class OrganizationsController {
   async findOne(@Param('id') id: string) {
     return this.organizationsService.findById(id);
   }
+
+  @Get(':id/users')
+  @Permissions('users.read:any', 'users.read:own')
+  @ApiOperation({
+    summary: 'Récupérer les utilisateurs d\'une organisation',
+    description: 'Récupère la liste des utilisateurs d\'une organisation spécifique'
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'ID de l\'organisation',
+    example: '123e4567-e89b-12d3-a456-426614174000'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Utilisateurs récupérés avec succès'
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Non autorisé'
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Permissions insuffisantes'
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Organisation non trouvée'
+  })
+  async getOrganizationUsers(@Param('id') id: string) {
+    return this.organizationsService.getOrganizationUsers(id);
+  }
 }

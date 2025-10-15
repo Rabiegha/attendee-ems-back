@@ -88,6 +88,7 @@ export class UsersService {
       },
       include: {
         role: true,
+        organization: true, // Inclure l'organisation
       },
     });
   }
