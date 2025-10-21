@@ -87,12 +87,19 @@ export class AuthController {
 
     res.cookie(this.configService.authCookieName, result.refresh_token, cookieOptions);
 
-    // Return access token and user info (no refresh token in response)
-    return {
+    // Return access token, user info, and organization (no refresh token in response)
+    const response: any = {
       access_token: result.access_token,
       expires_in: result.expires_in,
       user: result.user,
     };
+
+    // Include organization if present
+    if (result.organization) {
+      response.organization = result.organization;
+    }
+
+    return response;
   }
 
   @Post('refresh')

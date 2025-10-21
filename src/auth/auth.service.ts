@@ -275,23 +275,42 @@ export class AuthService {
     expires_in: number;
     refresh_token: string;
     user: any;
+    organization?: any;
   }> {
     const accessToken = await this.signAccessToken(user);
     const refreshToken = await this.issueRefreshToken(user, ctx);
+
+    // Fetch organization data if not already included
+    let organization = null;
+    if (user.org_id) {
+      organization = await this.prisma.organization.findUnique({
+        where: { id: user.org_id },
+        select: { id: true, name: true, slug: true },
+      });
+    }
 
     const userResponse = {
       id: user.id,
       email: user.email,
       org_id: user.org_id,
+      first_name: user.first_name,
+      last_name: user.last_name,
       role: user.role?.code,
       permissions: user.role?.rolePermissions?.map((rp: any) => rp.permission.code) || [],
     };
 
-    return {
+    const result: any = {
       access_token: accessToken.token,
       expires_in: accessToken.expiresIn,
       refresh_token: refreshToken.token,
       user: userResponse,
     };
+
+    // Only include organization if it exists
+    if (organization) {
+      result.organization = organization;
+    }
+
+    return result;
   }
 }
