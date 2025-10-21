@@ -33,9 +33,9 @@ describe('AppController (e2e)', () => {
   });
 
   describe('Authentication', () => {
-    it('/v1/auth/login (POST) - should login with valid credentials', async () => {
+    it('/auth/login (POST) - should login with valid credentials', async () => {
       const response = await request(app.getHttpServer())
-        .post('/v1/auth/login')
+        .post('/auth/login')
         .send({
           email: 'admin@acme.test',
           password: 'Admin#12345',
@@ -49,9 +49,9 @@ describe('AppController (e2e)', () => {
       accessToken = response.body.access_token;
     });
 
-    it('/v1/auth/login (POST) - should fail with invalid credentials', async () => {
+    it('/auth/login (POST) - should fail with invalid credentials', async () => {
       await request(app.getHttpServer())
-        .post('/v1/auth/login')
+        .post('/auth/login')
         .send({
           email: 'admin@acme.test',
           password: 'wrongpassword',
@@ -59,9 +59,9 @@ describe('AppController (e2e)', () => {
         .expect(401);
     });
 
-    it('/v1/auth/login (POST) - should fail with invalid email format', async () => {
+    it('/auth/login (POST) - should fail with invalid email format', async () => {
       await request(app.getHttpServer())
-        .post('/v1/auth/login')
+        .post('/auth/login')
         .send({
           email: 'invalid-email',
           password: 'Admin#12345',
@@ -71,9 +71,9 @@ describe('AppController (e2e)', () => {
   });
 
   describe('Protected Routes', () => {
-    it('/v1/users (GET) - should return users with valid token', async () => {
+    it('/users (GET) - should return users with valid token', async () => {
       const response = await request(app.getHttpServer())
-        .get('/v1/users')
+        .get('/users')
         .set('Authorization', `Bearer ${accessToken}`)
         .expect(200);
 
@@ -84,22 +84,22 @@ describe('AppController (e2e)', () => {
       expect(Array.isArray(response.body.users)).toBe(true);
     });
 
-    it('/v1/users (GET) - should fail without token', async () => {
+    it('/users (GET) - should fail without token', async () => {
       await request(app.getHttpServer())
-        .get('/v1/users')
+        .get('/users')
         .expect(401);
     });
 
-    it('/v1/users (GET) - should fail with invalid token', async () => {
+    it('/users (GET) - should fail with invalid token', async () => {
       await request(app.getHttpServer())
-        .get('/v1/users')
+        .get('/users')
         .set('Authorization', 'Bearer invalid-token')
         .expect(401);
     });
 
-    it('/v1/organizations/me (GET) - should return organization with valid token', async () => {
+    it('/organizations/me (GET) - should return organization with valid token', async () => {
       const response = await request(app.getHttpServer())
-        .get('/v1/organizations/me')
+        .get('/organizations/me')
         .set('Authorization', `Bearer ${accessToken}`)
         .expect(200);
 
@@ -109,18 +109,18 @@ describe('AppController (e2e)', () => {
       expect(response.body.name).toBe('Acme Corp');
     });
 
-    it('/v1/organizations/me (GET) - should fail without token', async () => {
+    it('/organizations/me (GET) - should fail without token', async () => {
       await request(app.getHttpServer())
-        .get('/v1/organizations/me')
+        .get('/organizations/me')
         .expect(401);
     });
   });
 
   describe('User Creation', () => {
-    it('/v1/users (POST) - should create user with valid data and permissions', async () => {
+    it('/users (POST) - should create user with valid data and permissions', async () => {
       // First get a role ID
       const rolesResponse = await request(app.getHttpServer())
-        .get('/v1/roles')
+        .get('/roles')
         .set('Authorization', `Bearer ${accessToken}`)
         .expect(200);
 
@@ -128,7 +128,7 @@ describe('AppController (e2e)', () => {
       expect(staffRole).toBeDefined();
 
       const response = await request(app.getHttpServer())
-        .post('/v1/users')
+        .post('/users')
         .set('Authorization', `Bearer ${accessToken}`)
         .send({
           email: 'test@acme.test',
@@ -142,9 +142,9 @@ describe('AppController (e2e)', () => {
       expect(response.body.email).toBe('test@acme.test');
     });
 
-    it('/v1/users (POST) - should fail without token', async () => {
+    it('/users (POST) - should fail without token', async () => {
       await request(app.getHttpServer())
-        .post('/v1/users')
+        .post('/users')
         .send({
           email: 'test2@acme.test',
           password: 'TestPassword123',

@@ -42,7 +42,7 @@ describe('Auth Refresh (e2e)', () => {
       };
 
       const response = await request(app.getHttpServer())
-        .post('/v1/auth/login')
+        .post('/auth/login')
         .send(loginDto)
         .expect(201);
 
@@ -71,7 +71,7 @@ describe('Auth Refresh (e2e)', () => {
       };
 
       await request(app.getHttpServer())
-        .post('/v1/auth/login')
+        .post('/auth/login')
         .send(loginDto)
         .expect(401);
     });
@@ -88,7 +88,7 @@ describe('Auth Refresh (e2e)', () => {
       };
 
       const loginResponse = await request(app.getHttpServer())
-        .post('/v1/auth/login')
+        .post('/auth/login')
         .send(loginDto);
 
       const cookies = loginResponse.headers['set-cookie'];
@@ -100,7 +100,7 @@ describe('Auth Refresh (e2e)', () => {
 
     it('should refresh access token with valid refresh token', async () => {
       const response = await request(app.getHttpServer())
-        .post('/v1/auth/refresh')
+        .post('/auth/refresh')
         .set('Cookie', refreshTokenCookie)
         .expect(200);
 
@@ -120,7 +120,7 @@ describe('Auth Refresh (e2e)', () => {
 
     it('should fail without refresh token cookie', async () => {
       await request(app.getHttpServer())
-        .post('/v1/auth/refresh')
+        .post('/auth/refresh')
         .expect(401);
     });
 
@@ -128,7 +128,7 @@ describe('Auth Refresh (e2e)', () => {
       const invalidCookie = `${configService.authCookieName}=invalid.token.here`;
       
       await request(app.getHttpServer())
-        .post('/v1/auth/refresh')
+        .post('/auth/refresh')
         .set('Cookie', invalidCookie)
         .expect(401);
     });
@@ -145,7 +145,7 @@ describe('Auth Refresh (e2e)', () => {
       };
 
       const loginResponse = await request(app.getHttpServer())
-        .post('/v1/auth/login')
+        .post('/auth/login')
         .send(loginDto);
 
       const cookies = loginResponse.headers['set-cookie'];
@@ -157,7 +157,7 @@ describe('Auth Refresh (e2e)', () => {
 
     it('should logout and clear refresh token cookie', async () => {
       const response = await request(app.getHttpServer())
-        .post('/v1/auth/logout')
+        .post('/auth/logout')
         .set('Cookie', refreshTokenCookie)
         .expect(200);
 
@@ -178,7 +178,7 @@ describe('Auth Refresh (e2e)', () => {
 
     it('should work even without refresh token cookie', async () => {
       await request(app.getHttpServer())
-        .post('/v1/auth/logout')
+        .post('/auth/logout')
         .expect(200);
     });
   });
@@ -192,7 +192,7 @@ describe('Auth Refresh (e2e)', () => {
       };
 
       const loginResponse = await request(app.getHttpServer())
-        .post('/v1/auth/login')
+        .post('/auth/login')
         .send(loginDto);
 
       const initialCookies = loginResponse.headers['set-cookie'];
@@ -203,13 +203,13 @@ describe('Auth Refresh (e2e)', () => {
 
       // First refresh - should work
       const firstRefreshResponse = await request(app.getHttpServer())
-        .post('/v1/auth/refresh')
+        .post('/auth/refresh')
         .set('Cookie', initialRefreshCookie)
         .expect(200);
 
       // Try to use the old refresh token again - should fail
       await request(app.getHttpServer())
-        .post('/v1/auth/refresh')
+        .post('/auth/refresh')
         .set('Cookie', initialRefreshCookie)
         .expect(401);
     });
