@@ -14,9 +14,9 @@ export const configSchema = z.object({
   JWT_EXPIRES_IN: z.string().default('900s'),
   
   // Auth Cookie Configuration
-  AUTH_COOKIE_NAME: z.string().default('__Host-refresh_token'),
+  AUTH_COOKIE_NAME: z.string().default('refresh_token'),
   AUTH_COOKIE_DOMAIN: z.string().optional(),
-  AUTH_COOKIE_SECURE: z.string().transform(val => val === 'true').default('true'),
+  AUTH_COOKIE_SECURE: z.string().default('false').transform(val => val === 'true'),
   AUTH_COOKIE_SAMESITE: z.enum(['strict', 'lax', 'none']).default('lax'),
   
   // CORS Configuration
