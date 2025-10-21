@@ -77,7 +77,7 @@ export class AuthController {
       httpOnly: true,
       secure: this.configService.authCookieSecure,
       sameSite: this.configService.authCookieSameSite as 'strict' | 'lax' | 'none',
-      path: '/auth/refresh',
+      path: '/',
       maxAge: this.secondsFromTtl(this.configService.jwtRefreshTtl) * 1000,
     };
 
@@ -146,7 +146,7 @@ export class AuthController {
       httpOnly: true,
       secure: this.configService.authCookieSecure,
       sameSite: this.configService.authCookieSameSite as 'strict' | 'lax' | 'none',
-      path: '/auth/refresh',
+      path: '/',
       maxAge: this.secondsFromTtl(this.configService.jwtRefreshTtl) * 1000,
     };
 
@@ -190,7 +190,7 @@ export class AuthController {
     }
 
     // Clear the refresh token cookie
-    res.clearCookie(this.configService.authCookieName, { path: '/auth/refresh' });
+    res.clearCookie(this.configService.authCookieName, { path: '/' });
 
     return { ok: true };
   }

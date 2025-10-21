@@ -8,7 +8,7 @@ import { InvitationModule } from '../modules/invitation/invitation.module';
 
 export const appRoutes: Routes = [
   {
-    path: 'v1',
+    path: '',
     children: [
       {
         path: 'auth',

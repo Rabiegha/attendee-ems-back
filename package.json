@@ -45,7 +45,9 @@
     "docker:logs": "docker-compose -f docker-compose.dev.yml logs -f api",
     "docker:logs:db": "docker-compose -f docker-compose.dev.yml logs -f db",
     "docker:shell": "docker-compose -f docker-compose.dev.yml exec api bash",
-    "docker:shell:db": "docker-compose -f docker-compose.dev.yml exec db psql -U postgres -d ems"
+    "docker:shell:db": "docker-compose -f docker-compose.dev.yml exec db psql -U postgres -d ems",
+    "docker:install": "docker-compose -f docker-compose.dev.yml exec api npm i",
+    "docker:restart": "docker-compose -f docker-compose.dev.yml restart api"
   },
   "dependencies": {
     "@casl/ability": "^6.5.0",

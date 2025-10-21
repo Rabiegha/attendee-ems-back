@@ -38,11 +38,6 @@ export class ConfigService {
     return this.config.JWT_REFRESH_TTL;
   }
 
-  // Legacy JWT (for backward compatibility)
-  get jwtSecret(): string {
-    return this.config.JWT_SECRET;
-  }
-
   get jwtExpiresIn(): string {
     return this.config.JWT_EXPIRES_IN;
   }
