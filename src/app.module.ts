@@ -9,6 +9,7 @@ import { OrganizationsModule } from './modules/organizations/organizations.modul
 import { RolesModule } from './modules/roles/roles.module';
 import { PermissionsModule } from './modules/permissions/permissions.module';
 import { InvitationModule } from './modules/invitation/invitation.module';
+import { AttendeesModule } from './modules/attendees/attendees.module';
 import { HealthModule } from './health/health.module';
 import { RequestLoggerMiddleware } from './common/middleware/request-logger.middleware';
 import { appRoutes } from './router/app.routes';
@@ -24,6 +25,7 @@ import { appRoutes } from './router/app.routes';
     RolesModule,
     PermissionsModule,
     InvitationModule,
+    AttendeesModule,
     HealthModule,
     RouterModule.register(appRoutes),
   ],

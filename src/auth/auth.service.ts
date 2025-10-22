@@ -191,7 +191,33 @@ export class AuthService {
 
       // Check if token is revoked
       if (refreshTokenRecord.revokedAt) {
-        // Reuse detection: revoke all user sessions
+        // Tolérance de 30 secondes pour la réutilisation (race conditions, multi-onglets)
+        const revokedRecently = refreshTokenRecord.revokedAt.getTime() > Date.now() - 30000;
+        
+        if (revokedRecently && refreshTokenRecord.replacedById) {
+          // Token révoqué récemment et remplacé : retourner le nouveau token au lieu de révoquer tout
+          console.log('[AUTH] Token recently revoked, returning replacement token');
+          const replacementToken = await this.prisma.refreshToken.findUnique({
+            where: { jti: refreshTokenRecord.replacedById },
+            include: { user: { include: { role: { include: { rolePermissions: { include: { permission: true } } } } } } },
+          });
+          
+          if (replacementToken && !replacementToken.revokedAt && replacementToken.expiresAt > new Date()) {
+            // Le token de remplacement est valide, générer un access token
+            const user = replacementToken.user;
+            const newAccessToken = await this.signAccessToken(user);
+            
+            return {
+              access: {
+                token: newAccessToken.token,
+                expiresIn: newAccessToken.expiresIn,
+              },
+              newRefreshTokenRaw: oldTokenRaw, // Garder le même refresh token (déjà remplacé)
+            };
+          }
+        }
+        
+        // Token révoqué depuis longtemps ou pas de remplacement valide : révoquer toutes les sessions
         await this.revokeAllUserSessions(userId);
         throw new UnauthorizedException('Refresh token has been revoked');
       }
