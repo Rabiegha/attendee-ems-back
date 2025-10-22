@@ -23,6 +23,7 @@ model Organization {
   // Relations
   users       User[]
   invitations Invitation[]
+  attendees   Attendee[]
 
   @@map("organizations")
 }
@@ -167,5 +168,56 @@ enum InvitationStatus {
   ACCEPTED  // Acceptée (compte créé)
   EXPIRED   // Expirée
   CANCELLED // Annulée par l'admin
+}
+
+model Attendee {
+  id              String   @id @default(uuid()) @db.Uuid
+  org_id          String   @db.Uuid
+  default_type_id String?  @db.Uuid
+
+  email           String   @db.Citext
+  first_name      String?
+  last_name       String?
+  phone           String?
+  company         String?
+  job_title       String?
+  country         String?
+  metadata        Json?
+
+  labels          String[] @db.Text
+  notes           String?
+
+  is_active       Boolean  @default(true)
+  created_at      DateTime @default(now()) @map("created_at")
+  updated_at      DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  organization    Organization @relation(fields: [org_id], references: [id], onDelete: Cascade)
+  revisions       AttendeeRevision[]
+
+  @@unique([org_id, email])
+  @@index([org_id])
+  @@index([default_type_id])
+  @@index([email])
+  @@map("attendees")
+}
+
+model AttendeeRevision {
+  id          String   @id @default(uuid()) @db.Uuid
+  org_id      String   @db.Uuid
+  attendee_id String   @db.Uuid
+  change_type String   // 'import' | 'merge' | 'manual' | 'upsert'
+  source      String?  // 'api' | 'ui' | 'csv:<file>'
+  snapshot    Json
+  changed_by  String?  @db.Uuid
+  note        String?
+  changed_at  DateTime @default(now())
+
+  // Relations
+  attendee    Attendee @relation(fields: [attendee_id], references: [id], onDelete: Cascade)
+
+  @@index([org_id, attendee_id])
+  @@index([attendee_id])
+  @@map("attendee_revisions")
 }
 

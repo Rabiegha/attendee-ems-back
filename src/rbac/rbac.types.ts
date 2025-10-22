@@ -8,6 +8,6 @@ export enum Action {
   Delete = 'delete',
 }
 
-export type Subjects = 'all' | 'User' | 'Organization' | 'Role' | 'Permission';
+export type Subjects = 'all' | 'User' | 'Organization' | 'Role' | 'Permission' | 'Attendee';
 
 export type AppAbility = Ability<[Action, Subjects]>;

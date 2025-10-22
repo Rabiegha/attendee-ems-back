@@ -71,6 +71,7 @@ export class PermissionsGuard implements CanActivate {
       'organizations': 'Organization',
       'roles': 'Role',
       'permissions': 'Permission',
+      'attendee': 'Attendee',
     };
 
     return [actionMap[action] || Action.Read, subjectMap[subject] || 'all'];
