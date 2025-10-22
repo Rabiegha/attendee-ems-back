@@ -6,36 +6,169 @@ export interface PermissionSeedData {
   description?: string;
 }
 
+/**
+ * Liste complète des permissions du système EMS
+ * Organisées par catégorie pour faciliter la maintenance
+ */
 const permissionsData: PermissionSeedData[] = [
-  // Organization permissions
-  { code: 'organizations.read', name: 'Read organization', description: 'View organization information' },
-  { code: 'organizations.read:any', name: 'Read any organization', description: 'View any organization information' },
-  { code: 'organizations.read:own', name: 'Read own organization', description: 'View own organization information' },
-  { code: 'organizations.create', name: 'Create organization', description: 'Create new organizations' },
+  // ==================== ORGANIZATIONS ====================
+  { 
+    code: 'organizations.read:own', 
+    name: 'Read own organization', 
+    description: 'View own organization information' 
+  },
+  { 
+    code: 'organizations.read:any', 
+    name: 'Read any organization', 
+    description: 'View any organization information (SUPER_ADMIN only)' 
+  },
+  { 
+    code: 'organizations.create', 
+    name: 'Create organization', 
+    description: 'Create new organizations (SUPER_ADMIN only)' 
+  },
+  { 
+    code: 'organizations.update', 
+    name: 'Update organization', 
+    description: 'Update organization settings' 
+  },
   
-  // User permissions
-  { code: 'users.create', name: 'Create users', description: 'Create users in organization' },
-  { code: 'users.read', name: 'Read users', description: 'View user information in organization' },
-  { code: 'users.read:own', name: 'Read own user info', description: 'View own user information' },
-  { code: 'users.read:any', name: 'Read any user info', description: 'View any user information in organization' },
+  // ==================== USERS ====================
+  { 
+    code: 'users.read:own', 
+    name: 'Read own profile', 
+    description: 'View own user profile' 
+  },
+  { 
+    code: 'users.read:any', 
+    name: 'Read users', 
+    description: 'View all users in organization' 
+  },
+  { 
+    code: 'users.create', 
+    name: 'Create users', 
+    description: 'Create new users in organization' 
+  },
+  { 
+    code: 'users.update', 
+    name: 'Update users', 
+    description: 'Update user information' 
+  },
+  { 
+    code: 'users.delete', 
+    name: 'Delete users', 
+    description: 'Delete users from organization' 
+  },
   
-  // Event permissions
-  { code: 'event:read:any', name: 'Read any event', description: 'View event information' },
-  { code: 'event:create', name: 'Create event', description: 'Create new events' },
-  { code: 'event:update', name: 'Update event', description: 'Update event information' },
-  { code: 'event:assign-partner', name: 'Assign partner to event', description: 'Assign partners to events' },
-  { code: 'event:assign-host', name: 'Assign host to event', description: 'Assign hostesses to events' },
+  // ==================== EVENTS ====================
+  { 
+    code: 'events.read:own', 
+    name: 'Read assigned events', 
+    description: 'View events assigned to user (PARTNER, HOSTESS)' 
+  },
+  { 
+    code: 'events.read:any', 
+    name: 'Read all events', 
+    description: 'View all events in organization' 
+  },
+  { 
+    code: 'events.create', 
+    name: 'Create events', 
+    description: 'Create new events' 
+  },
+  { 
+    code: 'events.update', 
+    name: 'Update events', 
+    description: 'Update event information' 
+  },
+  { 
+    code: 'events.delete', 
+    name: 'Delete events', 
+    description: 'Delete events' 
+  },
+  { 
+    code: 'events.publish', 
+    name: 'Publish events', 
+    description: 'Publish events and make them public' 
+  },
   
-  // Attendee permissions
-  { code: 'attendee:read', name: 'Read attendees', description: 'View attendee information' },
-  { code: 'attendee:create', name: 'Create attendee', description: 'Create new attendees' },
+  // ==================== ATTENDEES ====================
+  { 
+    code: 'attendees.read', 
+    name: 'Read attendees', 
+    description: 'View attendee information' 
+  },
+  { 
+    code: 'attendees.create', 
+    name: 'Create attendees', 
+    description: 'Add new attendees' 
+  },
+  { 
+    code: 'attendees.update', 
+    name: 'Update attendees', 
+    description: 'Update attendee information' 
+  },
+  { 
+    code: 'attendees.delete', 
+    name: 'Delete attendees', 
+    description: 'Delete attendees' 
+  },
+  { 
+    code: 'attendees.checkin', 
+    name: 'Check-in attendees', 
+    description: 'Perform check-in for attendees at events' 
+  },
+  { 
+    code: 'attendees.export', 
+    name: 'Export attendees', 
+    description: 'Export attendee data' 
+  },
   
-  // Role permissions
-  { code: 'roles.read', name: 'Read roles', description: 'View role information' },
-  { code: 'roles.assign', name: 'Assign roles', description: 'Assign roles to users' },
+  // ==================== ROLES & PERMISSIONS ====================
+  { 
+    code: 'roles.read', 
+    name: 'Read roles', 
+    description: 'View role information' 
+  },
+  { 
+    code: 'roles.manage', 
+    name: 'Manage roles & permissions', 
+    description: 'Access role management page and modify role permissions (ADMIN+ only)' 
+  },
+  { 
+    code: 'roles.assign', 
+    name: 'Assign roles', 
+    description: 'Assign roles to users (ADMIN cannot change own role)' 
+  },
   
-  // Permission permissions
-  { code: 'permissions.read', name: 'Read permissions', description: 'View permission definitions' },
+  // ==================== INVITATIONS ====================
+  { 
+    code: 'invitations.create', 
+    name: 'Send invitations', 
+    description: 'Invite new users to organization' 
+  },
+  { 
+    code: 'invitations.read', 
+    name: 'Read invitations', 
+    description: 'View pending invitations' 
+  },
+  { 
+    code: 'invitations.cancel', 
+    name: 'Cancel invitations', 
+    description: 'Cancel pending invitations' 
+  },
+  
+  // ==================== ANALYTICS & REPORTS ====================
+  { 
+    code: 'analytics.view', 
+    name: 'View analytics', 
+    description: 'Access analytics and reports' 
+  },
+  { 
+    code: 'reports.export', 
+    name: 'Export reports', 
+    description: 'Export reports and data' 
+  },
 ];
 
 export async function seedPermissions(): Promise<SeedResult[]> {
@@ -94,59 +227,232 @@ export async function getAllPermissions() {
   return await prisma.permission.findMany();
 }
 
-// Mapping des permissions par rôle selon les spécifications
+/**
+ * Mapping des permissions par rôle
+ * 
+ * RÈGLES:
+ * - SUPER_ADMIN: Développeurs uniquement, accès cross-tenant, TOUTES les permissions
+ * - ADMIN: Toutes les permissions dans son organisation, SAUF ne peut pas modifier son propre rôle
+ * - MANAGER: Gestion événements et participants, PAS de gestion des rôles/permissions
+ * - VIEWER: Lecture seule
+ * - PARTNER: Événements assignés uniquement
+ * - HOSTESS: Check-in événements assignés uniquement
+ */
 export const rolePermissionMapping: Record<string, string[]> = {
+  // ==================== SUPER_ADMIN ====================
+  // Accès total système, toutes organisations
   'SUPER_ADMIN': [
-    'organizations.read:any', 'organizations.create',
-    'users.create', 'users.read:any', 'users.read:own',
-    'event:read:any', 'event:create', 'event:update', 'event:assign-partner', 'event:assign-host',
-    'attendee:read', 'attendee:create',
-    'roles.read', 'roles.assign',
-    'permissions.read'
+    // Organizations
+    'organizations.read:own',
+    'organizations.read:any',
+    'organizations.create',
+    'organizations.update',
+    
+    // Users
+    'users.read:own',
+    'users.read:any',
+    'users.create',
+    'users.update',
+    'users.delete',
+    
+    // Events
+    'events.read:own',
+    'events.read:any',
+    'events.create',
+    'events.update',
+    'events.delete',
+    'events.publish',
+    
+    // Attendees
+    'attendees.read',
+    'attendees.create',
+    'attendees.update',
+    'attendees.delete',
+    'attendees.checkin',
+    'attendees.export',
+    
+    // Roles
+    'roles.read',
+    'roles.manage',  // Accès à la page de gestion des permissions
+    'roles.assign',  // Peut modifier TOUS les rôles (y compris ADMIN)
+    
+    // Invitations
+    'invitations.create',
+    'invitations.read',
+    'invitations.cancel',
+    
+    // Analytics
+    'analytics.view',
+    'reports.export',
   ],
+  
+  // ==================== ADMIN ====================
+  // Toutes permissions dans l'organisation, SAUF modification propre rôle
   'ADMIN': [
-    'users.create', 'users.read:any', 'users.read:own',
-    'event:read:any', 'event:create', 'event:update', 'event:assign-partner', 'event:assign-host',
-    'attendee:read', 'attendee:create',
-    'roles.read', 'roles.assign',
-    'permissions.read'
+    // Organizations
+    'organizations.read:own',
+    'organizations.update',
+    
+    // Users
+    'users.read:own',
+    'users.read:any',
+    'users.create',        // Créer un user = envoyer une invitation (invitations.create incluse)
+    'users.update',
+    'users.delete',
+    
+    // Events
+    'events.read:any',
+    'events.create',
+    'events.update',
+    'events.delete',
+    'events.publish',
+    
+    // Attendees
+    'attendees.read',
+    'attendees.create',
+    'attendees.update',
+    'attendees.delete',
+    'attendees.checkin',
+    'attendees.export',
+    
+    // Roles
+    'roles.read',
+    'roles.manage',  // Accès à la page de gestion des permissions
+    'roles.assign',  // Peut assigner rôles SAUF son propre rôle (guard côté backend)
+    
+    // Invitations (lié à users.create - création d'user passe par invitation)
+    'invitations.create',  // ⚠️ Obligatoire pour users.create (logique métier)
+    'invitations.read',
+    'invitations.cancel',
+    
+    // Analytics
+    'analytics.view',
+    'reports.export',
   ],
+  
+  // ==================== MANAGER ====================
+  // Opérationnel : peut créer/modifier mais PAS supprimer. Peut inviter des users avec rôles ≤ MANAGER
   'MANAGER': [
-    'users.read:any', 'users.read:own',
-    'event:read:any', 'event:create', 'event:update', 'event:assign-partner', 'event:assign-host',
-    'attendee:read', 'attendee:create',
-    'roles.read', 'roles.assign',
-    'permissions.read'
+    // Organizations
+    'organizations.read:own',
+    
+    // Users - Peut créer, modifier, voir mais PAS supprimer
+    'users.read:own',
+    'users.read:any',
+    'users.create',        // Créer un user = envoyer une invitation (invitations.create incluse)
+    'users.update',
+    
+    // Events - Peut créer, modifier mais PAS supprimer
+    'events.read:any',
+    'events.create',
+    'events.update',
+    'events.publish',
+    
+    // Attendees - Lecture et check-in uniquement (PAS de modification/suppression)
+    'attendees.read',
+    'attendees.create',
+    'attendees.checkin',
+    'attendees.export',
+    
+    // Roles - Peut voir et assigner des rôles (≤ MANAGER seulement, guard backend)
+    'roles.read',
+    'roles.assign',
+    
+    // Invitations (lié à users.create - création d'user passe par invitation)
+    'invitations.create',  // ⚠️ Obligatoire pour users.create (logique métier)
+    'invitations.read',
+    
+    // Analytics
+    'analytics.view',
+    'reports.export',
   ],
+  
+  // ==================== VIEWER ====================
+  // Lecture seule complète : voit tout, ne fait rien
   'VIEWER': [
+    // Organizations
+    'organizations.read:own',
+    
+    // Users - Voir tous les users
     'users.read:own',
-    'event:read:any',
-    'attendee:read'
+    'users.read:any',
+    
+    // Events - Voir tous les événements
+    'events.read:any',
+    
+    // Attendees - Voir tous les participants
+    'attendees.read',
+    
+    // Roles - Voir les rôles
+    'roles.read',
+    
+    // Invitations - Voir les invitations
+    'invitations.read',
+    
+    // Analytics
+    'analytics.view',
+    'reports.export',
   ],
+  
+  // ==================== PARTNER ====================
+  // Événements assignés uniquement + Analytics de ses events
   'PARTNER': [
+    // Users
     'users.read:own',
-    'event:read:any'
+    
+    // Events - uniquement assignés (logique applicative)
+    'events.read:own',
+    
+    // Attendees - uniquement pour ses événements
+    'attendees.read',
+    
+    // Analytics de ses événements
+    'analytics.view',
   ],
+  
+  // ==================== HOSTESS ====================
+  // Check-in pour événements assignés uniquement
   'HOSTESS': [
+    // Users
     'users.read:own',
-    'event:read:any'
-  ]
+    
+    // Events - uniquement assignés (logique applicative)
+    'events.read:own',
+    
+    // Attendees - check-in uniquement
+    'attendees.read',
+    'attendees.checkin',
+  ],
 };
 
 // Fonction pour assigner toutes les permissions selon le mapping des rôles
+// IMPORTANT: Cette fonction assigne les permissions à TOUS les rôles (templates + org-specific)
 export async function assignAllRolePermissions(): Promise<SeedResult[]> {
   const results: SeedResult[] = [];
   
   try {
-    for (const [roleCode, permissionCodes] of Object.entries(rolePermissionMapping)) {
-      const role = await prisma.role.findUnique({
-        where: { code: roleCode }
-      });
+    // Récupérer tous les rôles (incluant les templates système ET les rôles par organisation)
+    const allRoles = await prisma.role.findMany({
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        org_id: true,
+        is_system_role: true,
+      }
+    });
+
+    logSuccess(`\n📋 Found ${allRoles.length} total roles to assign permissions to`);
+    logSuccess(`  - System templates: ${allRoles.filter(r => r.is_system_role).length}`);
+    logSuccess(`  - Org-specific roles: ${allRoles.filter(r => !r.is_system_role).length}`);
+
+    for (const role of allRoles) {
+      const permissionCodes = rolePermissionMapping[role.code];
       
-      if (!role) {
+      if (!permissionCodes) {
         results.push({
           success: false,
-          message: `Role '${roleCode}' not found`,
+          message: `No permission mapping found for role code '${role.code}'`,
         });
         continue;
       }
@@ -154,8 +460,11 @@ export async function assignAllRolePermissions(): Promise<SeedResult[]> {
       const roleResults = await assignPermissionsToRole(role.id, permissionCodes);
       results.push(...roleResults);
       
-      logSuccess(`Assigned ${permissionCodes.length} permissions to role '${role.name}'`);
+      const roleType = role.is_system_role ? '(system template)' : `(org: ${role.org_id?.substring(0, 8)}...)`;
+      logSuccess(`✓ Assigned ${permissionCodes.length} permissions to '${role.name}' ${roleType}`);
     }
+    
+    logSuccess(`\n✅ Total permission assignments: ${results.filter(r => r.success).length}`);
     
     return results;
   } catch (error) {

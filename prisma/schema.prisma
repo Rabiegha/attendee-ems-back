@@ -22,6 +22,7 @@ model Organization {
 
   // Relations
   users       User[]
+  roles       Role[]       // Rôles personnalisés de l'organisation
   invitations Invitation[]
 
   @@map("organizations")
@@ -63,19 +64,25 @@ model User {
 }
 
 model Role {
-  id          String   @id @default(uuid()) @db.Uuid
-  code        String
-  name        String
-  description String?
-  created_at  DateTime @default(now()) @map("created_at")
-  updated_at  DateTime @updatedAt @map("updated_at")
+  id              String        @id @default(uuid()) @db.Uuid
+  org_id          String?       @db.Uuid  // NULL = rôle système (template), non-NULL = rôle organisation
+  code            String
+  name            String
+  description     String?
+  level           Int           @default(99)  // Hiérarchie: 0=SUPER_ADMIN, 1=ADMIN, 2=MANAGER, 3=PARTNER, 4=VIEWER, 5=HOSTESS
+  is_system_role  Boolean       @default(false)  // true = template non modifiable
+  created_at      DateTime      @default(now()) @map("created_at")
+  updated_at      DateTime      @updatedAt @map("updated_at")
 
   // Relations
+  organization    Organization? @relation(fields: [org_id], references: [id], onDelete: Cascade)
   users           User[]
   invitations     Invitation[]
   rolePermissions RolePermission[]
 
-  @@unique([code])
+  @@unique([org_id, code])  // Code unique par organisation
+  @@index([org_id])
+  @@index([is_system_role])
   @@map("roles")
 }
 

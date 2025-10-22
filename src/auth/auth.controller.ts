@@ -1,9 +1,10 @@
-import { Controller, Post, Body, UnauthorizedException, Req, Res, HttpCode, HttpStatus } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiCookieAuth } from '@nestjs/swagger';
+import { Controller, Post, Body, UnauthorizedException, Req, Res, HttpCode, HttpStatus, Get, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiCookieAuth, ApiBearerAuth } from '@nestjs/swagger';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { ConfigService } from '../config/config.service';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 
 @ApiTags('auth')
 @Controller()
@@ -200,6 +201,41 @@ export class AuthController {
     res.clearCookie(this.configService.authCookieName, { path: '/' });
 
     return { ok: true };
+  }
+
+  @Get('policy')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Récupérer la politique de permissions CASL',
+    description: 'Retourne les règles CASL basées sur les permissions actuelles du rôle de l\'utilisateur connecté. Permet la mise à jour en temps réel des permissions côté frontend.'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Règles CASL retournées avec succès',
+    schema: {
+      type: 'object',
+      properties: {
+        rules: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              action: { type: 'string', example: 'read' },
+              subject: { type: 'string', example: 'User' },
+              conditions: { type: 'object', example: { org_id: 'org-uuid' } }
+            }
+          }
+        }
+      }
+    }
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Non authentifié'
+  })
+  async getPolicy(@Req() req: any) {
+    return await this.authService.getPolicyRules(req.user);
   }
 
   private secondsFromTtl(ttl: string): number {

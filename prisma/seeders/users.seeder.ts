@@ -120,27 +120,40 @@ export async function seedUsers(): Promise<SeedResult[]> {
       throw new Error('Required organizations not found');
     }
     
-    // Récupérer tous les rôles pour les mapper
-    const roles = await prisma.role.findMany();
-    const roleMap = new Map(roles.map(role => [role.code, role.id]));
-    
     for (const userData of usersData) {
-      const roleId = roleMap.get(userData.roleCode);
-      
-      if (!roleId) {
-        results.push({
-          success: false,
-          message: `Role '${userData.roleCode}' not found for user '${userData.email}'`,
-        });
-        continue;
-      }
-      
       // Déterminer l'organisation selon l'email
       let orgId: string;
       if (userData.email.includes('@system.com')) {
         orgId = systemOrg.id;
       } else {
         orgId = acmeOrg.id;
+      }
+
+      // Récupérer le rôle approprié pour cette organisation
+      // SUPER_ADMIN est global (org_id = NULL), les autres sont spécifiques à l'org
+      let role;
+      if (userData.roleCode === 'SUPER_ADMIN') {
+        role = await prisma.role.findFirst({
+          where: {
+            code: 'SUPER_ADMIN',
+            org_id: null,
+          }
+        });
+      } else {
+        role = await prisma.role.findFirst({
+          where: {
+            code: userData.roleCode,
+            org_id: orgId,
+          }
+        });
+      }
+      
+      if (!role) {
+        results.push({
+          success: false,
+          message: `Role '${userData.roleCode}' not found for organization ${orgId} for user '${userData.email}'`,
+        });
+        continue;
       }
       
       const hashedPassword = await bcrypt.hash(userData.password, 10);
@@ -159,7 +172,7 @@ export async function seedUsers(): Promise<SeedResult[]> {
           where: { id: existingUser.id },
           data: {
             password_hash: hashedPassword,
-            role_id: roleId,
+            role_id: role.id,
             first_name: userData.first_name,
             last_name: userData.last_name,
             phone: userData.phone,
@@ -176,7 +189,7 @@ export async function seedUsers(): Promise<SeedResult[]> {
             org_id: orgId,
             email: userData.email,
             password_hash: hashedPassword,
-            role_id: roleId,
+            role_id: role.id,
             first_name: userData.first_name,
             last_name: userData.last_name,
             phone: userData.phone,
@@ -198,7 +211,7 @@ export async function seedUsers(): Promise<SeedResult[]> {
         },
       });
       
-      logSuccess(`Created user: ${user.email} in organization: ${orgId === systemOrg.id ? 'System' : 'Acme Corp'}`);
+      logSuccess(`✓ User: ${user.email} in organization: ${orgId === systemOrg.id ? 'System' : 'Acme Corp'}`);
     }
     
     return results;
@@ -220,21 +233,6 @@ export async function getUserByEmail(organizationId: string, email: string) {
     where: {
       org_id: organizationId,
       email: email,
-    },
-    include: {
-      role: true,
-    },
-  });
-}
-
-// Fonction pour obtenir tous les utilisateurs d'une organisation
-export async function getUsersByOrganization(organizationId: string) {
-  return await prisma.user.findMany({
-    where: {
-      org_id: organizationId,
-    },
-    include: {
-      role: true,
     },
   });
 }

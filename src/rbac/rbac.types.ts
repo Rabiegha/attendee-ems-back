@@ -8,6 +8,19 @@ export enum Action {
   Delete = 'delete',
 }
 
-export type Subjects = 'all' | 'User' | 'Organization' | 'Role' | 'Permission';
+/**
+ * Tous les subjects (ressources) du système EMS
+ */
+export type Subjects = 
+  | 'all' 
+  | 'User' 
+  | 'Organization' 
+  | 'Role' 
+  | 'Permission'
+  | 'Event'
+  | 'Attendee'
+  | 'Invitation'
+  | 'Analytics'
+  | 'Report';
 
 export type AppAbility = Ability<[Action, Subjects]>;

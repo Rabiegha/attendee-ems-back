@@ -11,7 +11,7 @@ export class UsersService {
     private authService: AuthService,
   ) {}
 
-  async create(createUserDto: CreateUserDto, orgId: string): Promise<User> {
+  async create(createUserDto: CreateUserDto, orgId: string, creatorRoleLevel?: number): Promise<User> {
     // Check if user already exists in this organization
     const existingUser = await this.prisma.user.findFirst({
       where: { 
@@ -22,6 +22,29 @@ export class UsersService {
 
     if (existingUser) {
       throw new BadRequestException('User with this email already exists in organization');
+    }
+
+    // Vérification hiérarchique : empêcher la création de rôles supérieurs ou égaux
+    // Règle : Un utilisateur peut créer uniquement des utilisateurs de niveau INFÉRIEUR OU ÉGAL au sien
+    // Niveau plus bas = plus de pouvoir (SUPER_ADMIN = 0, ADMIN = 1, MANAGER = 2, etc.)
+    if (creatorRoleLevel !== undefined) {
+      const targetRole = await this.prisma.role.findUnique({
+        where: { id: createUserDto.role_id },
+        select: { level: true, code: true, name: true }
+      });
+
+      if (!targetRole) {
+        throw new BadRequestException('Target role not found');
+      }
+
+      // Un MANAGER (level 2) peut créer : MANAGER (2), PARTNER (3), VIEWER (4), HOSTESS (5)
+      // Un MANAGER ne peut PAS créer : SUPER_ADMIN (0) ou ADMIN (1)
+      if (targetRole.level < creatorRoleLevel) {
+        throw new BadRequestException(
+          `You cannot create users with role '${targetRole.name}' (level ${targetRole.level}). ` +
+          `Your role level is ${creatorRoleLevel}. You can only assign roles of level ${creatorRoleLevel} or higher.`
+        );
+      }
     }
 
     const hashedPassword = await this.authService.hashPassword(createUserDto.password);
@@ -106,6 +129,78 @@ export class UsersService {
       include: {
         role: true,
       },
+    });
+  }
+
+  async update(
+    id: string, 
+    updateData: Partial<CreateUserDto>, 
+    orgId: string, 
+    updaterUserId: string,
+    updaterRoleLevel?: number
+  ): Promise<User> {
+    // Vérifier que l'utilisateur à modifier existe dans l'organisation
+    const targetUser = await this.prisma.user.findFirst({
+      where: { id, org_id: orgId },
+      include: { role: true }
+    });
+
+    if (!targetUser) {
+      throw new BadRequestException('User not found in organization');
+    }
+
+    // Empêcher un utilisateur de modifier son propre rôle
+    if (targetUser.id === updaterUserId && updateData.role_id) {
+      throw new BadRequestException('You cannot modify your own role');
+    }
+
+    // Vérification hiérarchique pour modification de rôle
+    // Règle : Un utilisateur peut modifier uniquement les rôles STRICTEMENT INFÉRIEURS au sien
+    if (updateData.role_id && updaterRoleLevel !== undefined) {
+      const targetCurrentRole = targetUser.role;
+      const newRole = await this.prisma.role.findUnique({
+        where: { id: updateData.role_id },
+        select: { level: true, code: true, name: true }
+      });
+
+      if (!newRole) {
+        throw new BadRequestException('Target role not found');
+      }
+
+      // Vérifier que l'utilisateur cible a un niveau inférieur (level plus élevé)
+      // Un MANAGER (level 2) peut modifier uniquement : PARTNER (3), VIEWER (4), HOSTESS (5)
+      // Un MANAGER ne peut PAS modifier : SUPER_ADMIN (0), ADMIN (1), ou autre MANAGER (2)
+      if (targetCurrentRole.level <= updaterRoleLevel) {
+        throw new BadRequestException(
+          `You cannot modify users with role '${targetCurrentRole.name}' (level ${targetCurrentRole.level}). ` +
+          `Your role level is ${updaterRoleLevel}. You can only modify users with role level strictly higher than ${updaterRoleLevel}.`
+        );
+      }
+
+      // Vérifier que le nouveau rôle assigné est aussi de niveau inférieur
+      if (newRole.level <= updaterRoleLevel) {
+        throw new BadRequestException(
+          `You cannot assign role '${newRole.name}' (level ${newRole.level}). ` +
+          `Your role level is ${updaterRoleLevel}. You can only assign roles of level strictly higher than ${updaterRoleLevel}.`
+        );
+      }
+    }
+
+    // Préparer les données de mise à jour
+    const dataToUpdate: any = {
+      ...updateData,
+    };
+
+    // Si un nouveau mot de passe est fourni, le hasher
+    if (updateData.password) {
+      dataToUpdate.password_hash = await this.authService.hashPassword(updateData.password);
+      delete dataToUpdate.password;
+    }
+
+    return this.prisma.user.update({
+      where: { id },
+      data: dataToUpdate,
+      include: { role: true }
     });
   }
 }

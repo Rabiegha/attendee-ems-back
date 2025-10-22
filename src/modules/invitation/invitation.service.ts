@@ -76,6 +76,23 @@ export class InvitationService {
       throw new NotFoundException('Rôle non trouvé');
     }
 
+    // 🔒 Vérification hiérarchique : empêcher l'invitation de rôles supérieurs ou égaux
+    // Règle : Un utilisateur peut inviter uniquement des utilisateurs de niveau INFÉRIEUR OU ÉGAL au sien
+    // Niveau plus bas = plus de pouvoir (SUPER_ADMIN = 0, ADMIN = 1, MANAGER = 2, etc.)
+    if (!isSuperAdmin) {
+      const inviterRoleLevel = invitingUser.role.level;
+      const targetRoleLevel = role.level;
+
+      // Un MANAGER (level 2) peut inviter : MANAGER (2), PARTNER (3), VIEWER (4), HOSTESS (5)
+      // Un MANAGER ne peut PAS inviter : SUPER_ADMIN (0) ou ADMIN (1)
+      if (targetRoleLevel < inviterRoleLevel) {
+        throw new BadRequestException(
+          `You cannot invite users with role '${role.name}' (level ${targetRoleLevel}). ` +
+          `Your role level is ${inviterRoleLevel}. You can only invite users with role level ${inviterRoleLevel} or higher.`
+        );
+      }
+    }
+
     // Vérifier si l'utilisateur existe déjà
     const existingUser = await this.prisma.user.findFirst({
       where: { email, org_id: orgId },

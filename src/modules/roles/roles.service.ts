@@ -22,15 +22,34 @@ export class RolesService {
     });
   }
 
+  async findByOrganizationWithPermissions(orgId: string) {
+    return this.prisma.role.findMany({
+      where: {
+        org_id: orgId
+      },
+      include: {
+        rolePermissions: {
+          include: {
+            permission: true
+          }
+        }
+      }
+    });
+  }
+
   async findById(id: string): Promise<Role | null> {
     return this.prisma.role.findUnique({
       where: { id },
     });
   }
 
-  async findByCode(code: string): Promise<Role | null> {
-    return this.prisma.role.findUnique({
-      where: { code },
+  async findByCode(code: string, orgId?: string | null): Promise<Role | null> {
+    // Si pas d'orgId spécifié, chercher le template système (org_id = null)
+    return this.prisma.role.findFirst({
+      where: { 
+        code,
+        org_id: orgId !== undefined ? orgId : null
+      },
     });
   }
 
@@ -68,5 +87,32 @@ export class RolesService {
         description: rp.permission.description
       }))
     };
+  }
+
+  async updateRolePermissions(roleId: string, permissionIds: string[]) {
+    // Supprimer toutes les anciennes permissions
+    await this.prisma.rolePermission.deleteMany({
+      where: { role_id: roleId }
+    });
+
+    // Ajouter les nouvelles permissions
+    await this.prisma.rolePermission.createMany({
+      data: permissionIds.map(permissionId => ({
+        role_id: roleId,
+        permission_id: permissionId
+      }))
+    });
+
+    // Retourner le rôle avec les nouvelles permissions
+    return this.prisma.role.findUnique({
+      where: { id: roleId },
+      include: {
+        rolePermissions: {
+          include: {
+            permission: true
+          }
+        }
+      }
+    });
   }
 }

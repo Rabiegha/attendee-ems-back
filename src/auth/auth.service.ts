@@ -313,4 +313,150 @@ export class AuthService {
 
     return result;
   }
+
+  /**
+   * Génère les règles CASL basées sur les permissions actuelles de l'utilisateur
+   * Permet la mise à jour en temps réel des permissions côté frontend
+   */
+  async getPolicyRules(user: any) {
+    console.log('[Auth] getPolicyRules called with user:', user);
+    
+    // Le JWT guard injecte l'objet user avec { id, org_id, role, permissions }
+    // Pas user.sub comme dans d'autres contextes
+    const userId = user.id || user.sub;
+    
+    // Récupérer l'utilisateur avec ses permissions à jour
+    const currentUser = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        role: {
+          include: {
+            rolePermissions: {
+              include: {
+                permission: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!currentUser || !currentUser.is_active) {
+      throw new UnauthorizedException('User not found or inactive');
+    }
+
+    console.log('[Auth] Found user with role:', currentUser.role?.code);
+    console.log('[Auth] Permissions count:', currentUser.role?.rolePermissions?.length);
+
+    // SUPER_ADMIN bypass : accès total cross-tenant
+    if (currentUser.role?.code === 'SUPER_ADMIN') {
+      console.log('[Auth] SUPER_ADMIN detected - granting full access');
+      return {
+        rules: [
+          {
+            action: 'manage',
+            subject: 'all',
+          },
+        ],
+      };
+    }
+
+    // Extraire les permissions
+    const permissions = currentUser.role?.rolePermissions?.map(
+      (rp: any) => rp.permission.code,
+    ) || [];
+
+    // Mapper les permissions backend en règles CASL
+    const rules = this.mapPermissionsToCASlRules(
+      permissions,
+      currentUser.org_id,
+      currentUser.id,
+      currentUser.role?.code,
+    );
+
+    return { rules };
+  }
+
+  /**
+   * Mappe les permissions backend en règles CASL
+   */
+  private mapPermissionsToCASlRules(
+    permissions: string[],
+    orgId: string,
+    userId: string,
+    roleCode: string,
+  ): any[] {
+    const rules: any[] = [];
+
+    // Pour chaque permission, créer les règles CASL appropriées
+    permissions.forEach(permission => {
+      const [resource, action, scope] = permission.split(/[.:]/);
+      
+      // Actions CRUD mapping
+      let caslActions: string[] = [];
+      switch (action) {
+        case 'create':
+          caslActions = ['create'];
+          break;
+        case 'read':
+          caslActions = ['read'];
+          break;
+        case 'update':
+          caslActions = ['update'];
+          break;
+        case 'delete':
+          caslActions = ['delete'];
+          break;
+        case 'manage':
+          caslActions = ['manage']; // CASL 'manage' = toutes les actions
+          break;
+        default:
+          caslActions = [action]; // custom actions
+      }
+
+      // Subject mapping (resource -> CASL subject)
+      const subjectMap: Record<string, string> = {
+        users: 'User',
+        roles: 'Role',
+        events: 'Event',
+        attendees: 'Attendee',
+        organizations: 'Organization',
+        invitations: 'Invitation',
+        analytics: 'Analytics',
+        reports: 'Report',
+      };
+
+      const subject = subjectMap[resource] || resource;
+
+      // Conditions basées sur le scope
+      let conditions: any = {};
+      
+      if (scope === 'own') {
+        // Accès limité aux ressources de l'utilisateur
+        if (resource === 'users') {
+          conditions = { id: userId };
+        } else {
+          conditions = { user_id: userId };
+        }
+      } else if (scope === 'org') {
+        // Accès limité à l'organisation
+        conditions = { org_id: orgId };
+      }
+      // scope === 'any' ou pas de scope = pas de conditions (accès global)
+
+      // Ajouter une règle pour chaque action
+      caslActions.forEach(caslAction => {
+        rules.push({
+          action: caslAction,
+          subject,
+          ...(Object.keys(conditions).length > 0 && { conditions }),
+        });
+      });
+    });
+
+    // Note: SUPER_ADMIN bypass est géré directement dans getPolicyRules()
+    // pour éviter le traitement inutile des permissions
+
+    return rules;
+  }
 }
