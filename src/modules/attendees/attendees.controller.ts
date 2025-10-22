@@ -43,7 +43,7 @@ export class AttendeesController {
   constructor(private readonly attendeesService: AttendeesService) {}
 
   @Post()
-  @Permissions('attendee.create')
+  @Permissions('attendees.create')
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Create or upsert an attendee',
@@ -75,7 +75,7 @@ export class AttendeesController {
   }
 
   @Get()
-  @Permissions('attendee.read')
+  @Permissions('attendees.read')
   @ApiOperation({
     summary: 'List attendees',
     description:
@@ -100,7 +100,7 @@ export class AttendeesController {
   }
 
   @Get(':id')
-  @Permissions('attendee.read')
+  @Permissions('attendees.read')
   @ApiOperation({
     summary: 'Get an attendee by ID',
     description: 'Retrieves a single attendee by their ID within the organization',
@@ -133,7 +133,7 @@ export class AttendeesController {
   }
 
   @Put(':id')
-  @Permissions('attendee.update')
+  @Permissions('attendees.update')
   @ApiOperation({
     summary: 'Update an attendee',
     description:
@@ -181,7 +181,7 @@ export class AttendeesController {
   }
 
   @Delete(':id')
-  @Permissions('attendee.delete')
+  @Permissions('attendees.delete')
   @ApiOperation({
     summary: 'Delete an attendee',
     description:
