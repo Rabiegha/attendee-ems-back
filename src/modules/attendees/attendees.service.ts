@@ -306,29 +306,15 @@ export class AttendeesService {
       }
 
       if (force) {
-        // Check for dependencies (e.g., registrations)
-        // Note: This assumes a 'registration' table exists with attendee_id
-        // If it doesn't exist yet, this check can be commented out or removed
-        try {
-          const registrationCount = await tx.registration.count({
-            where: {
-              org_id: orgId,
-              attendee_id: id,
-            },
-          });
-
-          if (registrationCount > 0) {
-            throw new ConflictException(
-              `Cannot hard delete attendee: ${registrationCount} registration(s) exist`,
-            );
-          }
-        } catch (error) {
-          // If registration table doesn't exist, skip the check
-          if (error instanceof ConflictException) {
-            throw error;
-          }
-          // Otherwise, proceed with deletion
-        }
+        // TODO: Add registration dependency check when Registration model is implemented
+        // const registrationCount = await tx.registration.count({
+        //   where: { org_id: orgId, attendee_id: id },
+        // });
+        // if (registrationCount > 0) {
+        //   throw new ConflictException(
+        //     `Cannot hard delete attendee: ${registrationCount} registration(s) exist`,
+        //   );
+        // }
 
         // Create revision before hard delete
         await tx.attendeeRevision.create({
