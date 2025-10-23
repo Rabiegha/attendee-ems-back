@@ -17,7 +17,7 @@ export class RolesController {
   @Permissions('roles.read')
   @ApiOperation({
     summary: 'Récupérer la liste des rôles',
-    description: 'Récupère tous les rôles avec leurs permissions associées. SUPER_ADMIN voit tous les rôles (templates + org-specific). Les autres voient uniquement les rôles de leur organisation.'
+    description: 'Récupère tous les rôles avec leurs permissions associées. SUPER_ADMIN peut filtrer par orgId ou obtenir les templates système. Les autres voient uniquement les rôles de leur organisation.'
   })
   @ApiResponse({
     status: 200,
@@ -34,17 +34,42 @@ export class RolesController {
   async findAll(@Request() req) {
     const userRole = req.user.role; // 'SUPER_ADMIN', 'ADMIN', etc.
     const userOrgId = req.user.org_id;
+    const queryOrgId = req.query.orgId; // Query param optionnel pour SUPER_ADMIN
+    const templatesOnly = req.query.templatesOnly === 'true'; // Query param pour obtenir uniquement les templates
+
+    // 🔍 DEBUG LOGS
+    console.log('🔍 [ROLES API] Request params:', {
+      userRole,
+      userOrgId,
+      queryOrgId,
+      templatesOnly,
+      fullQuery: req.query
+    });
 
     let rolesWithPermissions;
     
-    // SUPER_ADMIN voit TOUS les rôles (templates système + tous les rôles org-specific)
     if (userRole === 'SUPER_ADMIN') {
-      rolesWithPermissions = await this.rolesService.findAllWithPermissions();
+      // SUPER_ADMIN avec filtres avancés
+      if (templatesOnly) {
+        // Récupérer uniquement les templates système (pour création nouvelle org)
+        console.log('📋 [ROLES API] Fetching SYSTEM TEMPLATES');
+        rolesWithPermissions = await this.rolesService.findSystemTemplates();
+      } else if (queryOrgId) {
+        // Récupérer les rôles d'une organisation spécifique
+        console.log(`🏢 [ROLES API] Fetching roles for org: ${queryOrgId}`);
+        rolesWithPermissions = await this.rolesService.findByOrganizationWithPermissions(queryOrgId);
+      } else {
+        // Par défaut : tous les rôles
+        console.log('🌐 [ROLES API] Fetching ALL ROLES (no filter)');
+        rolesWithPermissions = await this.rolesService.findAllWithPermissions();
+      }
     } else {
       // Les autres utilisateurs ne voient QUE les rôles de leur organisation
-      // (les rôles où org_id = leur org_id)
+      console.log(`🔒 [ROLES API] Fetching roles for user's org: ${userOrgId}`);
       rolesWithPermissions = await this.rolesService.findByOrganizationWithPermissions(userOrgId);
     }
+    
+    console.log(`✅ [ROLES API] Returning ${rolesWithPermissions.length} roles`);
     
     return rolesWithPermissions.map(role => ({
       id: role.id,

@@ -37,6 +37,22 @@ export class RolesService {
     });
   }
 
+  async findSystemTemplates() {
+    // Récupère uniquement les templates système (org_id = null, is_system_role = true)
+    return this.prisma.role.findMany({
+      where: {
+        is_system_role: true
+      },
+      include: {
+        rolePermissions: {
+          include: {
+            permission: true
+          }
+        }
+      }
+    });
+  }
+
   async findById(id: string): Promise<Role | null> {
     return this.prisma.role.findUnique({
       where: { id },
