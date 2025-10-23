@@ -120,7 +120,7 @@ export class UsersController {
   }
 
   @Get('me')
-  @Permissions('users.read:own')
+  @Permissions('users.read:own, users.read:any')
   @ApiOperation({
     summary: 'Récupérer ses propres informations utilisateur',
     description: 'Récupère les informations de l\'utilisateur actuellement connecté'

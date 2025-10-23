@@ -3,6 +3,14 @@ import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateAttendeeDto {
+  @ApiPropertyOptional({
+    description: 'Organization ID (Super admin only – ignored if user has :own permission)',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @IsOptional()
+  @IsUUID()
+  orgId?: string;
+
   @ApiProperty({
     description: 'Email address of the attendee (case-insensitive)',
     example: 'alice@example.com',

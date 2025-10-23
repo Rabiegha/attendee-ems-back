@@ -68,7 +68,7 @@ export class OrganizationsController {
   }
 
   @Get('me')
-  @Permissions('organizations.read:any', 'organizations.read:own')
+  @Permissions('organizations.read:any', 'organizations.read')
   @ApiOperation({
     summary: 'Récupérer mon organisation',
     description: 'Récupère les informations de l\'organisation de l\'utilisateur connecté'

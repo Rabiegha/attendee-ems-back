@@ -57,6 +57,15 @@ export class PermissionsGuard implements CanActivate {
       throw new ForbiddenException('Insufficient permissions');
     }
 
+    // Add authorization flags for multi-tenancy
+    request.authz = {
+      canAttendeesAny:
+        user.isPlatformAdmin ||
+        user.permissions?.some(
+          (p: string) => p.startsWith('attendees.') && p.endsWith(':any'),
+        ),
+    };
+
     return true;
   }
 

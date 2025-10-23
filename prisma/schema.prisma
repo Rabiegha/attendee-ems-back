@@ -202,7 +202,8 @@ model Attendee {
   organization    Organization @relation(fields: [org_id], references: [id], onDelete: Cascade)
   revisions       AttendeeRevision[]
 
-  @@unique([org_id, email])
+  @@unique([org_id, email], name: "org_id_email")
+  @@unique([id, org_id], name: "id_org_id")
   @@index([org_id])
   @@index([default_type_id])
   @@index([email])
