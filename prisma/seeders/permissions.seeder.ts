@@ -124,6 +124,28 @@ const permissionsData: PermissionSeedData[] = [
     description: 'Export attendee data' 
   },
   
+  // ==================== REGISTRATIONS ====================
+  { 
+    code: 'registrations.read', 
+    name: 'Read registrations', 
+    description: 'View event registrations' 
+  },
+  { 
+    code: 'registrations.create', 
+    name: 'Create registrations', 
+    description: 'Create new event registrations' 
+  },
+  { 
+    code: 'registrations.update', 
+    name: 'Update registrations', 
+    description: 'Update registration status and information' 
+  },
+  { 
+    code: 'registrations.import', 
+    name: 'Import registrations', 
+    description: 'Bulk import registrations from files' 
+  },
+  
   // ==================== ROLES & PERMISSIONS ====================
   { 
     code: 'roles.read', 
@@ -271,6 +293,12 @@ export const rolePermissionMapping: Record<string, string[]> = {
     'attendees.checkin',
     'attendees.export',
     
+    // Registrations
+    'registrations.read',
+    'registrations.create',
+    'registrations.update',
+    'registrations.import',
+    
     // Roles
     'roles.read',
     'roles.manage',  // Accès à la page de gestion des permissions
@@ -315,6 +343,12 @@ export const rolePermissionMapping: Record<string, string[]> = {
     'attendees.checkin',
     'attendees.export',
     
+    // Registrations
+    'registrations.read',
+    'registrations.create',
+    'registrations.update',
+    'registrations.import',
+    
     // Roles
     'roles.read',
     'roles.manage',  // Accès à la page de gestion des permissions
@@ -353,6 +387,11 @@ export const rolePermissionMapping: Record<string, string[]> = {
     'attendees.create',
     'attendees.checkin',
     'attendees.export',
+    
+    // Registrations
+    'registrations.read',
+    'registrations.create',
+    'registrations.import',
     
     // Roles - Peut voir et assigner des rôles (≤ MANAGER seulement, guard backend)
     'roles.read',
@@ -422,6 +461,9 @@ export const rolePermissionMapping: Record<string, string[]> = {
     // Attendees - check-in uniquement
     'attendees.read',
     'attendees.checkin',
+    
+    // Registrations - read only (cannot update status)
+    'registrations.read',
   ],
 };
 

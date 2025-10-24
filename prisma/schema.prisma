@@ -21,10 +21,16 @@ model Organization {
   updated_at DateTime @updatedAt @map("updated_at")
 
   // Relations
-  users       User[]
-  roles       Role[]       // Rôles personnalisés de l'organisation
-  invitations Invitation[]
-  attendees   Attendee[]
+  users                 User[]
+  roles                 Role[]       // Rôles personnalisés de l'organisation
+  invitations           Invitation[]
+  attendees             Attendee[]
+  orgActivitySectors    OrgActivitySector[]
+  orgEventTypes         OrgEventType[]
+  attendeeTypes         AttendeeType[]
+  badgeTemplates        BadgeTemplate[]
+  emailSenders          EmailSender[]
+  events                Event[]
 
   @@map("organizations")
 }
@@ -58,6 +64,7 @@ model User {
   sent_invitations Invitation[]
 
   @@unique([email, org_id])
+  @@unique([id, org_id])
   @@unique([reset_token])
   @@index([org_id])
   @@index([role_id])
@@ -201,6 +208,7 @@ model Attendee {
   // Relations
   organization    Organization @relation(fields: [org_id], references: [id], onDelete: Cascade)
   revisions       AttendeeRevision[]
+  registrations   Registration[]
 
   @@unique([org_id, email], name: "org_id_email")
   @@unique([id, org_id], name: "id_org_id")
@@ -227,5 +235,440 @@ model AttendeeRevision {
   @@index([org_id, attendee_id])
   @@index([attendee_id])
   @@map("attendee_revisions")
+}
+
+// ===== Activity Sectors =====
+model OrgActivitySector {
+  id              String   @id @default(uuid()) @db.Uuid
+  org_id          String   @db.Uuid
+  code            String
+  name            String
+  color_hex       String?
+  text_color_hex  String?
+  icon            String?
+  parent_id       String?  @db.Uuid
+  is_active       Boolean  @default(true)
+  sort_order      Int      @default(0)
+  created_at      DateTime @default(now()) @map("created_at")
+  updated_at      DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  organization    Organization @relation(fields: [org_id], references: [id], onDelete: Cascade)
+  parent          OrgActivitySector? @relation("SectorHierarchy", fields: [parent_id, org_id], references: [id, org_id], onDelete: Restrict, onUpdate: NoAction)
+  children        OrgActivitySector[] @relation("SectorHierarchy")
+  events          Event[]
+
+  @@unique([org_id, code])
+  @@unique([id, org_id])
+  @@index([org_id, parent_id, sort_order])
+  @@map("org_activity_sectors")
+}
+
+// ===== Event Types =====
+model OrgEventType {
+  id              String   @id @default(uuid()) @db.Uuid
+  org_id          String   @db.Uuid
+  code            String
+  name            String
+  color_hex       String?
+  text_color_hex  String?
+  icon            String?
+  is_active       Boolean  @default(true)
+  sort_order      Int      @default(0)
+  created_at      DateTime @default(now()) @map("created_at")
+  updated_at      DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  organization    Organization @relation(fields: [org_id], references: [id], onDelete: Cascade)
+  events          Event[]
+
+  @@unique([org_id, code])
+  @@unique([id, org_id])
+  @@index([org_id, sort_order])
+  @@map("org_event_types")
+}
+
+// ===== Attendee Types =====
+model AttendeeType {
+  id              String   @id @default(uuid()) @db.Uuid
+  org_id          String   @db.Uuid
+  code            String
+  name            String
+  color_hex       String?
+  text_color_hex  String?
+  icon            String?
+  is_active       Boolean  @default(true)
+  sort_order      Int      @default(0)
+  created_at      DateTime @default(now()) @map("created_at")
+  updated_at      DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  organization         Organization @relation(fields: [org_id], references: [id], onDelete: Cascade)
+  eventAttendeeTypes   EventAttendeeType[]
+
+  @@unique([org_id, code])
+  @@unique([id, org_id])
+  @@index([org_id, sort_order])
+  @@index([org_id, name])
+  @@map("attendee_types")
+}
+
+// ===== Badge Templates =====
+model BadgeTemplate {
+  id              String   @id @default(uuid()) @db.Uuid
+  org_id          String   @db.Uuid
+  code            String
+  name            String
+  template_data   Json?
+  is_active       Boolean  @default(true)
+  created_at      DateTime @default(now()) @map("created_at")
+  updated_at      DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  organization         Organization @relation(fields: [org_id], references: [id], onDelete: Cascade)
+  eventSettings        EventSetting[]
+  eventAttendeeTypeBadges EventAttendeeTypeBadge[]
+  registrations        Registration[]
+  badges               Badge[]
+
+  @@unique([org_id, code])
+  @@unique([id, org_id])
+  @@index([org_id])
+  @@map("badge_templates")
+}
+
+// ===== Email Senders =====
+model EmailSender {
+  id              String   @id @default(uuid()) @db.Uuid
+  org_id          String   @db.Uuid
+  from_name       String
+  from_email      String   @db.Citext
+  reply_to_email  String?  @db.Citext
+  is_active       Boolean  @default(true)
+  created_at      DateTime @default(now()) @map("created_at")
+  updated_at      DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  organization    Organization @relation(fields: [org_id], references: [id], onDelete: Cascade)
+  emailSettings   EmailSetting[]
+
+  @@unique([org_id, from_email])
+  @@unique([id, org_id])
+  @@index([org_id])
+  @@map("email_senders")
+}
+
+// ===== Events =====
+model Event {
+  id                      String   @id @default(uuid()) @db.Uuid
+  org_id                  String   @db.Uuid
+  code                    String
+  name                    String
+  org_activity_sector_id  String?  @db.Uuid
+  org_event_type_id       String?  @db.Uuid
+  description             String?  @db.Text
+  start_at                DateTime
+  end_at                  DateTime
+  timezone                String   @default("UTC")
+  status                  EventStatus @default(draft)
+  capacity                Int?
+  location_type           LocationType @default(physical)
+  address_formatted       String?
+  address_street          String?
+  address_city            String?
+  address_region          String?
+  address_postal_code     String?
+  address_country         String?
+  latitude                Decimal? @db.Decimal(9, 6)
+  longitude               Decimal? @db.Decimal(9, 6)
+  place_id                String?
+  created_by              String?  @db.Uuid
+  created_at              DateTime @default(now()) @map("created_at")
+  updated_at              DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  organization            Organization @relation(fields: [org_id], references: [id], onDelete: Cascade)
+  activitySector          OrgActivitySector? @relation(fields: [org_activity_sector_id, org_id], references: [id, org_id], onDelete: SetNull, onUpdate: NoAction)
+  eventType               OrgEventType? @relation(fields: [org_event_type_id, org_id], references: [id, org_id], onDelete: SetNull, onUpdate: NoAction)
+  settings                EventSetting?
+  emailSettings           EmailSetting?
+  eventAttendeeTypes      EventAttendeeType[]
+  registrations           Registration[]
+  eventAccess             EventAccess[]
+  subevents               Subevent[]
+  partnerScans            PartnerScan[]
+
+  @@unique([id, org_id])
+  @@unique([org_id, code])
+  @@index([org_id])
+  @@index([org_id, start_at])
+  @@index([org_id, status])
+  @@index([org_id, org_activity_sector_id])
+  @@index([org_id, org_event_type_id])
+  @@map("events")
+}
+
+enum EventStatus {
+  draft
+  published
+  archived
+}
+
+enum LocationType {
+  physical
+  online
+  hybrid
+}
+
+enum AttendanceMode {
+  onsite
+  online
+  hybrid
+}
+
+// ===== Event Settings (1:1 with Event) =====
+model EventSetting {
+  id                              String   @id @default(uuid()) @db.Uuid
+  org_id                          String   @db.Uuid
+  event_id                        String   @unique @db.Uuid
+  website_url                     String?
+  logo_asset_id                   String?
+  attendance_mode                 AttendanceMode @default(onsite)
+  registration_auto_approve       Boolean  @default(false)
+  allow_checkin_out               Boolean  @default(true)
+  has_event_reminder              Boolean  @default(false)
+  badge_template_id               String?  @db.Uuid
+  public_token                    String   @unique
+  registration_fields             Json?
+  auto_transition_to_active       Boolean  @default(true)
+  auto_transition_to_completed    Boolean  @default(true)
+  extra                           Json?
+  created_at                      DateTime @default(now()) @map("created_at")
+  updated_at                      DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  event                           Event @relation(fields: [event_id, org_id], references: [id, org_id], onDelete: Cascade, onUpdate: NoAction)
+  badgeTemplate                   BadgeTemplate? @relation(fields: [badge_template_id, org_id], references: [id, org_id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([event_id, org_id])
+  @@index([org_id, event_id])
+  @@index([public_token])
+  @@map("event_settings")
+}
+
+// ===== Email Settings (1:1 with Event) =====
+model EmailSetting {
+  id                      String   @id @default(uuid()) @db.Uuid
+  org_id                  String   @db.Uuid
+  event_id                String   @unique @db.Uuid
+  email_sender_id         String?  @db.Uuid
+  confirmation_enabled    Boolean  @default(false)
+  confirmation_subject    String?
+  confirmation_body       String?  @db.Text
+  reminder_enabled        Boolean  @default(false)
+  reminder_subject        String?
+  reminder_body           String?  @db.Text
+  reminder_hours_before   Int?
+  created_at              DateTime @default(now()) @map("created_at")
+  updated_at              DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  event                   Event @relation(fields: [event_id, org_id], references: [id, org_id], onDelete: Cascade, onUpdate: NoAction)
+  emailSender             EmailSender? @relation(fields: [email_sender_id, org_id], references: [id, org_id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([event_id, org_id])
+  @@index([org_id, event_id])
+  @@map("email_settings")
+}
+
+// ===== Event Attendee Types =====
+model EventAttendeeType {
+  id                String   @id @default(uuid()) @db.Uuid
+  event_id          String   @db.Uuid
+  org_id            String   @db.Uuid
+  attendee_type_id  String   @db.Uuid
+  capacity          Int?
+  sort_order        Int      @default(0)
+  created_at        DateTime @default(now()) @map("created_at")
+  updated_at        DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  event             Event @relation(fields: [event_id, org_id], references: [id, org_id], onDelete: Cascade, onUpdate: NoAction)
+  attendeeType      AttendeeType @relation(fields: [attendee_type_id, org_id], references: [id, org_id], onDelete: Cascade, onUpdate: NoAction)
+  registrations     Registration[]
+  badges            EventAttendeeTypeBadge[]
+
+  @@unique([id, event_id, org_id])
+  @@unique([event_id, attendee_type_id])
+  @@index([org_id, event_id, sort_order])
+  @@map("event_attendee_types")
+}
+
+// ===== Event Attendee Type Badges =====
+model EventAttendeeTypeBadge {
+  event_attendee_type_id  String   @db.Uuid
+  badge_template_id       String   @db.Uuid
+  org_id                  String   @db.Uuid
+  created_at              DateTime @default(now()) @map("created_at")
+
+  // Relations
+  eventAttendeeType       EventAttendeeType @relation(fields: [event_attendee_type_id], references: [id], onDelete: Cascade)
+  badgeTemplate           BadgeTemplate @relation(fields: [badge_template_id, org_id], references: [id, org_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([event_attendee_type_id, badge_template_id])
+  @@index([org_id])
+  @@map("event_attendee_type_badges")
+}
+
+// ===== Registrations =====
+model Registration {
+  id                      String   @id @default(uuid()) @db.Uuid
+  org_id                  String   @db.Uuid
+  event_id                String   @db.Uuid
+  attendee_id             String   @db.Uuid
+  status                  RegistrationStatus @default(awaiting)
+  attendance_type         AttendanceMode @default(onsite)
+  answers                 Json?
+  event_attendee_type_id  String?  @db.Uuid
+  badge_template_id       String?  @db.Uuid
+  invited_at              DateTime?
+  confirmed_at            DateTime?
+  created_at              DateTime @default(now()) @map("created_at")
+  updated_at              DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  event                   Event @relation(fields: [event_id, org_id], references: [id, org_id], onDelete: Cascade, onUpdate: NoAction)
+  attendee                Attendee @relation(fields: [attendee_id, org_id], references: [id, org_id], onDelete: Cascade, onUpdate: NoAction)
+  eventAttendeeType       EventAttendeeType? @relation(fields: [event_attendee_type_id], references: [id], onDelete: SetNull)
+  badgeTemplate           BadgeTemplate? @relation(fields: [badge_template_id, org_id], references: [id, org_id], onDelete: SetNull, onUpdate: NoAction)
+  badges                  Badge[]
+  presenceVisits          PresenceVisit[]
+
+  @@unique([event_id, attendee_id])
+  @@unique([id, event_id, org_id])
+  @@index([org_id, event_id, status])
+  @@index([org_id, attendee_id])
+  @@index([org_id, event_id, event_attendee_type_id])
+  @@map("registrations")
+}
+
+enum RegistrationStatus {
+  awaiting
+  approved
+  refused
+  cancelled
+}
+
+// ===== Badges =====
+model Badge {
+  id                String   @id @default(uuid()) @db.Uuid
+  org_id            String   @db.Uuid
+  registration_id   String   @db.Uuid
+  badge_template_id String   @db.Uuid
+  badge_data        Json?
+  qr_code_url       String?
+  created_at        DateTime @default(now()) @map("created_at")
+  updated_at        DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  registration      Registration @relation(fields: [registration_id], references: [id], onDelete: Cascade)
+  badgeTemplate     BadgeTemplate @relation(fields: [badge_template_id, org_id], references: [id, org_id], onDelete: Restrict, onUpdate: NoAction)
+  prints            BadgePrint[]
+
+  @@unique([id, org_id])
+  @@index([org_id, registration_id])
+  @@map("badges")
+}
+
+// ===== Badge Prints =====
+model BadgePrint {
+  id          String   @id @default(uuid()) @db.Uuid
+  org_id      String   @db.Uuid
+  badge_id    String   @db.Uuid
+  printed_by  String?  @db.Uuid
+  printed_at  DateTime @default(now())
+
+  // Relations
+  badge       Badge @relation(fields: [badge_id], references: [id], onDelete: Cascade)
+
+  @@index([org_id, badge_id])
+  @@index([printed_at])
+  @@map("badge_prints")
+}
+
+// ===== Subevents (Phase 3) =====
+model Subevent {
+  id          String   @id @default(uuid()) @db.Uuid
+  org_id      String   @db.Uuid
+  event_id    String   @db.Uuid
+  name        String
+  start_at    DateTime
+  end_at      DateTime
+  location    String?
+  created_at  DateTime @default(now()) @map("created_at")
+  updated_at  DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  event       Event @relation(fields: [event_id, org_id], references: [id, org_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([id, org_id])
+  @@index([org_id, event_id])
+  @@map("subevents")
+}
+
+// ===== Partner Scans (Phase 3) =====
+model PartnerScan {
+  id              String   @id @default(uuid()) @db.Uuid
+  org_id          String   @db.Uuid
+  event_id        String   @db.Uuid
+  scanned_by      String   @db.Uuid
+  attendee_data   Json
+  scanned_at      DateTime @default(now())
+
+  // Relations
+  event           Event @relation(fields: [event_id, org_id], references: [id, org_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([org_id, event_id])
+  @@index([scanned_at])
+  @@map("partner_scans")
+}
+
+// ===== Presence Visits (Phase 3 - check-in intervals) =====
+model PresenceVisit {
+  id              String   @id @default(uuid()) @db.Uuid
+  org_id          String   @db.Uuid
+  registration_id String   @db.Uuid
+  checked_in_at   DateTime
+  checked_out_at  DateTime?
+  created_at      DateTime @default(now()) @map("created_at")
+  updated_at      DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  registration    Registration @relation(fields: [registration_id], references: [id], onDelete: Cascade)
+
+  @@index([org_id, registration_id])
+  @@index([checked_in_at])
+  @@map("presence_visits")
+}
+
+// ===== Event Access (user assignment to events) =====
+model EventAccess {
+  id          String   @id @default(uuid()) @db.Uuid
+  org_id      String   @db.Uuid
+  event_id    String   @db.Uuid
+  user_id     String   @db.Uuid
+  reason      String?
+  granted_by  String?  @db.Uuid
+  expires_at  DateTime?
+  created_at  DateTime @default(now()) @map("created_at")
+  updated_at  DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  event       Event @relation(fields: [event_id, org_id], references: [id, org_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([org_id, event_id, user_id])
+  @@index([org_id, user_id])
+  @@index([org_id, event_id])
+  @@map("event_access")
 }
 
