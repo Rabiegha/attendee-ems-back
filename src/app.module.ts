@@ -13,6 +13,9 @@ import { AttendeesModule } from './modules/attendees/attendees.module';
 import { HealthModule } from './health/health.module';
 import { RequestLoggerMiddleware } from './common/middleware/request-logger.middleware';
 import { appRoutes } from './router/app.routes';
+import { EventsModule } from './modules/events/events.module';
+import { PublicModule } from './modules/public/public.module';
+import { RegistrationsModule } from './modules/registrations/registrations.module';
 
 @Module({
   imports: [
@@ -28,6 +31,9 @@ import { appRoutes } from './router/app.routes';
     AttendeesModule,
     HealthModule,
     RouterModule.register(appRoutes),
+    EventsModule,
+    PublicModule,
+    RegistrationsModule,
   ],
 })
 export class AppModule {

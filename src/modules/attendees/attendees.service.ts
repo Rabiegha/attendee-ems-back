@@ -259,8 +259,14 @@ export class AttendeesService {
         'is_active',
       ]);
 
+      // Use composite key to ensure org_id is enforced at DB level
       const attendee = await tx.attendee.update({
-        where: { id },
+        where: {
+          id_org_id: {
+            id,
+            org_id: orgId,
+          },
+        },
         data: updateData,
       });
 
@@ -329,16 +335,26 @@ export class AttendeesService {
           },
         });
 
-        // Hard delete
+        // Hard delete using composite key
         await tx.attendee.delete({
-          where: { id },
+          where: {
+            id_org_id: {
+              id,
+              org_id: orgId,
+            },
+          },
         });
 
         return { message: 'Attendee permanently deleted', deleted: true };
       } else {
-        // Soft delete
+        // Soft delete using composite key
         const attendee = await tx.attendee.update({
-          where: { id },
+          where: {
+            id_org_id: {
+              id,
+              org_id: orgId,
+            },
+          },
           data: { is_active: false },
         });
 

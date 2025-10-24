@@ -1,0 +1,204 @@
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  ForbiddenException,
+} from '@nestjs/common';
+import { PrismaService } from '../../infra/db/prisma.service';
+import { PublicRegisterDto } from './dto/public-register.dto';
+import { Prisma } from '@prisma/client';
+
+@Injectable()
+export class PublicService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Get event information by public token (safe fields only)
+   */
+  async getEventByPublicToken(publicToken: string) {
+    const eventSettings = await this.prisma.eventSetting.findUnique({
+      where: { public_token: publicToken },
+      include: {
+        event: {
+          include: {
+            activitySector: true,
+            eventType: true,
+          },
+        },
+      },
+    });
+
+    if (!eventSettings || !eventSettings.event) {
+      throw new NotFoundException('Event not found');
+    }
+
+    const { event } = eventSettings;
+
+    // Return safe fields only (no internal IDs, no sensitive data)
+    return {
+      code: event.code,
+      name: event.name,
+      description: event.description,
+      start_at: event.start_at,
+      end_at: event.end_at,
+      timezone: event.timezone,
+      status: event.status,
+      capacity: event.capacity,
+      location_type: event.location_type,
+      address_formatted: event.address_formatted,
+      address_city: event.address_city,
+      address_country: event.address_country,
+      latitude: event.latitude,
+      longitude: event.longitude,
+      website_url: eventSettings.website_url,
+      attendance_mode: eventSettings.attendance_mode,
+      registration_fields: eventSettings.registration_fields,
+      activity_sector: event.activitySector
+        ? {
+            code: event.activitySector.code,
+            name: event.activitySector.name,
+            color_hex: event.activitySector.color_hex,
+          }
+        : null,
+      event_type: event.eventType
+        ? {
+            code: event.eventType.code,
+            name: event.eventType.name,
+            color_hex: event.eventType.color_hex,
+          }
+        : null,
+    };
+  }
+
+  /**
+   * Public registration endpoint
+   * - Upserts attendee by (org_id, email)
+   * - Checks capacity
+   * - Checks for duplicate registrations
+   * - Auto-approves if enabled
+   */
+  async registerToEvent(publicToken: string, dto: PublicRegisterDto) {
+    return this.prisma.$transaction(async (tx) => {
+      // Get event and settings
+      const eventSettings = await tx.eventSetting.findUnique({
+        where: { public_token: publicToken },
+        include: {
+          event: true,
+        },
+      });
+
+      if (!eventSettings || !eventSettings.event) {
+        throw new NotFoundException('Event not found');
+      }
+
+      const { event } = eventSettings;
+      const orgId = event.org_id;
+
+      // Check if event is published
+      if (event.status !== 'published') {
+        throw new ForbiddenException('Event is not open for registration');
+      }
+
+      // Check capacity
+      if (event.capacity) {
+        const currentCount = await tx.registration.count({
+          where: {
+            event_id: event.id,
+            org_id: orgId,
+            status: { in: ['awaiting', 'approved'] },
+          },
+        });
+
+        if (currentCount >= event.capacity) {
+          throw new ConflictException('Event is full');
+        }
+      }
+
+      // Upsert attendee
+      const attendee = await tx.attendee.upsert({
+        where: {
+          org_id_email: {
+            org_id: orgId,
+            email: dto.attendee.email,
+          },
+        },
+        update: {
+          first_name: dto.attendee.first_name || undefined,
+          last_name: dto.attendee.last_name || undefined,
+          phone: dto.attendee.phone || undefined,
+          company: dto.attendee.company || undefined,
+          job_title: dto.attendee.job_title || undefined,
+          country: dto.attendee.country || undefined,
+        },
+        create: {
+          org_id: orgId,
+          email: dto.attendee.email,
+          first_name: dto.attendee.first_name,
+          last_name: dto.attendee.last_name,
+          phone: dto.attendee.phone,
+          company: dto.attendee.company,
+          job_title: dto.attendee.job_title,
+          country: dto.attendee.country,
+        },
+      });
+
+      // Check for duplicate registration
+      const existingRegistration = await tx.registration.findUnique({
+        where: {
+          event_id_attendee_id: {
+            event_id: event.id,
+            attendee_id: attendee.id,
+          },
+        },
+      });
+
+      if (existingRegistration) {
+        if (existingRegistration.status === 'refused') {
+          throw new ForbiddenException('Your registration was previously declined');
+        }
+        if (['awaiting', 'approved'].includes(existingRegistration.status)) {
+          throw new ConflictException('You are already registered for this event');
+        }
+      }
+
+      // Determine status based on auto-approve setting
+      const status = eventSettings.registration_auto_approve ? 'approved' : 'awaiting';
+      const confirmedAt = status === 'approved' ? new Date() : null;
+
+      // Create registration
+      const registration = await tx.registration.create({
+        data: {
+          org_id: orgId,
+          event_id: event.id,
+          attendee_id: attendee.id,
+          status,
+          attendance_type: dto.attendance_type,
+          event_attendee_type_id: dto.event_attendee_type_id,
+          answers: dto.answers ? (dto.answers as Prisma.InputJsonValue) : null,
+          invited_at: new Date(),
+          confirmed_at: confirmedAt,
+        },
+        include: {
+          attendee: true,
+        },
+      });
+
+      return {
+        message: status === 'approved' 
+          ? 'Registration confirmed successfully' 
+          : 'Registration submitted and awaiting approval',
+        registration: {
+          id: registration.id,
+          status: registration.status,
+          attendance_type: registration.attendance_type,
+          confirmed_at: registration.confirmed_at,
+          attendee: {
+            email: registration.attendee.email,
+            first_name: registration.attendee.first_name,
+            last_name: registration.attendee.last_name,
+          },
+        },
+      };
+    });
+  }
+}

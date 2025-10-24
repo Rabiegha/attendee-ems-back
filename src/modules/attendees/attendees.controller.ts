@@ -34,6 +34,7 @@ import { OrgScopeGuard } from '../../common/guards/org-scope.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { ParseBooleanPipe } from './pipes/parse-boolean.pipe';
+import { resolveEffectiveOrgId } from '../../common/utils/org-scope.util';
 
 @ApiTags('attendees')
 @ApiBearerAuth()
@@ -66,10 +67,15 @@ export class AttendeesController {
   })
   @ApiResponse({
     status: 403,
-    description: 'Insufficient permissions',
+    description: 'Insufficient permissions or cross-organization access denied',
   })
   async create(@Body() createAttendeeDto: CreateAttendeeDto, @Request() req) {
-    const orgId = req.user.org_id;
+    const canAny = req.authz?.canAttendeesAny === true;
+    const orgId = resolveEffectiveOrgId({
+      reqUser: req.user,
+      explicitOrgId: createAttendeeDto.orgId,
+      allowAny: canAny,
+    });
     const userId = req.user.id;
     return this.attendeesService.create(createAttendeeDto, orgId, userId);
   }
@@ -80,6 +86,12 @@ export class AttendeesController {
     summary: 'List attendees',
     description:
       'Retrieves a paginated list of attendees with optional filters and sorting',
+  })
+  @ApiQuery({
+    name: 'orgId',
+    required: false,
+    description: 'Organization ID (Super admin only)',
+    example: '123e4567-e89b-12d3-a456-426614174000',
   })
   @ApiResponse({
     status: 200,
@@ -92,10 +104,15 @@ export class AttendeesController {
   })
   @ApiResponse({
     status: 403,
-    description: 'Insufficient permissions',
+    description: 'Insufficient permissions or cross-organization access denied',
   })
   async findAll(@Query() query: ListAttendeesDto, @Request() req) {
-    const orgId = req.user.org_id;
+    const canAny = req.authz?.canAttendeesAny === true;
+    const orgId = resolveEffectiveOrgId({
+      reqUser: req.user,
+      explicitOrgId: query.orgId,
+      allowAny: canAny,
+    });
     return this.attendeesService.findAll(query, orgId);
   }
 
@@ -125,10 +142,14 @@ export class AttendeesController {
   })
   @ApiResponse({
     status: 404,
-    description: 'Attendee not found',
+    description: 'Attendee not found or not in your organization',
   })
   async findOne(@Param('id') id: string, @Request() req) {
-    const orgId = req.user.org_id;
+    const canAny = req.authz?.canAttendeesAny === true;
+    const orgId = resolveEffectiveOrgId({
+      reqUser: req.user,
+      allowAny: canAny,
+    });
     return this.attendeesService.findOne(id, orgId);
   }
 
@@ -160,11 +181,11 @@ export class AttendeesController {
   })
   @ApiResponse({
     status: 403,
-    description: 'Insufficient permissions',
+    description: 'Insufficient permissions or cross-organization access denied',
   })
   @ApiResponse({
     status: 404,
-    description: 'Attendee not found',
+    description: 'Attendee not found or not in your organization',
   })
   @ApiResponse({
     status: 409,
@@ -175,7 +196,12 @@ export class AttendeesController {
     @Body() updateAttendeeDto: UpdateAttendeeDto,
     @Request() req,
   ) {
-    const orgId = req.user.org_id;
+    const canAny = req.authz?.canAttendeesAny === true;
+    const orgId = resolveEffectiveOrgId({
+      reqUser: req.user,
+      explicitOrgId: updateAttendeeDto.orgId,
+      allowAny: canAny,
+    });
     const userId = req.user.id;
     return this.attendeesService.update(id, updateAttendeeDto, orgId, userId);
   }
@@ -216,11 +242,11 @@ export class AttendeesController {
   })
   @ApiResponse({
     status: 403,
-    description: 'Insufficient permissions',
+    description: 'Insufficient permissions or cross-organization access denied',
   })
   @ApiResponse({
     status: 404,
-    description: 'Attendee not found',
+    description: 'Attendee not found or not in your organization',
   })
   @ApiResponse({
     status: 409,
@@ -231,7 +257,11 @@ export class AttendeesController {
     @Query('force', new ParseBooleanPipe()) force: boolean = false,
     @Request() req,
   ) {
-    const orgId = req.user.org_id;
+    const canAny = req.authz?.canAttendeesAny === true;
+    const orgId = resolveEffectiveOrgId({
+      reqUser: req.user,
+      allowAny: canAny,
+    });
     const userId = req.user.id;
     return this.attendeesService.remove(id, orgId, userId, force);
   }

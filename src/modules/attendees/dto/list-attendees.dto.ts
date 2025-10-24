@@ -4,6 +4,14 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 
 export class ListAttendeesDto {
   @ApiPropertyOptional({
+    description: 'Organization ID (Super admin only – ignored if user has :own permission)',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @IsOptional()
+  @IsUUID()
+  orgId?: string;
+
+  @ApiPropertyOptional({
     description: 'Search query across email, first_name, last_name, phone, company, job_title',
     example: 'alice',
   })
