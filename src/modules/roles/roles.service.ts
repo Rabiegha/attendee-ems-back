@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../infra/db/prisma.service';
 import { Role } from '@prisma/client';
 
@@ -105,7 +105,38 @@ export class RolesService {
     };
   }
 
-  async updateRolePermissions(roleId: string, permissionIds: string[]) {
+  async updateRolePermissions(roleId: string, permissionIds: string[], updaterUserId?: string) {
+    // 🔒 Vérification hiérarchique : un utilisateur ne peut pas modifier les permissions de son propre rôle
+    if (updaterUserId) {
+      const updaterUser = await this.prisma.user.findUnique({
+        where: { id: updaterUserId },
+        include: { role: true }
+      });
+
+      if (updaterUser && updaterUser.role_id === roleId) {
+        throw new ForbiddenException('You cannot modify the permissions of your own role');
+      }
+
+      // Vérifier la hiérarchie : un utilisateur peut modifier uniquement les rôles de niveau INFÉRIEUR
+      const targetRole = await this.prisma.role.findUnique({
+        where: { id: roleId },
+        select: { level: true, name: true, code: true }
+      });
+
+      if (targetRole && updaterUser?.role) {
+        // ⚠️ ATTENTION : Niveau plus BAS dans la DB = plus de pouvoir
+        // SUPER_ADMIN = 1, ADMIN = 2, MANAGER = 3, VIEWER = 4, PARTNER = 5, HOSTESS = 6
+        // Un MANAGER (level 3) peut modifier : VIEWER (4), PARTNER (5), HOSTESS (6)
+        // Un MANAGER ne peut PAS modifier : SUPER_ADMIN (1), ADMIN (2), ou autre MANAGER (3)
+        if (targetRole.level <= updaterUser.role.level) {
+          throw new ForbiddenException(
+            `You cannot modify permissions for role '${targetRole.name}' (level ${targetRole.level}). ` +
+            `Your role level is ${updaterUser.role.level}. You can only modify roles of strictly higher level (number).`
+          );
+        }
+      }
+    }
+
     // Supprimer toutes les anciennes permissions
     await this.prisma.rolePermission.deleteMany({
       where: { role_id: roleId }

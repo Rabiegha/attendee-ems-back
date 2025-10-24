@@ -37,12 +37,14 @@ export class UsersService {
         throw new BadRequestException('Target role not found');
       }
 
-      // Un MANAGER (level 2) peut créer : MANAGER (2), PARTNER (3), VIEWER (4), HOSTESS (5)
-      // Un MANAGER ne peut PAS créer : SUPER_ADMIN (0) ou ADMIN (1)
-      if (targetRole.level < creatorRoleLevel) {
+      // ⚠️ ATTENTION : Niveau plus BAS dans la DB = plus de pouvoir
+      // SUPER_ADMIN = 1, ADMIN = 2, MANAGER = 3, VIEWER = 4, PARTNER = 5, HOSTESS = 6
+      // Un MANAGER (level 3) peut créer : VIEWER (4), PARTNER (5), HOSTESS (6)
+      // Un MANAGER ne peut PAS créer : SUPER_ADMIN (1), ADMIN (2), ou autre MANAGER (3)
+      if (targetRole.level <= creatorRoleLevel) {
         throw new BadRequestException(
           `You cannot create users with role '${targetRole.name}' (level ${targetRole.level}). ` +
-          `Your role level is ${creatorRoleLevel}. You can only assign roles of level ${creatorRoleLevel} or higher.`
+          `Your role level is ${creatorRoleLevel}. You can only assign roles of level strictly higher (number) than ${creatorRoleLevel}.`
         );
       }
     }
@@ -167,21 +169,23 @@ export class UsersService {
         throw new BadRequestException('Target role not found');
       }
 
-      // Vérifier que l'utilisateur cible a un niveau inférieur (level plus élevé)
-      // Un MANAGER (level 2) peut modifier uniquement : PARTNER (3), VIEWER (4), HOSTESS (5)
-      // Un MANAGER ne peut PAS modifier : SUPER_ADMIN (0), ADMIN (1), ou autre MANAGER (2)
+      // ⚠️ ATTENTION : Niveau plus BAS dans la DB = plus de pouvoir
+      // SUPER_ADMIN = 1, ADMIN = 2, MANAGER = 3, VIEWER = 4, PARTNER = 5, HOSTESS = 6
+      // Vérifier que l'utilisateur cible a un niveau INFÉRIEUR (level plus élevé numériquement)
+      // Un MANAGER (level 3) peut modifier uniquement : VIEWER (4), PARTNER (5), HOSTESS (6)
+      // Un MANAGER ne peut PAS modifier : SUPER_ADMIN (1), ADMIN (2), ou autre MANAGER (3)
       if (targetCurrentRole.level <= updaterRoleLevel) {
         throw new BadRequestException(
           `You cannot modify users with role '${targetCurrentRole.name}' (level ${targetCurrentRole.level}). ` +
-          `Your role level is ${updaterRoleLevel}. You can only modify users with role level strictly higher than ${updaterRoleLevel}.`
+          `Your role level is ${updaterRoleLevel}. You can only modify users with role level strictly higher (number) than ${updaterRoleLevel}.`
         );
       }
 
-      // Vérifier que le nouveau rôle assigné est aussi de niveau inférieur
+      // Vérifier que le nouveau rôle assigné est aussi de niveau INFÉRIEUR (level plus élevé numériquement)
       if (newRole.level <= updaterRoleLevel) {
         throw new BadRequestException(
           `You cannot assign role '${newRole.name}' (level ${newRole.level}). ` +
-          `Your role level is ${updaterRoleLevel}. You can only assign roles of level strictly higher than ${updaterRoleLevel}.`
+          `Your role level is ${updaterRoleLevel}. You can only assign roles of level strictly higher (number) than ${updaterRoleLevel}.`
         );
       }
     }

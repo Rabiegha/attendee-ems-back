@@ -106,7 +106,9 @@ export class RolesController {
   @Permissions('roles.assign')
   @ApiOperation({
     summary: 'Mettre à jour les permissions d\'un rôle',
-    description: 'Permet de modifier les permissions associées à un rôle. SUPER_ADMIN peut modifier tous les rôles. ADMIN peut uniquement modifier les rôles de son organisation (pas les templates système).'
+    description: 'Permet de modifier les permissions associées à un rôle. Respecte la hiérarchie : ' +
+                 'un utilisateur peut uniquement modifier les permissions des rôles de niveau strictement inférieur au sien, ' +
+                 'et ne peut pas modifier les permissions de son propre rôle.'
   })
   @ApiResponse({
     status: 200,
@@ -114,7 +116,7 @@ export class RolesController {
   })
   @ApiResponse({
     status: 403,
-    description: 'Permissions insuffisantes ou tentative de modification d\'un rôle système'
+    description: 'Permissions insuffisantes, violation de hiérarchie, ou tentative de modification de son propre rôle'
   })
   async updateRolePermissions(
     @Param('id') roleId: string,
@@ -123,6 +125,7 @@ export class RolesController {
   ) {
     const userRole = req.user.role;
     const userOrgId = req.user.org_id;
+    const updaterUserId = req.user.id;
 
     // Récupérer le rôle à modifier
     const role = await this.rolesService.findById(roleId);
@@ -144,8 +147,8 @@ export class RolesController {
       }
     }
 
-    // Mettre à jour les permissions
-    const updatedRole = await this.rolesService.updateRolePermissions(roleId, permissionIds);
+    // Mettre à jour les permissions (avec vérification hiérarchique dans le service)
+    const updatedRole = await this.rolesService.updateRolePermissions(roleId, permissionIds, updaterUserId);
     
     return {
       id: updatedRole.id,
