@@ -3,6 +3,8 @@ import { seedOrganizations, getOrganizationBySlug } from './organizations.seeder
 import { seedRoles, getRoleByCode } from './roles.seeder';
 import { seedPermissions, assignAllRolePermissions } from './permissions.seeder';
 import { seedUsers } from './users.seeder';
+import { seedEvents } from './events.seeder';
+import { seedAttendeesAndRegistrations } from './attendees.seeder';
 
 /**
  * Main seeding function that runs all seeders in the correct order
@@ -61,6 +63,14 @@ async function runAllSeeders() {
       logError('Some users failed to seed', failedUsers.map(r => r.message));
     }
     
+    // 6. Seed Events
+    logInfo('Seeding events...');
+    const events = await seedEvents();
+    
+    // 7. Seed Attendees and Registrations
+    logInfo('Seeding attendees and registrations...');
+    const { attendees, registrationsCount } = await seedAttendeesAndRegistrations();
+    
     // Get the super admin user for final log
     const superAdminRole = await getRoleByCode('SUPER_ADMIN');
     
@@ -74,6 +84,9 @@ async function runAllSeeders() {
     console.log(`- Permissions: ${permResults.filter(r => r.success).length} created/updated`);
     console.log(`- Permission assignments: ${permAssignResults.filter(r => r.success).length} created/updated`);
     console.log(`- Users: ${userResults.filter(r => r.success).length} created/updated`);
+    console.log(`- Events: ${events?.length || 0} created/updated`);
+    console.log(`- Attendees: ${attendees?.length || 0} created/updated`);
+    console.log(`- Registrations: ${registrationsCount || 0} created`);
     console.log('');
     console.log('🔑 Demo credentials:');
     console.log('Super Admin - Email: john.doe@system.com | Password: admin123 | Role: SUPER_ADMIN');

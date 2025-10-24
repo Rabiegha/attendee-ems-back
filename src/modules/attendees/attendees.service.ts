@@ -154,9 +154,24 @@ export class AttendeesService {
       ];
     }
 
+    // Map frontend sortBy fields to Prisma column names
+    const sortByMapping: Record<string, string> = {
+      registrationDate: 'created_at',
+      firstName: 'first_name',
+      lastName: 'last_name',
+      email: 'email',
+      company: 'company',
+      createdAt: 'created_at',
+      updatedAt: 'updated_at',
+    };
+
+    const mappedSortBy = dto.sortBy 
+      ? (sortByMapping[dto.sortBy] || dto.sortBy)
+      : 'created_at';
+
     // Build orderBy
     const orderBy: Prisma.AttendeeOrderByWithRelationInput = {
-      [dto.sortBy || 'created_at']: dto.sortDir || 'desc',
+      [mappedSortBy]: dto.sortDir || 'desc',
     };
 
     // Execute queries in parallel

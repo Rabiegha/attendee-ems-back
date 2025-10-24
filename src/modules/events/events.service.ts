@@ -162,9 +162,24 @@ export class EventsService {
       ];
     }
 
+    // Map frontend sortBy fields to Prisma column names
+    const sortByMapping: Record<string, string> = {
+      startDate: 'start_at',
+      endDate: 'end_at',
+      createdAt: 'created_at',
+      updatedAt: 'updated_at',
+      name: 'name',
+      code: 'code',
+      status: 'status',
+    };
+
+    const mappedSortBy = dto.sortBy 
+      ? (sortByMapping[dto.sortBy] || dto.sortBy)
+      : 'start_at';
+
     // Build orderBy
     const orderBy: Prisma.EventOrderByWithRelationInput = {
-      [dto.sortBy || 'start_at']: dto.sortOrder || 'desc',
+      [mappedSortBy]: dto.sortOrder || 'desc',
     };
 
     // Execute queries in parallel
