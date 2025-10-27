@@ -1,6 +1,158 @@
-# 🔧 Troubleshooting - Phase 1 Core
+# 🔧 Guide de Dépannage - EMS
 
-## Problèmes Courants et Solutions
+## 📅 Problème 1: Date d'inscription affichée "null"
+
+### Symptôme
+Dans le tableau des inscriptions, la colonne "Date d'inscription" affiche "null" ou "--".
+
+### Cause
+Le frontend cherchait un champ `registered_at` qui n'existe pas dans l'API. Le backend utilise `created_at` comme date d'inscription.
+
+### ✅ Solution (Corrigée)
+Les mappers frontend ont été mis à jour pour utiliser `created_at` du backend. Les dates d'inscription s'affichent maintenant correctement.
+
+---
+
+## 📞 Problème 2: Champ téléphone non enregistré
+
+### Symptôme
+Quand vous ajoutez un champ "Téléphone" dans le formulaire d'inscription, les données ne sont pas enregistrées dans la colonne `phone` de la base de données.
+
+### Cause Probable
+Le champ n'est pas configuré correctement dans le FormBuilder.
+
+### ✅ Solution
+
+1. **Aller dans l'onglet "Formulaire" de votre événement**
+
+2. **Ajouter le champ téléphone avec les bons paramètres :**
+   - **Nom du champ**: `phone` (exactement, sensible à la casse)
+   - **Type**: `Téléphone` (ou `tel`)
+   - **Label**: "Téléphone" (ce qui s'affiche)
+   - **Requis**: Selon votre besoin
+
+3. **Vérification dans la liste des champs :**
+   ```
+   ✅ Correct:
+   - id: phone
+   - name: phone  
+   - type: tel
+   - label: Téléphone
+   
+   ❌ Incorrect:
+   - name: telephone (mauvais nom)
+   - name: Phone (majuscule)
+   - name: tel (trop court)
+   ```
+
+4. **Test d'inscription :**
+   - Activer le "Mode Test" 
+   - Remplir le formulaire avec un numéro de téléphone
+   - Vérifier dans la base de données que la colonne `phone` est remplie
+
+### Mapping des champs standards
+
+Le système reconnaît automatiquement ces noms de champs :
+
+| Nom du champ | Colonne DB | Description |
+|--------------|------------|-------------|
+| `firstName` | `first_name` | Prénom |
+| `lastName` | `last_name` | Nom |
+| `email` | `email` | Email (requis) |
+| `phone` | `phone` | Téléphone |
+| `company` | `company` | Entreprise |
+| `jobTitle` | `job_title` | Fonction |
+| `country` | `country` | Pays |
+
+**Important :** Tous les autres noms de champs sont stockés dans la colonne `answers` (JSONB).
+
+---
+
+## 🔍 Vérification en base de données
+
+Pour vérifier que les données sont bien enregistrées :
+
+```sql
+-- Voir les inscriptions avec les détails attendee
+SELECT 
+  r.id,
+  r.created_at as date_inscription,
+  a.email,
+  a.first_name,
+  a.last_name,
+  a.phone,  -- ← Doit contenir le numéro
+  a.company,
+  r.answers  -- ← Champs personnalisés
+FROM registrations r
+JOIN attendees a ON r.attendee_id = a.id
+WHERE r.event_id = 'votre-event-id'
+ORDER BY r.created_at DESC;
+```
+
+---
+
+## 🚨 Problèmes courants
+
+### Le champ phone reste null
+- ✅ Vérifiez que le nom du champ est exactement `phone`
+- ✅ Testez avec le mode test activé
+- ✅ Vérifiez que le type de champ est `tel` ou `text`
+
+### Les données vont dans answers au lieu des colonnes
+- ✅ Le nom du champ ne correspond pas aux noms standards
+- ✅ Utilisez les noms exacts du tableau ci-dessus
+
+### La date d'inscription est null
+- ✅ Problème corrigé dans les mappers frontend 
+- ✅ Redémarrez le frontend si nécessaire
+
+---
+
+## 📊 Architecture des données
+
+```
+📊 BASE DE DONNÉES
+│
+├── 👥 attendees (informations personnelles)
+│   ├── email (requis)
+│   ├── first_name 
+│   ├── last_name
+│   ├── phone ← Stocké ici
+│   ├── company
+│   ├── job_title
+│   └── country
+│
+└── 📝 registrations (inscription à l'événement)
+    ├── created_at ← Date d'inscription
+    ├── status (awaiting/approved/refused)
+    ├── attendance_type (onsite/online/hybrid)
+    └── answers (JSONB) ← Champs personnalisés
+```
+
+---
+
+## 🛠️ Tests recommandés
+
+1. **Test complet d'inscription :**
+   ```
+   1. Ajouter le champ "phone" au formulaire
+   2. Activer le mode test
+   3. Remplir : email, prénom, nom, téléphone
+   4. Soumettre le formulaire
+   5. Vérifier dans la liste des inscriptions
+   6. Contrôler en base de données
+   ```
+
+2. **Test des champs personnalisés :**
+   ```
+   1. Ajouter un champ "allergies" 
+   2. Le remplir lors de l'inscription
+   3. Vérifier qu'il apparaît dans answers
+   ```
+
+---
+
+## Problèmes Techniques Courants et Solutions
 
 ### ❌ Erreur: "Cannot find module 'nanoid'"
 

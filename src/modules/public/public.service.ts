@@ -16,7 +16,8 @@ export class PublicService {
    * Get event information by public token (safe fields only)
    */
   async getEventByPublicToken(publicToken: string) {
-    const eventSettings = await this.prisma.eventSetting.findUnique({
+    // Try to find by public_token first
+    let eventSettings = await this.prisma.eventSetting.findUnique({
       where: { public_token: publicToken },
       include: {
         event: {
@@ -27,6 +28,25 @@ export class PublicService {
         },
       },
     });
+
+    // If not found, try to find by event ID (for backward compatibility)
+    if (!eventSettings) {
+      const event = await this.prisma.event.findUnique({
+        where: { id: publicToken },
+        include: {
+          activitySector: true,
+          eventType: true,
+          settings: true,
+        },
+      });
+
+      if (event && event.settings) {
+        eventSettings = {
+          ...event.settings,
+          event: event,
+        } as any;
+      }
+    }
 
     if (!eventSettings || !eventSettings.event) {
       throw new NotFoundException('Event not found');
@@ -53,6 +73,10 @@ export class PublicService {
       website_url: eventSettings.website_url,
       attendance_mode: eventSettings.attendance_mode,
       registration_fields: eventSettings.registration_fields,
+      submit_button_text: eventSettings.submit_button_text,
+      submit_button_color: eventSettings.submit_button_color,
+      show_title: eventSettings.show_title,
+      show_description: eventSettings.show_description,
       activity_sector: event.activitySector
         ? {
             code: event.activitySector.code,
@@ -79,13 +103,30 @@ export class PublicService {
    */
   async registerToEvent(publicToken: string, dto: PublicRegisterDto) {
     return this.prisma.$transaction(async (tx) => {
-      // Get event and settings
-      const eventSettings = await tx.eventSetting.findUnique({
+      // Get event and settings - try public_token first, then event ID
+      let eventSettings = await tx.eventSetting.findUnique({
         where: { public_token: publicToken },
         include: {
           event: true,
         },
       });
+
+      // If not found, try by event ID
+      if (!eventSettings) {
+        const event = await tx.event.findUnique({
+          where: { id: publicToken },
+          include: {
+            settings: true,
+          },
+        });
+
+        if (event && event.settings) {
+          eventSettings = {
+            ...event.settings,
+            event: event,
+          } as any;
+        }
+      }
 
       if (!eventSettings || !eventSettings.event) {
         throw new NotFoundException('Event not found');

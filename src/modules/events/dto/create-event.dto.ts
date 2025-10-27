@@ -164,6 +164,26 @@ export class CreateEventDto {
   @IsOptional()
   registration_fields?: any;
 
+  @ApiPropertyOptional({ description: 'Submit button text', example: "S'inscrire" })
+  @IsOptional()
+  @IsString()
+  submit_button_text?: string;
+
+  @ApiPropertyOptional({ description: 'Submit button color (hex)', example: '#4F46E5' })
+  @IsOptional()
+  @IsString()
+  submit_button_color?: string;
+
+  @ApiPropertyOptional({ description: 'Show event title in public form', default: true })
+  @IsOptional()
+  @IsBoolean()
+  show_title?: boolean;
+
+  @ApiPropertyOptional({ description: 'Show event description in public form', default: true })
+  @IsOptional()
+  @IsBoolean()
+  show_description?: boolean;
+
   @ApiPropertyOptional({ description: 'Auto transition to active', default: true })
   @IsOptional()
   @IsBoolean()

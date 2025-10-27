@@ -320,6 +320,10 @@ export class EventsService {
         dto.allow_checkin_out !== undefined ||
         dto.has_event_reminder !== undefined ||
         dto.registration_fields !== undefined ||
+        dto.submit_button_text !== undefined ||
+        dto.submit_button_color !== undefined ||
+        dto.show_title !== undefined ||
+        dto.show_description !== undefined ||
         dto.auto_transition_to_active !== undefined ||
         dto.auto_transition_to_completed !== undefined
       ) {
@@ -334,6 +338,10 @@ export class EventsService {
             registration_fields: dto.registration_fields
               ? (dto.registration_fields as Prisma.InputJsonValue)
               : undefined,
+            submit_button_text: dto.submit_button_text,
+            submit_button_color: dto.submit_button_color,
+            show_title: dto.show_title,
+            show_description: dto.show_description,
             auto_transition_to_active: dto.auto_transition_to_active,
             auto_transition_to_completed: dto.auto_transition_to_completed,
           },

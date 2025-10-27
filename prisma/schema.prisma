@@ -440,6 +440,10 @@ model EventSetting {
   badge_template_id               String?  @db.Uuid
   public_token                    String   @unique
   registration_fields             Json?
+  submit_button_text              String?
+  submit_button_color             String?
+  show_title                      Boolean  @default(true)
+  show_description                Boolean  @default(true)
   auto_transition_to_active       Boolean  @default(true)
   auto_transition_to_completed    Boolean  @default(true)
   extra                           Json?

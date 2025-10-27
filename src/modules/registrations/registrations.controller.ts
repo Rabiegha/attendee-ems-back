@@ -3,14 +3,20 @@ import {
   Get,
   Post,
   Put,
+  Patch,
+  Delete,
   Body,
   Param,
   Query,
   UseGuards,
   Request,
   ForbiddenException,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { RegistrationsService } from './registrations.service';
 import { ListRegistrationsDto } from './dto/list-registrations.dto';
 import { CreateRegistrationDto } from './dto/create-registration.dto';
@@ -100,10 +106,120 @@ export class RegistrationsController {
     return this.registrationsService.create(eventId, orgId, createDto);
   }
 
-  // TODO: Bulk import endpoint
-  // @Post('events/:eventId/registrations/bulk-import')
-  // @Permissions(['registrations.import'])
-  // async bulkImport(@Param('eventId') eventId: string, @UploadedFile() file: Express.Multer.File, @Request() req) {
-  //   // Implementation for Excel import
-  // }
+  @Patch('registrations/:id')
+  @Permissions('registrations.update')
+  @ApiOperation({ summary: 'Update a registration' })
+  @ApiResponse({ status: 200, description: 'Registration updated successfully' })
+  async update(
+    @Param('id') id: string,
+    @Body() updateDto: Partial<CreateRegistrationDto>,
+    @Request() req,
+  ) {
+    const allowAny = req.user.permissions?.some((p: string) =>
+      p.startsWith('events.') && p.endsWith(':any'),
+    );
+    const orgId = resolveEffectiveOrgId({
+      reqUser: req.user,
+      explicitOrgId: undefined,
+      allowAny,
+    });
+
+    return this.registrationsService.update(id, orgId, updateDto);
+  }
+
+  @Delete('registrations/:id')
+  @Permissions('registrations.delete')
+  @ApiOperation({ summary: 'Delete a registration' })
+  @ApiResponse({ status: 200, description: 'Registration deleted successfully' })
+  async remove(
+    @Param('id') id: string,
+    @Request() req,
+  ) {
+    const allowAny = req.user.permissions?.some((p: string) =>
+      p.startsWith('events.') && p.endsWith(':any'),
+    );
+    const orgId = resolveEffectiveOrgId({
+      reqUser: req.user,
+      explicitOrgId: undefined,
+      allowAny,
+    });
+
+    return this.registrationsService.remove(id, orgId);
+  }
+
+  @Post('events/:eventId/registrations/bulk-import')
+  @Permissions('registrations.create')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Bulk import registrations from Excel file' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+        },
+        autoApprove: {
+          type: 'boolean',
+          description: 'Auto-approve all imported registrations',
+        },
+      },
+    },
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Import summary with created, updated, and skipped counts',
+    schema: {
+      type: 'object',
+      properties: {
+        success: { type: 'boolean' },
+        summary: {
+          type: 'object',
+          properties: {
+            total_rows: { type: 'number' },
+            created: { type: 'number' },
+            updated: { type: 'number' },
+            skipped: { type: 'number' },
+            errors: { 
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  row: { type: 'number' },
+                  email: { type: 'string' },
+                  error: { type: 'string' },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  })
+  async bulkImport(
+    @Param('eventId') eventId: string, 
+    @UploadedFile() file: Express.Multer.File, 
+    @Body('autoApprove') autoApprove: string,
+    @Request() req
+  ) {
+    if (!file) {
+      throw new BadRequestException('File is required');
+    }
+
+    const canAny = req.authz?.canRegistrationsAny === true;
+    const orgId = resolveEffectiveOrgId({
+      reqUser: req.user,
+      allowAny: canAny,
+    });
+
+    const autoApproveBoolean = autoApprove === 'true';
+
+    return this.registrationsService.bulkImport(
+      eventId,
+      orgId,
+      file.buffer,
+      autoApproveBoolean,
+    );
+  }
 }
