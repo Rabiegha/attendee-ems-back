@@ -124,6 +124,20 @@ export class EventsService {
         },
       });
 
+      // Create event access records for assigned users
+      if (dto.assigned_user_ids && dto.assigned_user_ids.length > 0) {
+        await tx.eventAccess.createMany({
+          data: dto.assigned_user_ids.map(user_id => ({
+            org_id: orgId,
+            event_id: event.id,
+            user_id: user_id,
+            reason: 'Assigned during event creation',
+            granted_by: userId,
+          })),
+          skipDuplicates: true,
+        });
+      }
+
       return { ...event, settings };
     });
   }
@@ -386,6 +400,30 @@ export class EventsService {
             auto_transition_to_completed: dto.auto_transition_to_completed,
           } as any, // Type cast pour nouveaux champs
         });
+      }
+
+      // Update event access (assigned users) if provided
+      if (dto.assigned_user_ids !== undefined) {
+        // Delete existing assignments
+        await tx.eventAccess.deleteMany({
+          where: {
+            event_id: id,
+            org_id: orgId,
+          },
+        });
+
+        // Create new assignments if any
+        if (dto.assigned_user_ids.length > 0) {
+          await tx.eventAccess.createMany({
+            data: dto.assigned_user_ids.map(user_id => ({
+              org_id: orgId,
+              event_id: id,
+              user_id: user_id,
+              reason: 'Assigned during event update',
+            })),
+            skipDuplicates: true,
+          });
+        }
       }
 
       return event;

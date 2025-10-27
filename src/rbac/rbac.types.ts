@@ -19,6 +19,7 @@ export type Subjects =
   | 'Permission'
   | 'Event'
   | 'Attendee'
+  | 'Registration'
   | 'Invitation'
   | 'Analytics'
   | 'Report';

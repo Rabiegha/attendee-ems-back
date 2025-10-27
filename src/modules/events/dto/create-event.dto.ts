@@ -193,4 +193,9 @@ export class CreateEventDto {
   @IsOptional()
   @IsBoolean()
   auto_transition_to_completed?: boolean;
+
+  @ApiPropertyOptional({ description: 'Array of user IDs to assign to this event', type: [String] })
+  @IsOptional()
+  @IsUUID('4', { each: true })
+  assigned_user_ids?: string[];
 }

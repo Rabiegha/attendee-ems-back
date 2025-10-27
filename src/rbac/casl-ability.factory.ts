@@ -87,6 +87,7 @@ export class CaslAbilityFactory {
       'organizations': 'Organization',
       'events': 'Event',
       'attendees': 'Attendee',
+      'registrations': 'Registration',
       'roles': 'Role',
       'invitations': 'Invitation',
       'analytics': 'Analytics',
