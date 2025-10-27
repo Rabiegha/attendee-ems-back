@@ -336,7 +336,7 @@ export class EventsService {
             allow_checkin_out: dto.allow_checkin_out,
             has_event_reminder: dto.has_event_reminder,
             registration_fields: dto.registration_fields
-              ? (dto.registration_fields as Prisma.InputJsonValue)
+              ? (dto.registration_fields as any)
               : undefined,
             submit_button_text: dto.submit_button_text,
             submit_button_color: dto.submit_button_color,
@@ -344,7 +344,7 @@ export class EventsService {
             show_description: dto.show_description,
             auto_transition_to_active: dto.auto_transition_to_active,
             auto_transition_to_completed: dto.auto_transition_to_completed,
-          },
+          } as any, // Type cast pour nouveaux champs
         });
       }
 

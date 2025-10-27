@@ -53,6 +53,7 @@ export class PublicService {
     }
 
     const { event } = eventSettings;
+    const settings = eventSettings as any; // Type cast pour nouveaux champs
 
     // Return safe fields only (no internal IDs, no sensitive data)
     return {
@@ -70,13 +71,13 @@ export class PublicService {
       address_country: event.address_country,
       latitude: event.latitude,
       longitude: event.longitude,
-      website_url: eventSettings.website_url,
-      attendance_mode: eventSettings.attendance_mode,
-      registration_fields: eventSettings.registration_fields,
-      submit_button_text: eventSettings.submit_button_text,
-      submit_button_color: eventSettings.submit_button_color,
-      show_title: eventSettings.show_title,
-      show_description: eventSettings.show_description,
+      website_url: settings.website_url,
+      attendance_mode: settings.attendance_mode,
+      registration_fields: settings.registration_fields,
+      submit_button_text: settings.submit_button_text,
+      submit_button_color: settings.submit_button_color,
+      show_title: settings.show_title,
+      show_description: settings.show_description,
       activity_sector: event.activitySector
         ? {
             code: event.activitySector.code,
