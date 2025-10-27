@@ -20,6 +20,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { resolveEffectiveOrgId } from '../../common/utils/org-scope.util';
+import { resolveEventReadScope } from '../../common/utils/resolve-event-scope.util';
 
 @ApiTags('Events')
 @ApiBearerAuth()
@@ -47,38 +48,32 @@ export class EventsController {
   }
 
   @Get()
-  @Permissions('events.read:any', 'events.read:own')
+  @Permissions('events.read')
   @ApiOperation({ summary: 'List all events' })
   @ApiResponse({ status: 200, description: 'Events retrieved successfully' })
   async findAll(@Query() listEventsDto: ListEventsDto, @Request() req) {
-    const allowAny = req.user.permissions?.some((p: string) =>
-      p.startsWith('events.') && p.endsWith(':any'),
-    );
-    const orgId = resolveEffectiveOrgId({
-      reqUser: req.user,
-      explicitOrgId: undefined,
-      allowAny,
+    const scope = resolveEventReadScope(req.user);
+    
+    return this.eventsService.findAll(listEventsDto, {
+      scope,
+      orgId: req.user.org_id,
+      userId: req.user.sub,
     });
-
-    return this.eventsService.findAll(listEventsDto, orgId);
   }
 
   @Get(':id')
-  @Permissions('events.read:any', 'events.read:own')
+  @Permissions('events.read')
   @ApiOperation({ summary: 'Get event by ID' })
   @ApiResponse({ status: 200, description: 'Event retrieved successfully' })
   @ApiResponse({ status: 404, description: 'Event not found' })
   async findOne(@Param('id') id: string, @Request() req) {
-    const allowAny = req.user.permissions?.some((p: string) =>
-      p.startsWith('events.') && p.endsWith(':any'),
-    );
-    const orgId = resolveEffectiveOrgId({
-      reqUser: req.user,
-      explicitOrgId: undefined,
-      allowAny,
+    const scope = resolveEventReadScope(req.user);
+    
+    return this.eventsService.findOne(id, {
+      scope,
+      orgId: req.user.org_id,
+      userId: req.user.sub,
     });
-
-    return this.eventsService.findOne(id, orgId);
   }
 
   @Put(':id')

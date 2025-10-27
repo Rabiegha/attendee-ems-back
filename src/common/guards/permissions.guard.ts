@@ -69,16 +69,22 @@ export class PermissionsGuard implements CanActivate {
     return true;
   }
 
+  /**
+   * Parse une permission pour extraire action et subject
+   * Ignore le scope (:any, :org, :assigned) - gating binaire uniquement
+   * Ex: "events.read:any" -> [Action.Read, 'Event']
+   * Ex: "events.create" -> [Action.Create, 'Event']
+   */
   private parsePermission(permission: string): [Action, Subjects] {
     const parts = permission.split('.');
     if (parts.length !== 2) {
       throw new Error(`Invalid permission format: ${permission}`);
     }
 
-    const [subject, actionWithCondition] = parts;
+    const [resource, actionWithScope] = parts;
     
-    // Extraire l'action en supprimant les conditions (:own, :any, etc.)
-    const action = actionWithCondition.split(':')[0];
+    // Extraire l'action en supprimant le scope (:own, :any, :org, :assigned, etc.)
+    const action = actionWithScope.split(':')[0];
     
     const actionMap: Record<string, Action> = {
       'create': Action.Create,
@@ -86,6 +92,12 @@ export class PermissionsGuard implements CanActivate {
       'update': Action.Update,
       'delete': Action.Delete,
       'manage': Action.Manage,
+      'assign': Action.Manage,
+      'checkin': Action.Update,
+      'export': Action.Read,
+      'publish': Action.Update,
+      'cancel': Action.Delete,
+      'view': Action.Read,
     };
 
     const subjectMap: Record<string, Subjects> = {
@@ -94,8 +106,14 @@ export class PermissionsGuard implements CanActivate {
       'roles': 'Role',
       'permissions': 'Permission',
       'attendee': 'Attendee',
+      'attendees': 'Attendee',
+      'events': 'Event',
+      'invitations': 'Invitation',
+      'analytics': 'Analytics',
+      'reports': 'Report',
+      'registrations': 'Event',  // registrations mapped to Event
     };
 
-    return [actionMap[action] || Action.Read, subjectMap[subject] || 'all'];
+    return [actionMap[action] || Action.Read, subjectMap[resource] || 'all'];
   }
 }

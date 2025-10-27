@@ -26,6 +26,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { OrgScopeGuard } from '../../common/guards/org-scope.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
+import { resolveUserReadScope } from '../../common/utils/resolve-user-scope.util';
 
 @ApiTags('users')
 @ApiBearerAuth()
@@ -71,7 +72,7 @@ export class UsersController {
   }
 
   @Get()
-  @Permissions('users.read:any')
+  @Permissions('users.read')
   @ApiOperation({
     summary: 'Récupérer la liste des utilisateurs',
     description: 'Récupère la liste paginée des utilisateurs de l\'organisation'
@@ -113,10 +114,15 @@ export class UsersController {
     @Query('limit') limit?: string,
     @Query('q') search?: string,
   ) {
-    const orgId = req.user.org_id;
+    const scope = resolveUserReadScope(req.user);
     const pageNumber = page ? parseInt(page, 10) : 1;
     const limitNumber = limit ? parseInt(limit, 10) : 10;
-    return this.usersService.findAll(orgId, pageNumber, limitNumber, search);
+    
+    return this.usersService.findAll(pageNumber, limitNumber, search, {
+      scope,
+      orgId: req.user.org_id,
+      userId: req.user.id || req.user.sub,
+    });
   }
 
   @Get('me')
@@ -145,7 +151,7 @@ export class UsersController {
   }
 
   @Get(':id')
-  @Permissions('users.read:any')
+  @Permissions('users.read')
   @ApiOperation({
     summary: 'Récupérer un utilisateur par ID',
     description: 'Récupère les informations d\'un utilisateur spécifique par son ID'

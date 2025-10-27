@@ -16,9 +16,22 @@ export class PermissionsService {
     });
   }
 
-  async findByCode(code: string): Promise<Permission | null> {
-    return this.prisma.permission.findUnique({
+  async findByCode(code: string): Promise<Permission[]> {
+    // Note: code n'est plus unique seul, il faut code + scope
+    // Retourne toutes les permissions avec ce code (tous scopes)
+    return this.prisma.permission.findMany({
       where: { code },
+    });
+  }
+  
+  async findByCodeAndScope(code: string, scope: string): Promise<Permission | null> {
+    return this.prisma.permission.findUnique({
+      where: { 
+        code_scope: {
+          code,
+          scope: scope as any,
+        }
+      },
     });
   }
 }

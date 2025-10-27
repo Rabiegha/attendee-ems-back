@@ -5,15 +5,18 @@ import { Action, AppAbility, Subjects } from './rbac.types';
 /**
  * Factory CASL pour créer les abilities selon les permissions utilisateur
  * 
- * RÈGLES SIMPLIFIÉES:
+ * GATING BINAIRE UNIQUEMENT (capability check):
  * - SUPER_ADMIN: Accès total cross-tenant (manage all)
- * - ADMIN: Accès total dans son organisation (manage all dans org)
- * - Autres: Permissions granulaires selon leur rôle
+ * - ADMIN: Accès total (manage all) - scope org géré au niveau Prisma
+ * - Autres: Permissions granulaires SANS conditions CASL
+ * 
+ * Les scopes (:any, :org, :assigned) sont résolus au niveau contrôleur/service,
+ * pas dans CASL. CASL vérifie uniquement la capacité (capability).
  */
 @Injectable()
 export class CaslAbilityFactory {
   createForUser(user: any): AppAbility {
-    const { can, cannot, build } = new AbilityBuilder<AppAbility>(createMongoAbility);
+    const { can, build } = new AbilityBuilder<AppAbility>(createMongoAbility);
 
     // SUPER_ADMIN a accès à TOUT sans restriction
     if (user.role === 'SUPER_ADMIN') {
@@ -21,24 +24,14 @@ export class CaslAbilityFactory {
       return build();
     }
 
-    // ADMIN a accès à tout dans son organisation
+    // ADMIN a accès à tout (scope org sera géré au niveau Prisma)
     if (user.role === 'ADMIN') {
-      can(Action.Manage, 'all', { orgId: user.org_id });
-      
-      // Parsing additionnel des permissions pour plus de granularité si nécessaire
-      if (user.permissions && Array.isArray(user.permissions)) {
-        user.permissions.forEach((permission: string) => {
-          const ability = this.parsePermissionToAbility(permission);
-          if (ability) {
-            can(ability.action, ability.subject, ability.conditions);
-          }
-        });
-      }
-      
+      can(Action.Manage, 'all');
       return build();
     }
 
     // Pour les autres rôles, parser les permissions individuellement
+    // SANS conditions - gating binaire uniquement
     if (!user.permissions || !Array.isArray(user.permissions)) {
       return build();
     }
@@ -46,7 +39,7 @@ export class CaslAbilityFactory {
     user.permissions.forEach((permission: string) => {
       const ability = this.parsePermissionToAbility(permission);
       if (ability) {
-        can(ability.action, ability.subject, ability.conditions);
+        can(ability.action, ability.subject);
       }
     });
 
@@ -55,13 +48,14 @@ export class CaslAbilityFactory {
 
   /**
    * Parse une permission du format "resource.action:scope" vers une ability CASL
-   * Ex: "users.read:own" -> { action: 'read', subject: 'User', conditions: { userId: user.id } }
+   * GATING BINAIRE: ignore le scope, retourne uniquement action + subject
+   * Ex: "events.read:any" -> { action: 'read', subject: 'Event' }
+   * Ex: "events.read:org" -> { action: 'read', subject: 'Event' }
    * Ex: "events.create" -> { action: 'create', subject: 'Event' }
    */
   private parsePermissionToAbility(permission: string): { 
     action: Action; 
     subject: Subjects; 
-    conditions?: any 
   } | null {
     const parts = permission.split('.');
     if (parts.length !== 2) {
@@ -69,7 +63,8 @@ export class CaslAbilityFactory {
     }
 
     const [resource, actionWithScope] = parts;
-    const [action, scope] = actionWithScope.split(':');
+    // Extraire l'action en ignorant le scope (:any, :org, :assigned, etc.)
+    const [action] = actionWithScope.split(':');
 
     // Mapping des actions
     const actionMap: Record<string, Action> = {
@@ -96,6 +91,7 @@ export class CaslAbilityFactory {
       'invitations': 'Invitation',
       'analytics': 'Analytics',
       'reports': 'Report',
+      'registrations': 'Event',  // registrations mapped to Event for now
     };
 
     const mappedAction = actionMap[action];
@@ -105,16 +101,8 @@ export class CaslAbilityFactory {
       return null;
     }
 
-    // Gérer les scopes (own, any)
-    let conditions: any = undefined;
-    
-    if (scope === 'own') {
-      // Pour "own", ajouter condition sur l'ownership
-      conditions = { ownerId: '$user.id' }; // Sera résolu lors du check
-    }
-    // 'any' ou pas de scope = pas de conditions supplémentaires
-
-    return { action: mappedAction, subject: mappedSubject, conditions };
+    // Pas de conditions - gating binaire uniquement
+    return { action: mappedAction, subject: mappedSubject };
   }
 }
 

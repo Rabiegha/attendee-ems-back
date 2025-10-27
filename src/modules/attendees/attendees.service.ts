@@ -9,6 +9,12 @@ import { CreateAttendeeDto } from './dto/create-attendee.dto';
 import { UpdateAttendeeDto } from './dto/update-attendee.dto';
 import { ListAttendeesDto } from './dto/list-attendees.dto';
 import { Attendee, Prisma } from '@prisma/client';
+import { AttendeeScope } from '../../common/utils/resolve-attendee-scope.util';
+
+interface AttendeeQueryContext {
+  scope: AttendeeScope;
+  orgId?: string;
+}
 
 @Injectable()
 export class AttendeesService {
@@ -102,10 +108,13 @@ export class AttendeesService {
 
   /**
    * List attendees with filters, pagination, and sorting
+   * Applique le scope au niveau Prisma:
+   * - 'any': cross-tenant (pas de filtre org)
+   * - 'org': filtré par org_id
    */
   async findAll(
     dto: ListAttendeesDto,
-    orgId: string,
+    ctx: AttendeeQueryContext,
   ): Promise<{
     data: Attendee[];
     meta: { page: number; pageSize: number; total: number; totalPages: number };
@@ -114,10 +123,13 @@ export class AttendeesService {
     const pageSize = dto.pageSize || 20;
     const skip = (page - 1) * pageSize;
 
-    // Build where clause
-    const where: Prisma.AttendeeWhereInput = {
-      org_id: orgId,
-    };
+    // Build where clause avec scope
+    const where: Prisma.AttendeeWhereInput = {};
+
+    // Appliquer le scope
+    if (ctx.scope !== 'any') {
+      where.org_id = ctx.orgId!;
+    }
 
     // Apply filters
     if (dto.email) {
@@ -199,14 +211,23 @@ export class AttendeesService {
   }
 
   /**
-   * Find one attendee by ID within the org
+   * Find one attendee by ID
+   * Applique le scope au niveau Prisma:
+   * - 'any': cross-tenant (pas de filtre org)
+   * - 'org': filtré par org_id
    */
-  async findOne(id: string, orgId: string): Promise<Attendee> {
+  async findOne(id: string, ctx: AttendeeQueryContext): Promise<Attendee> {
+    const where: Prisma.AttendeeWhereInput = {
+      id,
+    };
+
+    // Appliquer le scope
+    if (ctx.scope !== 'any') {
+      where.org_id = ctx.orgId!;
+    }
+
     const attendee = await this.prisma.attendee.findFirst({
-      where: {
-        id,
-        org_id: orgId,
-      },
+      where,
     });
 
     if (!attendee) {

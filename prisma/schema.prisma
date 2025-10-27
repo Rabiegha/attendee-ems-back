@@ -94,18 +94,27 @@ model Role {
   @@map("roles")
 }
 
+enum PermissionScope {
+  any
+  org
+  assigned
+  own
+  none
+}
+
 model Permission {
-  id          String   @id @default(uuid()) @db.Uuid
-  code        String
+  id          String          @id @default(uuid()) @db.Uuid
+  code        String          // ex: "events.read" (sans scope)
+  scope       PermissionScope @default(none)
   name        String
   description String?
-  created_at  DateTime @default(now()) @map("created_at")
-  updated_at  DateTime @updatedAt @map("updated_at")
+  created_at  DateTime        @default(now()) @map("created_at")
+  updated_at  DateTime        @updatedAt @map("updated_at")
 
   // Relations
   rolePermissions RolePermission[]
 
-  @@unique([code])
+  @@unique([code, scope])
   @@map("permissions")
 }
 

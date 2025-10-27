@@ -2,6 +2,7 @@ import { prisma, SeedResult, logSuccess, logError } from './utils';
 
 export interface PermissionSeedData {
   code: string;
+  scope: 'any' | 'org' | 'assigned' | 'own' | 'none';
   name: string;
   description?: string;
 }
@@ -12,182 +13,340 @@ export interface PermissionSeedData {
  */
 const permissionsData: PermissionSeedData[] = [
   // ==================== ORGANIZATIONS ====================
+  // Phase 4: Organizations avec scopes explicites
   { 
-    code: 'organizations.read:own', 
+    code: 'organizations.read',
+    scope: 'any',
+    name: 'Read all organizations (cross-tenant)', 
+    description: 'View all organizations (SUPER_ADMIN)' 
+  },
+  { 
+    code: 'organizations.read',
+    scope: 'org',
     name: 'Read own organization', 
     description: 'View own organization information' 
   },
   { 
-    code: 'organizations.read:any', 
-    name: 'Read any organization', 
-    description: 'View any organization information (SUPER_ADMIN only)' 
-  },
-  { 
-    code: 'organizations.create', 
+    code: 'organizations.create',
+    scope: 'any',
     name: 'Create organization', 
     description: 'Create new organizations (SUPER_ADMIN only)' 
   },
   { 
-    code: 'organizations.update', 
+    code: 'organizations.update',
+    scope: 'any',
+    name: 'Update organizations (cross-tenant)', 
+    description: 'Update any organization settings (SUPER_ADMIN)' 
+  },
+  { 
+    code: 'organizations.update',
+    scope: 'org',
     name: 'Update organization', 
-    description: 'Update organization settings' 
+    description: 'Update own organization settings' 
   },
   
   // ==================== USERS ====================
+  // Phase 4: Users avec scopes explicites
   { 
-    code: 'users.read:own', 
-    name: 'Read own profile', 
-    description: 'View own user profile' 
+    code: 'users.read',
+    scope: 'any',
+    name: 'Read all users (cross-tenant)', 
+    description: 'View users across all organizations (SUPER_ADMIN)' 
   },
   { 
-    code: 'users.read:any', 
+    code: 'users.read',
+    scope: 'org',
     name: 'Read users', 
-    description: 'View all users in organization' 
+    description: 'View users in own organization' 
   },
   { 
-    code: 'users.create', 
+    code: 'users.read',
+    scope: 'own',
+    name: 'Read own profile', 
+    description: 'View only own user profile' 
+  },
+  { 
+    code: 'users.create',
+    scope: 'any',
+    name: 'Create users (cross-tenant)', 
+    description: 'Create users in any organization (SUPER_ADMIN)' 
+  },
+  { 
+    code: 'users.create',
+    scope: 'org',
     name: 'Create users', 
     description: 'Create new users in organization' 
   },
   { 
-    code: 'users.update', 
-    name: 'Update users', 
-    description: 'Update user information' 
+    code: 'users.update',
+    scope: 'any',
+    name: 'Update users (cross-tenant)', 
+    description: 'Update users in any organization (SUPER_ADMIN)' 
   },
   { 
-    code: 'users.delete', 
+    code: 'users.update',
+    scope: 'org',
+    name: 'Update users', 
+    description: 'Update user information in organization' 
+  },
+  { 
+    code: 'users.delete',
+    scope: 'any',
+    name: 'Delete users (cross-tenant)', 
+    description: 'Delete users from any organization (SUPER_ADMIN)' 
+  },
+  { 
+    code: 'users.delete',
+    scope: 'org',
     name: 'Delete users', 
     description: 'Delete users from organization' 
   },
   
   // ==================== EVENTS ====================
+  // Phase 1: Events avec scopes explicites (code SANS scope, scope séparé)
   { 
-    code: 'events.read:own', 
-    name: 'Read assigned events', 
-    description: 'View events assigned to user (PARTNER, HOSTESS)' 
+    code: 'events.read', 
+    scope: 'any',
+    name: 'Read all events (cross-tenant)', 
+    description: 'View all events across all organizations (SUPER_ADMIN)' 
   },
   { 
-    code: 'events.read:any', 
-    name: 'Read all events', 
-    description: 'View all events in organization' 
+    code: 'events.read', 
+    scope: 'org',
+    name: 'Read organization events', 
+    description: 'View all events in own organization (ADMIN, MANAGER, VIEWER)' 
+  },
+  { 
+    code: 'events.read', 
+    scope: 'assigned',
+    name: 'Read assigned events', 
+    description: 'View only events assigned via EventAccess (PARTNER, HOSTESS)' 
   },
   { 
     code: 'events.create', 
+    scope: 'any',
+    name: 'Create events (cross-tenant)', 
+    description: 'Create events in any organization (SUPER_ADMIN)' 
+  },
+  { 
+    code: 'events.create', 
+    scope: 'org',
     name: 'Create events', 
-    description: 'Create new events' 
+    description: 'Create new events in organization' 
   },
   { 
     code: 'events.update', 
+    scope: 'any',
+    name: 'Update events (cross-tenant)', 
+    description: 'Update events in any organization (SUPER_ADMIN)' 
+  },
+  { 
+    code: 'events.update', 
+    scope: 'org',
     name: 'Update events', 
-    description: 'Update event information' 
+    description: 'Update event information in organization' 
   },
   { 
     code: 'events.delete', 
+    scope: 'any',
+    name: 'Delete events (cross-tenant)', 
+    description: 'Delete events in any organization (SUPER_ADMIN)' 
+  },
+  { 
+    code: 'events.delete', 
+    scope: 'org',
     name: 'Delete events', 
-    description: 'Delete events' 
+    description: 'Delete events in organization' 
   },
   { 
     code: 'events.publish', 
+    scope: 'any',
+    name: 'Publish events (cross-tenant)', 
+    description: 'Publish events in any organization (SUPER_ADMIN)' 
+  },
+  { 
+    code: 'events.publish', 
+    scope: 'org',
     name: 'Publish events', 
     description: 'Publish events and make them public' 
   },
   
   // ==================== ATTENDEES ====================
+  // Phase 2: Attendees avec scopes explicites (code SANS scope, scope séparé)
   { 
-    code: 'attendees.read', 
-    name: 'Read attendees', 
-    description: 'View attendee information' 
+    code: 'attendees.read',
+    scope: 'any',
+    name: 'Read all attendees (cross-tenant)', 
+    description: 'View all attendees across all organizations (SUPER_ADMIN)' 
   },
   { 
-    code: 'attendees.create', 
+    code: 'attendees.read',
+    scope: 'org',
+    name: 'Read organization attendees', 
+    description: 'View all attendees in own organization' 
+  },
+  { 
+    code: 'attendees.create',
+    scope: 'any',
+    name: 'Create attendees (cross-tenant)', 
+    description: 'Create attendees in any organization (SUPER_ADMIN)' 
+  },
+  { 
+    code: 'attendees.create',
+    scope: 'org',
     name: 'Create attendees', 
-    description: 'Add new attendees' 
+    description: 'Add new attendees in organization' 
   },
   { 
-    code: 'attendees.update', 
+    code: 'attendees.update',
+    scope: 'any',
+    name: 'Update attendees (cross-tenant)', 
+    description: 'Update attendees in any organization (SUPER_ADMIN)' 
+  },
+  { 
+    code: 'attendees.update',
+    scope: 'org',
     name: 'Update attendees', 
-    description: 'Update attendee information' 
+    description: 'Update attendee information in organization' 
   },
   { 
-    code: 'attendees.delete', 
+    code: 'attendees.delete',
+    scope: 'any',
+    name: 'Delete attendees (cross-tenant)', 
+    description: 'Delete attendees in any organization (SUPER_ADMIN)' 
+  },
+  { 
+    code: 'attendees.delete',
+    scope: 'org',
     name: 'Delete attendees', 
-    description: 'Delete attendees' 
+    description: 'Delete attendees in organization' 
   },
   { 
-    code: 'attendees.checkin', 
+    code: 'attendees.checkin',
+    scope: 'any',
+    name: 'Check-in attendees (cross-tenant)', 
+    description: 'Check-in attendees in any organization (SUPER_ADMIN)' 
+  },
+  { 
+    code: 'attendees.checkin',
+    scope: 'org',
     name: 'Check-in attendees', 
     description: 'Perform check-in for attendees at events' 
   },
   { 
-    code: 'attendees.export', 
+    code: 'attendees.export',
+    scope: 'any',
+    name: 'Export attendees (cross-tenant)', 
+    description: 'Export attendees from any organization (SUPER_ADMIN)' 
+  },
+  { 
+    code: 'attendees.export',
+    scope: 'org',
     name: 'Export attendees', 
-    description: 'Export attendee data' 
+    description: 'Export attendee data from organization' 
   },
   
   // ==================== REGISTRATIONS ====================
+  // Phase 3: Registrations avec scopes explicites (code SANS scope, scope séparé)
   { 
-    code: 'registrations.read', 
-    name: 'Read registrations', 
-    description: 'View event registrations' 
+    code: 'registrations.read',
+    scope: 'any',
+    name: 'Read all registrations (cross-tenant)', 
+    description: 'View registrations across all organizations (SUPER_ADMIN)' 
   },
   { 
-    code: 'registrations.create', 
+    code: 'registrations.read',
+    scope: 'org',
+    name: 'Read organization registrations', 
+    description: 'View registrations in own organization' 
+  },
+  { 
+    code: 'registrations.create',
+    scope: 'any',
+    name: 'Create registrations (cross-tenant)', 
+    description: 'Create registrations in any organization (SUPER_ADMIN)' 
+  },
+  { 
+    code: 'registrations.create',
+    scope: 'org',
     name: 'Create registrations', 
-    description: 'Create new event registrations' 
+    description: 'Create new event registrations in organization' 
   },
   { 
-    code: 'registrations.update', 
+    code: 'registrations.update',
+    scope: 'any',
+    name: 'Update registrations (cross-tenant)', 
+    description: 'Update registrations in any organization (SUPER_ADMIN)' 
+  },
+  { 
+    code: 'registrations.update',
+    scope: 'org',
     name: 'Update registrations', 
-    description: 'Update registration status and information' 
+    description: 'Update registration status and information in organization' 
   },
   { 
-    code: 'registrations.import', 
+    code: 'registrations.import',
+    scope: 'any',
+    name: 'Import registrations (cross-tenant)', 
+    description: 'Bulk import registrations in any organization (SUPER_ADMIN)' 
+  },
+  { 
+    code: 'registrations.import',
+    scope: 'org',
     name: 'Import registrations', 
-    description: 'Bulk import registrations from files' 
+    description: 'Bulk import registrations from files in organization' 
   },
   
   // ==================== ROLES & PERMISSIONS ====================
   { 
-    code: 'roles.read', 
+    code: 'roles.read',
+    scope: 'none',
     name: 'Read roles', 
     description: 'View role information' 
   },
   { 
-    code: 'roles.manage', 
+    code: 'roles.manage',
+    scope: 'none',
     name: 'Manage roles & permissions', 
     description: 'Access role management page and modify role permissions (ADMIN+ only)' 
   },
   { 
-    code: 'roles.assign', 
+    code: 'roles.assign',
+    scope: 'none',
     name: 'Assign roles', 
     description: 'Assign roles to users (ADMIN cannot change own role)' 
   },
   
   // ==================== INVITATIONS ====================
   { 
-    code: 'invitations.create', 
+    code: 'invitations.create',
+    scope: 'none',
     name: 'Send invitations', 
     description: 'Invite new users to organization' 
   },
   { 
-    code: 'invitations.read', 
+    code: 'invitations.read',
+    scope: 'none',
     name: 'Read invitations', 
     description: 'View pending invitations' 
   },
   { 
-    code: 'invitations.cancel', 
+    code: 'invitations.cancel',
+    scope: 'none',
     name: 'Cancel invitations', 
     description: 'Cancel pending invitations' 
   },
   
   // ==================== ANALYTICS & REPORTS ====================
   { 
-    code: 'analytics.view', 
+    code: 'analytics.view',
+    scope: 'none',
     name: 'View analytics', 
     description: 'Access analytics and reports' 
   },
   { 
-    code: 'reports.export', 
+    code: 'reports.export',
+    scope: 'none',
     name: 'Export reports', 
     description: 'Export reports and data' 
   },
@@ -200,7 +359,10 @@ export async function seedPermissions(): Promise<SeedResult[]> {
     for (const permData of permissionsData) {
       const permission = await prisma.permission.upsert({
         where: { 
-          code: permData.code
+          code_scope: {
+            code: permData.code,
+            scope: permData.scope,
+          }
         },
         update: {
           name: permData.name,
@@ -208,6 +370,7 @@ export async function seedPermissions(): Promise<SeedResult[]> {
         },
         create: {
           code: permData.code,
+          scope: permData.scope,
           name: permData.name,
           description: permData.description,
         },
@@ -235,11 +398,23 @@ export async function seedPermissions(): Promise<SeedResult[]> {
   }
 }
 
-// Fonction pour obtenir une permission par code
-export async function getPermissionByCode(code: string) {
+// Fonction pour obtenir une permission par code et scope
+export async function getPermissionByCodeAndScope(code: string, scope: 'any' | 'org' | 'assigned' | 'own' | 'none') {
   return await prisma.permission.findUnique({
     where: {
-      code: code,
+      code_scope: {
+        code,
+        scope,
+      },
+    },
+  });
+}
+
+// Fonction pour obtenir toutes les permissions d'un code (tous scopes)
+export async function getPermissionsByCode(code: string) {
+  return await prisma.permission.findMany({
+    where: {
+      code,
     },
   });
 }
@@ -264,40 +439,37 @@ export const rolePermissionMapping: Record<string, string[]> = {
   // ==================== SUPER_ADMIN ====================
   // Accès total système, toutes organisations
   'SUPER_ADMIN': [
-    // Organizations
-    'organizations.read:own',
+    // Organizations - SUPER_ADMIN a accès cross-tenant COMPLET
     'organizations.read:any',
-    'organizations.create',
-    'organizations.update',
+    'organizations.create:any',
+    'organizations.update:any',
     
-    // Users
-    'users.read:own',
+    // Users - SUPER_ADMIN a accès cross-tenant COMPLET
     'users.read:any',
-    'users.create',
-    'users.update',
-    'users.delete',
+    'users.create:any',
+    'users.update:any',
+    'users.delete:any',
     
-    // Events
-    'events.read:own',
+    // Events - SUPER_ADMIN a accès cross-tenant COMPLET (toutes actions, toutes orgs)
     'events.read:any',
-    'events.create',
-    'events.update',
-    'events.delete',
-    'events.publish',
+    'events.create:any',
+    'events.update:any',
+    'events.delete:any',
+    'events.publish:any',
     
-    // Attendees
-    'attendees.read',
-    'attendees.create',
-    'attendees.update',
-    'attendees.delete',
-    'attendees.checkin',
-    'attendees.export',
+    // Attendees - SUPER_ADMIN a accès cross-tenant COMPLET
+    'attendees.read:any',
+    'attendees.create:any',
+    'attendees.update:any',
+    'attendees.delete:any',
+    'attendees.checkin:any',
+    'attendees.export:any',
     
-    // Registrations
-    'registrations.read',
-    'registrations.create',
-    'registrations.update',
-    'registrations.import',
+    // Registrations - SUPER_ADMIN a accès cross-tenant COMPLET
+    'registrations.read:any',
+    'registrations.create:any',
+    'registrations.update:any',
+    'registrations.import:any',
     
     // Roles
     'roles.read',
@@ -317,37 +489,36 @@ export const rolePermissionMapping: Record<string, string[]> = {
   // ==================== ADMIN ====================
   // Toutes permissions dans l'organisation, SAUF modification propre rôle
   'ADMIN': [
-    // Organizations
-    'organizations.read:own',
-    'organizations.update',
+    // Organizations - ADMIN voit et gère son org
+    'organizations.read:org',
+    'organizations.update:org',
     
-    // Users
-    'users.read:own',
-    'users.read:any',
-    'users.create',        // Créer un user = envoyer une invitation (invitations.create incluse)
-    'users.update',
-    'users.delete',
+    // Users - ADMIN gère les users de son org
+    'users.read:org',
+    'users.create:org',
+    'users.update:org',
+    'users.delete:org',
     
-    // Events
-    'events.read:any',
-    'events.create',
-    'events.update',
-    'events.delete',
-    'events.publish',
+    // Events - ADMIN voit toute son org
+    'events.read:org',
+    'events.create:org',
+    'events.update:org',
+    'events.delete:org',
+    'events.publish:org',
     
-    // Attendees
-    'attendees.read',
-    'attendees.create',
-    'attendees.update',
-    'attendees.delete',
-    'attendees.checkin',
-    'attendees.export',
+    // Attendees - ADMIN voit toute son org
+    'attendees.read:org',
+    'attendees.create:org',
+    'attendees.update:org',
+    'attendees.delete:org',
+    'attendees.checkin:org',
+    'attendees.export:org',
     
-    // Registrations
-    'registrations.read',
-    'registrations.create',
-    'registrations.update',
-    'registrations.import',
+    // Registrations - ADMIN voit toute son org
+    'registrations.read:org',
+    'registrations.create:org',
+    'registrations.update:org',
+    'registrations.import:org',
     
     // Roles
     'roles.read',
@@ -365,33 +536,32 @@ export const rolePermissionMapping: Record<string, string[]> = {
   ],
   
   // ==================== MANAGER ====================
-  // Opérationnel : peut créer/modifier mais PAS supprimer. Peut inviter des users avec rôles ≤ MANAGER
+  // Opérationnel : peut créer/modifier mais PAS supprimer
   'MANAGER': [
-    // Organizations
-    'organizations.read:own',
+    // Organizations - MANAGER voit son org
+    'organizations.read:org',
     
-    // Users - Peut créer, modifier, voir mais PAS supprimer
-    'users.read:own',
-    'users.read:any',
-    'users.create',        // Créer un user = envoyer une invitation (invitations.create incluse)
-    'users.update',
+    // Users - MANAGER peut créer et modifier users
+    'users.read:org',
+    'users.create:org',
+    'users.update:org',
     
-    // Events - Peut créer, modifier mais PAS supprimer
-    'events.read:any',
-    'events.create',
-    'events.update',
-    'events.publish',
+    // Events - MANAGER voit toute son org, peut créer/modifier
+    'events.read:org',
+    'events.create:org',
+    'events.update:org',
+    'events.publish:org',
     
-    // Attendees - Lecture et check-in uniquement (PAS de modification/suppression)
-    'attendees.read',
-    'attendees.create',
-    'attendees.checkin',
-    'attendees.export',
+    // Attendees - MANAGER peut lire, créer et check-in
+    'attendees.read:org',
+    'attendees.create:org',
+    'attendees.checkin:org',
+    'attendees.export:org',
     
-    // Registrations
-    'registrations.read',
-    'registrations.create',
-    'registrations.import',
+    // Registrations - MANAGER peut lire, créer et importer
+    'registrations.read:org',
+    'registrations.create:org',
+    'registrations.import:org',
     
     // Roles - Peut voir et assigner des rôles (≤ MANAGER seulement, guard backend)
     'roles.read',
@@ -409,18 +579,17 @@ export const rolePermissionMapping: Record<string, string[]> = {
   // ==================== VIEWER ====================
   // Lecture seule complète : voit tout, ne fait rien
   'VIEWER': [
-    // Organizations
-    'organizations.read:own',
+    // Organizations - VIEWER voit son org
+    'organizations.read:org',
     
-    // Users - Voir tous les users
+    // Users - VIEWER voit uniquement son propre profil
     'users.read:own',
-    'users.read:any',
     
-    // Events - Voir tous les événements
-    'events.read:any',
+    // Events - VIEWER voit toute son org
+    'events.read:org',
     
-    // Attendees - Voir tous les participants
-    'attendees.read',
+    // Attendees - VIEWER voit toute son org
+    'attendees.read:org',
     
     // Roles - Voir les rôles
     'roles.read',
@@ -436,14 +605,14 @@ export const rolePermissionMapping: Record<string, string[]> = {
   // ==================== PARTNER ====================
   // Événements assignés uniquement + Analytics de ses events
   'PARTNER': [
-    // Users
+    // Users - PARTNER voit uniquement son propre profil
     'users.read:own',
     
-    // Events - uniquement assignés (logique applicative)
-    'events.read:own',
+    // Events - PARTNER voit uniquement les events assignés
+    'events.read:assigned',
     
-    // Attendees - uniquement pour ses événements
-    'attendees.read',
+    // Attendees - PARTNER voit toute l'org
+    'attendees.read:org',
     
     // Analytics de ses événements
     'analytics.view',
@@ -452,18 +621,18 @@ export const rolePermissionMapping: Record<string, string[]> = {
   // ==================== HOSTESS ====================
   // Check-in pour événements assignés uniquement
   'HOSTESS': [
-    // Users
+    // Users - HOSTESS voit uniquement son propre profil
     'users.read:own',
     
-    // Events - uniquement assignés (logique applicative)
-    'events.read:own',
+    // Events - HOSTESS voit uniquement les events assignés
+    'events.read:assigned',
     
-    // Attendees - check-in uniquement
-    'attendees.read',
-    'attendees.checkin',
+    // Attendees - HOSTESS peut lire et check-in
+    'attendees.read:org',
+    'attendees.checkin:org',
     
-    // Registrations - read only (cannot update status)
-    'registrations.read',
+    // Registrations - HOSTESS peut lire uniquement
+    'registrations.read:org',
   ],
 };
 
@@ -522,6 +691,7 @@ export async function assignAllRolePermissions(): Promise<SeedResult[]> {
 }
 
 // Fonction pour assigner des permissions à un rôle
+// Gère le format legacy "code:scope" et le nouveau format avec scope séparé
 export async function assignPermissionsToRole(
   roleId: string,
   permissionCodes: string[]
@@ -530,12 +700,34 @@ export async function assignPermissionsToRole(
   
   try {
     for (const permissionCode of permissionCodes) {
-      const permission = await getPermissionByCode(permissionCode);
+      // Parser le code pour extraire code et scope
+      // Format: "events.read:any" ou "events.create" (sans scope)
+      let code: string;
+      let scope: 'any' | 'org' | 'assigned' | 'own' | 'none' = 'none';
+      
+      if (permissionCode.includes(':')) {
+        const parts = permissionCode.split(':');
+        code = parts[0];
+        const scopePart = parts[1];
+        
+        // Mapper les scopes
+        if (scopePart === 'any') scope = 'any';
+        else if (scopePart === 'org') scope = 'org';
+        else if (scopePart === 'assigned') scope = 'assigned';
+        else if (scopePart === 'own') scope = 'own';
+        else scope = 'none';
+      } else {
+        code = permissionCode;
+        scope = 'none';
+      }
+      
+      // Chercher la permission avec code + scope
+      const permission = await getPermissionByCodeAndScope(code, scope);
       
       if (!permission) {
         results.push({
           success: false,
-          message: `Permission '${permissionCode}' not found`,
+          message: `Permission '${permissionCode}' (code: ${code}, scope: ${scope}) not found`,
         });
         continue;
       }
