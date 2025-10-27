@@ -25,6 +25,7 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { resolveEffectiveOrgId } from '../../common/utils/org-scope.util';
+import { resolveRegistrationReadScope } from '../../common/utils/resolve-registration-scope.util';
 
 @ApiTags('Registrations')
 @ApiBearerAuth()
@@ -42,17 +43,12 @@ export class RegistrationsController {
     @Query() listDto: ListRegistrationsDto,
     @Request() req,
   ) {
-    const allowAny = req.user.permissions?.some((p: string) =>
-      p.startsWith('events.') && p.endsWith(':any'),
-    );
-    const orgId = resolveEffectiveOrgId({
-      reqUser: req.user,
-      explicitOrgId: undefined,
-      allowAny,
+    const scope = resolveRegistrationReadScope(req.user);
+    
+    return this.registrationsService.findAll(eventId, listDto, {
+      scope,
+      orgId: req.user.org_id,
     });
-
-    // TODO: Check event_access for PARTNER/HOSTESS roles
-    return this.registrationsService.findAll(eventId, orgId, listDto);
   }
 
   @Put('registrations/:id/status')

@@ -35,6 +35,7 @@ import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { ParseBooleanPipe } from './pipes/parse-boolean.pipe';
 import { resolveEffectiveOrgId } from '../../common/utils/org-scope.util';
+import { resolveAttendeeReadScope } from '../../common/utils/resolve-attendee-scope.util';
 
 @ApiTags('attendees')
 @ApiBearerAuth()
@@ -107,13 +108,12 @@ export class AttendeesController {
     description: 'Insufficient permissions or cross-organization access denied',
   })
   async findAll(@Query() query: ListAttendeesDto, @Request() req) {
-    const canAny = req.authz?.canAttendeesAny === true;
-    const orgId = resolveEffectiveOrgId({
-      reqUser: req.user,
-      explicitOrgId: query.orgId,
-      allowAny: canAny,
+    const scope = resolveAttendeeReadScope(req.user);
+    
+    return this.attendeesService.findAll(query, {
+      scope,
+      orgId: req.user.org_id,
     });
-    return this.attendeesService.findAll(query, orgId);
   }
 
   @Get(':id')
@@ -145,12 +145,12 @@ export class AttendeesController {
     description: 'Attendee not found or not in your organization',
   })
   async findOne(@Param('id') id: string, @Request() req) {
-    const canAny = req.authz?.canAttendeesAny === true;
-    const orgId = resolveEffectiveOrgId({
-      reqUser: req.user,
-      allowAny: canAny,
+    const scope = resolveAttendeeReadScope(req.user);
+    
+    return this.attendeesService.findOne(id, {
+      scope,
+      orgId: req.user.org_id,
     });
-    return this.attendeesService.findOne(id, orgId);
   }
 
   @Put(':id')

@@ -129,7 +129,11 @@ describe('UsersService', () => {
       mockPrismaService.user.findMany.mockResolvedValue(mockUsers);
       mockPrismaService.user.count.mockResolvedValue(1);
 
-      const result = await service.findAll(orgId, 1, 10);
+      const result = await service.findAll(1, 10, undefined, {
+        scope: 'org',
+        orgId,
+        userId: 'test-user-id',
+      });
 
       expect(mockPrismaService.user.findMany).toHaveBeenCalledWith({
         where: { org_id: orgId },
@@ -154,7 +158,11 @@ describe('UsersService', () => {
       mockPrismaService.user.findMany.mockResolvedValue(mockUsers);
       mockPrismaService.user.count.mockResolvedValue(1);
 
-      await service.findAll(orgId, 1, 10, 'test');
+      await service.findAll(1, 10, 'test', {
+        scope: 'org',
+        orgId,
+        userId: 'test-user-id',
+      });
 
       expect(mockPrismaService.user.findMany).toHaveBeenCalledWith({
         where: {
@@ -175,7 +183,11 @@ describe('UsersService', () => {
       mockPrismaService.user.findMany.mockResolvedValue([]);
       mockPrismaService.user.count.mockResolvedValue(0);
 
-      await service.findAll(orgId, 3, 5);
+      await service.findAll(3, 5, undefined, {
+        scope: 'org',
+        orgId,
+        userId: 'test-user-id',
+      });
 
       expect(mockPrismaService.user.findMany).toHaveBeenCalledWith(
         expect.objectContaining({

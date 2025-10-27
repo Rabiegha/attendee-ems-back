@@ -11,6 +11,13 @@ import { ListEventsDto } from './dto/list-events.dto';
 import { ChangeEventStatusDto } from './dto/change-event-status.dto';
 import { Event, EventSetting, Prisma } from '@prisma/client';
 import { generatePublicToken } from '../../common/utils/token.util';
+import { EventScope } from '../../common/utils/resolve-event-scope.util';
+
+interface EventQueryContext {
+  scope: EventScope;
+  orgId?: string;
+  userId: string;
+}
 
 @Injectable()
 export class EventsService {
@@ -123,10 +130,14 @@ export class EventsService {
 
   /**
    * List events with filters, pagination, and sorting
+   * Applique le scope au niveau Prisma:
+   * - 'any': cross-tenant (pas de filtre org)
+   * - 'org': filtré par org_id
+   * - 'assigned': filtré par org_id + EventAccess.user_id
    */
   async findAll(
     dto: ListEventsDto,
-    orgId: string,
+    ctx: EventQueryContext,
   ): Promise<{
     data: Event[];
     meta: { page: number; limit: number; total: number; totalPages: number };
@@ -135,10 +146,21 @@ export class EventsService {
     const limit = dto.limit || 20;
     const skip = (page - 1) * limit;
 
-    // Build where clause
-    const where: Prisma.EventWhereInput = {
-      org_id: orgId,
-    };
+    // Build where clause avec scope
+    const where: Prisma.EventWhereInput = {};
+
+    // Appliquer le scope
+    if (ctx.scope !== 'any') {
+      where.org_id = ctx.orgId!;
+    }
+    
+    if (ctx.scope === 'assigned') {
+      where.eventAccess = {
+        some: {
+          user_id: ctx.userId,
+        },
+      };
+    }
 
     if (dto.status) {
       where.status = dto.status;
@@ -213,13 +235,31 @@ export class EventsService {
 
   /**
    * Find one event by ID
+   * Applique le scope au niveau Prisma:
+   * - 'any': cross-tenant (pas de filtre org)
+   * - 'org': filtré par org_id
+   * - 'assigned': filtré par org_id + EventAccess.user_id
    */
-  async findOne(id: string, orgId: string): Promise<Event & { settings: EventSetting | null }> {
+  async findOne(id: string, ctx: EventQueryContext): Promise<Event & { settings: EventSetting | null }> {
+    const where: Prisma.EventWhereInput = {
+      id,
+    };
+
+    // Appliquer le scope
+    if (ctx.scope !== 'any') {
+      where.org_id = ctx.orgId!;
+    }
+    
+    if (ctx.scope === 'assigned') {
+      where.eventAccess = {
+        some: {
+          user_id: ctx.userId,
+        },
+      };
+    }
+
     const event = await this.prisma.event.findFirst({
-      where: {
-        id,
-        org_id: orgId,
-      },
+      where,
       include: {
         settings: true,
         activitySector: true,

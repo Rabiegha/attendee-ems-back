@@ -11,6 +11,12 @@ import { CreateRegistrationDto } from './dto/create-registration.dto';
 import { UpdateRegistrationStatusDto } from './dto/update-registration-status.dto';
 import { Prisma } from '@prisma/client';
 import * as XLSX from 'xlsx';
+import { RegistrationScope } from '../../common/utils/resolve-registration-scope.util';
+
+interface RegistrationQueryContext {
+  scope: RegistrationScope;
+  orgId?: string;
+}
 
 @Injectable()
 export class RegistrationsService {
@@ -18,22 +24,28 @@ export class RegistrationsService {
 
   /**
    * List registrations for an event with filters and pagination
-   * No PII masking - all fields visible to authorized users (including HOSTESS)
+   * Applique le scope au niveau Prisma:
+   * - 'any': cross-tenant (pas de filtre org)
+   * - 'org': filtré par org_id
    */
   async findAll(
     eventId: string,
-    orgId: string,
     dto: ListRegistrationsDto,
+    ctx: RegistrationQueryContext,
   ) {
     const page = dto.page || 1;
     const limit = dto.limit || 20;
     const skip = (page - 1) * limit;
 
-    // Build where clause
+    // Build where clause avec scope
     const where: Prisma.RegistrationWhereInput = {
       event_id: eventId,
-      org_id: orgId,
     };
+
+    // Appliquer le scope
+    if (ctx.scope !== 'any') {
+      where.org_id = ctx.orgId!;
+    }
 
     if (dto.status) {
       where.status = dto.status;

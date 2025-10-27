@@ -2,7 +2,14 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../infra/db/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { AuthService } from '../../auth/auth.service';
-import { User } from '@prisma/client';
+import { User, Prisma } from '@prisma/client';
+import { UserScope } from '../../common/utils/resolve-user-scope.util';
+
+interface UserQueryContext {
+  scope: UserScope;
+  orgId?: string;
+  userId?: string;
+}
 
 @Injectable()
 export class UsersService {
@@ -70,13 +77,25 @@ export class UsersService {
   }
 
   async findAll(
-    orgId: string,
     page: number = 1,
     limit: number = 10,
     search?: string,
+    ctx?: UserQueryContext,
   ): Promise<{ users: any[]; total: number; page: number; limit: number }> {
     const skip = (page - 1) * limit;
-    const whereClause: any = { org_id: orgId };
+    const whereClause: Prisma.UserWhereInput = {};
+
+    // Appliquer le scope
+    if (ctx) {
+      if (ctx.scope === 'own') {
+        // Scope 'own': uniquement son propre profil
+        whereClause.id = ctx.userId!;
+      } else if (ctx.scope === 'org') {
+        // Scope 'org': tous les users de son org
+        whereClause.org_id = ctx.orgId!;
+      }
+      // Scope 'any': pas de filtre (cross-tenant)
+    }
 
     if (search) {
       whereClause.email = {
