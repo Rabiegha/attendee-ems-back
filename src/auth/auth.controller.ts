@@ -115,6 +115,11 @@ export class AuthController {
     // Mobile: Include refresh token in response body
     if (isMobileApp) {
       response.refresh_token = result.refresh_token;
+      console.log('[AuthController.login] Mobile response includes refresh_token:', {
+        hasRefreshToken: !!response.refresh_token,
+        refreshTokenType: typeof response.refresh_token,
+        refreshTokenLength: response.refresh_token?.length,
+      });
     }
 
     return response;
