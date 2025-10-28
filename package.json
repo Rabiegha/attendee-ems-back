@@ -28,6 +28,7 @@
     "db:seed:orgs": "ts-node scripts/seed-specific.ts organizations",
     "db:seed:users": "ts-node scripts/seed-specific.ts users",
     "db:seed:minimal": "ts-node scripts/seed-specific.ts minimal",
+    "db:seed:event": "ts-node prisma/seeders/seed-specific-event.ts",
     "db:studio": "prisma studio",
     "db:migrate:deploy": "dotenv -e .env.prod -- prisma migrate deploy",
     "db:seed:deploy": "dotenv -e .env.prod -- prisma db seed",

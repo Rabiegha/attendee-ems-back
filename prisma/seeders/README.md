@@ -6,13 +6,19 @@ Cette structure de seeders modulaires permet une meilleure organisation et maint
 
 ```
 prisma/seeders/
-├── README.md                    # Ce fichier
-├── index.ts                     # Orchestrateur principal
-├── utils.ts                     # Utilitaires partagés
-├── organizations.seeder.ts      # Seeder pour les organisations
-├── roles.seeder.ts             # Seeder pour les rôles
-├── permissions.seeder.ts       # Seeder pour les permissions
-└── users.seeder.ts             # Seeder pour les utilisateurs
+├── README.md                       # Ce fichier
+├── index.ts                        # Orchestrateur principal
+├── seed-specific-event.ts          # Script pour événement spécifique
+├── utils.ts                        # Utilitaires partagés
+├── organizations.seeder.ts         # Seeder pour les organisations
+├── roles.seeder.ts                 # Seeder pour les rôles
+├── permissions.seeder.ts           # Seeder pour les permissions
+├── users.seeder.ts                 # Seeder pour les utilisateurs
+├── attendee-types.seeder.ts        # Seeder pour les types de participants
+├── events.seeder.ts                # Seeder pour les événements
+├── attendees.seeder.ts             # Seeder pour les participants
+├── event-attendee-types.seeder.ts  # Seeder pour les types par événement
+└── registrations.seeder.ts         # Seeder pour les inscriptions
 ```
 
 ## Utilisation
@@ -23,6 +29,18 @@ npm run seed
 # ou
 npx prisma db seed
 ```
+
+### Exécuter le seeder pour l'événement spécifique
+Pour remplir uniquement les données de l'événement `8639f5cc-a4b5-4790-89a5-ffcb96f82c81` :
+
+```bash
+npx ts-node prisma/seeders/seed-specific-event.ts
+```
+
+Ce script va :
+1. Créer les types de participants (AttendeeType) si nécessaire
+2. Associer ces types à l'événement (EventAttendeeType)
+3. Créer 20 inscriptions (Registration) avec différents types et statuts
 
 ### Exécuter un seeder spécifique
 Vous pouvez importer et exécuter des seeders individuels :
