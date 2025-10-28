@@ -20,6 +20,14 @@ export class ListAttendeesDto {
   q?: string;
 
   @ApiPropertyOptional({
+    description: 'Search query across email, first_name, last_name, phone, company, job_title (alias for q)',
+    example: 'alice',
+  })
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiPropertyOptional({
     description: 'Filter by exact email address',
     example: 'alice@example.com',
   })

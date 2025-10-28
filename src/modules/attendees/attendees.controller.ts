@@ -11,7 +11,9 @@ import {
   Request,
   HttpCode,
   HttpStatus,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -153,6 +155,209 @@ export class AttendeesController {
     });
   }
 
+  @Get(':id/history')
+  @Permissions('attendees.read')
+  @ApiOperation({
+    summary: 'Get attendee participation history',
+    description: 'Retrieves all event participations for an attendee, filtered by email across events. SUPER_ADMIN sees all organizations, others see own organization only.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Attendee ID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+  })
+  @ApiQuery({
+    name: 'email',
+    description: 'Email to filter cross-event history',
+    required: true,
+    example: 'user@example.com',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Attendee history retrieved successfully',
+    schema: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          id: { type: 'string' },
+          attendeeId: { type: 'string' },
+          eventId: { type: 'string' },
+          status: { type: 'string' },
+          displayName: { type: 'string' },
+          email: { type: 'string' },
+          registrationDate: { type: 'string', format: 'date-time' },
+          checkedInAt: { type: 'string', format: 'date-time', nullable: true },
+          customData: { type: 'object', nullable: true },
+          event: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              name: { type: 'string' },
+              description: { type: 'string', nullable: true },
+              startDate: { type: 'string', format: 'date-time' },
+              endDate: { type: 'string', format: 'date-time' },
+              location: { type: 'string', nullable: true },
+              status: { type: 'string' },
+              organizationId: { type: 'string' },
+            },
+          },
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Unauthorized',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'Insufficient permissions',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Attendee not found or not in your organization',
+  })
+  async findAttendeeHistory(
+    @Param('id') id: string,
+    @Query('email') email: string,
+    @Request() req,
+  ) {
+    const scope = resolveAttendeeReadScope(req.user);
+    
+    return this.attendeesService.findAttendeeHistory(id, email, {
+      scope,
+      orgId: req.user.org_id,
+      isSuperAdmin: req.user.roles && Array.isArray(req.user.roles) 
+        ? req.user.roles.some(role => role.code === 'SUPER_ADMIN')
+        : req.user.role === 'SUPER_ADMIN' || req.user.roleCode === 'SUPER_ADMIN',
+    });
+  }
+
+  // IMPORTANT: Routes spécifiques AVANT routes avec paramètres génériques
+  @Delete('bulk-delete')
+  @Permissions('attendees.delete')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Supprimer plusieurs attendees',
+    description: 'Supprime plusieurs attendees par leurs IDs'
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        ids: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Liste des IDs des attendees à supprimer'
+        }
+      }
+    }
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Attendees supprimés avec succès',
+    schema: {
+      type: 'object',
+      properties: {
+        deletedCount: { type: 'number' }
+      }
+    }
+  })
+  async bulkDelete(@Body() body: { ids: string[] }, @Request() req) {
+    const canAny = req.authz?.canAttendeesAny === true;
+    const orgId = resolveEffectiveOrgId({
+      reqUser: req.user,
+      allowAny: canAny,
+    });
+    
+    const deletedCount = await this.attendeesService.bulkDelete(body.ids, orgId);
+    return { deletedCount };
+  }
+
+  @Post('bulk-restore')
+  @Permissions('attendees.restore')
+  @ApiOperation({ summary: 'Bulk restore soft-deleted attendees' })
+  @ApiResponse({ status: 200, description: 'Attendees restored successfully' })
+  async bulkRestore(@Body() body: { ids: string[] }, @Request() req) {
+    const canAny = req.authz?.canAttendeesAny === true;
+    const orgId = resolveEffectiveOrgId({
+      reqUser: req.user,
+      allowAny: canAny,
+    });
+    
+    const restoredCount = await this.attendeesService.bulkRestore(body.ids, orgId);
+    return { restoredCount };
+  }
+
+  @Delete('bulk-permanent-delete')
+  @Permissions('attendees.permanent-delete')
+  @ApiOperation({ summary: 'Permanently delete attendees and all relations' })
+  @ApiResponse({ status: 200, description: 'Attendees permanently deleted successfully' })
+  async bulkPermanentDelete(@Body() body: { ids: string[] }, @Request() req) {
+    const canAny = req.authz?.canAttendeesAny === true;
+    const orgId = resolveEffectiveOrgId({
+      reqUser: req.user,
+      allowAny: canAny,
+    });
+    
+    const deletedCount = await this.attendeesService.bulkPermanentDelete(body.ids, orgId);
+    return { deletedCount };
+  }
+
+  @Post('bulk-export')
+  @Permissions('attendees.read')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Exporter plusieurs attendees',
+    description: 'Exporte plusieurs attendees au format CSV ou Excel'
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        ids: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Liste des IDs des attendees à exporter'
+        },
+        format: {
+          type: 'string',
+          enum: ['csv', 'xlsx'],
+          default: 'csv',
+          description: 'Format d\'export'
+        }
+      }
+    }
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Export généré avec succès'
+  })
+  async bulkExport(
+    @Body() body: { ids: string[]; format?: 'csv' | 'xlsx' },
+    @Request() req,
+    @Res() res: Response
+  ) {
+    const { ids, format = 'csv' } = body;
+    const canAny = req.authz?.canAttendeesAny === true;
+    const orgId = resolveEffectiveOrgId({
+      reqUser: req.user,
+      allowAny: canAny,
+    });
+    
+    const { buffer, filename, mimeType } = await this.attendeesService.bulkExport(ids, format, orgId);
+    
+    res.set({
+      'Content-Type': mimeType,
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': buffer.length,
+    });
+    
+    res.send(buffer);
+  }
+
+  // Routes avec paramètres génériques (:id) à la fin
   @Put(':id')
   @Permissions('attendees.update')
   @ApiOperation({
@@ -197,7 +402,8 @@ export class AttendeesController {
     @Request() req,
   ) {
     const canAny = req.authz?.canAttendeesAny === true;
-    const orgId = resolveEffectiveOrgId({
+    // For SUPER_ADMIN, pass undefined to let service find the actual org
+    const orgId = canAny ? undefined : resolveEffectiveOrgId({
       reqUser: req.user,
       explicitOrgId: updateAttendeeDto.orgId,
       allowAny: canAny,
@@ -258,11 +464,40 @@ export class AttendeesController {
     @Request() req,
   ) {
     const canAny = req.authz?.canAttendeesAny === true;
-    const orgId = resolveEffectiveOrgId({
+    // For SUPER_ADMIN, pass undefined to let service find the actual org
+    const orgId = canAny ? undefined : resolveEffectiveOrgId({
       reqUser: req.user,
       allowAny: canAny,
     });
     const userId = req.user.id;
     return this.attendeesService.remove(id, orgId, userId, force);
+  }
+
+  @Post(':id/restore')
+  @Permissions('attendees.restore')
+  @ApiOperation({ summary: 'Restore a soft-deleted attendee' })
+  @ApiResponse({ status: 200, description: 'Attendee restored successfully' })
+  async restore(@Param('id') id: string, @Request() req) {
+    const canAny = req.authz?.canAttendeesAny === true;
+    const orgId = resolveEffectiveOrgId({
+      reqUser: req.user,
+      allowAny: canAny,
+    });
+    
+    return this.attendeesService.restore(id, orgId);
+  }
+
+  @Delete(':id/permanent-delete')
+  @Permissions('attendees.permanent-delete')
+  @ApiOperation({ summary: 'Permanently delete attendee and all relations' })
+  @ApiResponse({ status: 200, description: 'Attendee permanently deleted successfully' })
+  async permanentDelete(@Param('id') id: string, @Request() req) {
+    const canAny = req.authz?.canAttendeesAny === true;
+    const orgId = resolveEffectiveOrgId({
+      reqUser: req.user,
+      allowAny: canAny,
+    });
+    
+    return this.attendeesService.permanentDelete(id, orgId);
   }
 }

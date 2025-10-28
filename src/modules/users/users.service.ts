@@ -226,4 +226,71 @@ export class UsersService {
       include: { role: true }
     });
   }
+
+  async bulkDelete(ids: string[], orgId?: string): Promise<number> {
+    const whereClause: Prisma.UserWhereInput = {
+      id: { in: ids },
+    };
+
+    // Ajouter le filtre d'organisation si spécifié
+    if (orgId) {
+      whereClause.org_id = orgId;
+    }
+
+    const result = await this.prisma.user.deleteMany({
+      where: whereClause,
+    });
+
+    return result.count;
+  }
+
+  async bulkExport(ids: string[], format: 'csv' | 'xlsx', orgId?: string): Promise<{
+    buffer: Buffer;
+    filename: string;
+    mimeType: string;
+  }> {
+    const whereClause: Prisma.UserWhereInput = {
+      id: { in: ids },
+    };
+
+    // Ajouter le filtre d'organisation si spécifié
+    if (orgId) {
+      whereClause.org_id = orgId;
+    }
+
+    const users = await this.prisma.user.findMany({
+      where: whereClause,
+      include: {
+        role: true,
+      },
+      orderBy: { created_at: 'desc' },
+    });
+
+    if (format === 'csv') {
+      const csvHeader = 'ID,Email,Prénom,Nom,Rôle,Statut,Date de création\n';
+      const csvRows = users.map(user => 
+        [
+          user.id,
+          user.email,
+          user.first_name || '',
+          user.last_name || '',
+          user.role?.name || '',
+          user.is_active ? 'Actif' : 'Inactif',
+          user.created_at.toISOString().split('T')[0]
+        ].map(field => `"${field}"`).join(',')
+      ).join('\n');
+
+      const csvContent = csvHeader + csvRows;
+      const buffer = Buffer.from(csvContent, 'utf-8');
+
+      return {
+        buffer,
+        filename: `attendees_export_${new Date().toISOString().split('T')[0]}.csv`,
+        mimeType: 'text/csv',
+      };
+    }
+
+    // TODO: Implémenter l'export Excel si nécessaire
+    throw new BadRequestException('Format Excel non encore supporté');
+  }
 }

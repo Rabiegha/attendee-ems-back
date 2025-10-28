@@ -503,4 +503,74 @@ export class EventsService {
       },
     });
   }
+
+  async bulkDelete(ids: string[], orgId?: string): Promise<number> {
+    const whereClause: Prisma.EventWhereInput = {
+      id: { in: ids },
+    };
+
+    // Ajouter le filtre d'organisation si spécifié
+    if (orgId) {
+      whereClause.org_id = orgId;
+    }
+
+    const result = await this.prisma.event.deleteMany({
+      where: whereClause,
+    });
+
+    return result.count;
+  }
+
+  async bulkExport(ids: string[], format: 'csv' | 'xlsx', orgId?: string): Promise<{
+    buffer: Buffer;
+    filename: string;
+    mimeType: string;
+  }> {
+    const whereClause: Prisma.EventWhereInput = {
+      id: { in: ids },
+    };
+
+    // Ajouter le filtre d'organisation si spécifié
+    if (orgId) {
+      whereClause.org_id = orgId;
+    }
+
+    const events = await this.prisma.event.findMany({
+      where: whereClause,
+      include: {
+        settings: true,
+      },
+      orderBy: { created_at: 'desc' },
+    });
+
+    if (format === 'csv') {
+      const csvHeader = 'ID,Code,Nom,Description,Statut,Date de début,Date de fin,Lieu,Capacité,Date de création\n';
+      const csvRows = events.map(event => 
+        [
+          event.id,
+          event.code,
+          event.name,
+          event.description || '',
+          event.status,
+          event.start_at?.toISOString() || '',
+          event.end_at?.toISOString() || '',
+          event.address_formatted || '',
+          event.capacity || '',
+          event.created_at.toISOString().split('T')[0]
+        ].map(field => `"${field}"`).join(',')
+      ).join('\n');
+
+      const csvContent = csvHeader + csvRows;
+      const buffer = Buffer.from(csvContent, 'utf-8');
+
+      return {
+        buffer,
+        filename: `events_export_${new Date().toISOString().split('T')[0]}.csv`,
+        mimeType: 'text/csv',
+      };
+    }
+
+    // TODO: Implémenter l'export Excel si nécessaire
+    throw new BadRequestException('Format Excel non encore supporté');
+  }
 }

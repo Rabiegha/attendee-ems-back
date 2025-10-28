@@ -130,14 +130,19 @@ export class RegistrationsService {
    */
   async updateStatus(
     id: string,
-    orgId: string,
+    orgId: string | null,
     dto: UpdateRegistrationStatusDto,
   ) {
+    // Build where clause avec scope
+    const where: Prisma.RegistrationWhereInput = { id };
+    
+    // Si orgId est fourni (pas de scope :any), limiter à cette org
+    if (orgId !== null) {
+      where.org_id = orgId;
+    }
+
     const registration = await this.prisma.registration.findFirst({
-      where: {
-        id,
-        org_id: orgId,
-      },
+      where,
     });
 
     if (!registration) {
@@ -280,12 +285,20 @@ export class RegistrationsService {
    */
   async update(
     id: string,
-    orgId: string,
+    orgId: string | null,
     dto: Partial<CreateRegistrationDto>,
   ) {
+    // Build where clause avec scope
+    const where: Prisma.RegistrationWhereInput = { id };
+    
+    // Si orgId est fourni (pas de scope :any), limiter à cette org
+    if (orgId !== null) {
+      where.org_id = orgId;
+    }
+
     // Find registration
     const registration = await this.prisma.registration.findFirst({
-      where: { id, org_id: orgId },
+      where,
       include: { attendee: true },
     });
 
@@ -328,10 +341,18 @@ export class RegistrationsService {
   /**
    * Delete a registration
    */
-  async remove(id: string, orgId: string) {
+  async remove(id: string, orgId: string | null) {
+    // Build where clause avec scope
+    const where: Prisma.RegistrationWhereInput = { id };
+    
+    // Si orgId est fourni (pas de scope :any), limiter à cette org
+    if (orgId !== null) {
+      where.org_id = orgId;
+    }
+
     // Find registration
     const registration = await this.prisma.registration.findFirst({
-      where: { id, org_id: orgId },
+      where,
     });
 
     if (!registration) {
@@ -615,5 +636,84 @@ export class RegistrationsService {
     }
 
     return results;
+  }
+
+  /**
+   * Bulk delete registrations
+   */
+  async bulkDelete(ids: string[], orgId?: string): Promise<{ deletedCount: number }> {
+    const whereClause: Prisma.RegistrationWhereInput = {
+      id: { in: ids },
+    };
+
+    // Apply org filtering if provided (not for super admins)
+    if (orgId) {
+      whereClause.org_id = orgId;
+    }
+
+    const result = await this.prisma.registration.deleteMany({
+      where: whereClause,
+    });
+
+    return { deletedCount: result.count };
+  }
+
+  /**
+   * Bulk export registrations to CSV
+   */
+  async bulkExport(
+    ids: string[], 
+    orgId?: string, 
+    format: string = 'csv'
+  ): Promise<{ buffer: Buffer; filename: string }> {
+    const whereClause: Prisma.RegistrationWhereInput = {
+      id: { in: ids },
+    };
+
+    // Apply org filtering if provided (not for super admins)
+    if (orgId) {
+      whereClause.org_id = orgId;
+    }
+
+    const registrations = await this.prisma.registration.findMany({
+      where: whereClause,
+      include: {
+        attendee: true,
+        event: true,
+      },
+      orderBy: { created_at: 'desc' },
+    });
+
+    // Generate CSV data
+    const csvData = registrations.map((registration) => ({
+      'ID': registration.id,
+      'Prénom': registration.attendee?.first_name || '',
+      'Nom': registration.attendee?.last_name || '',
+      'Email': registration.attendee?.email || '',
+      'Téléphone': registration.attendee?.phone || '',
+      'Entreprise': registration.attendee?.company || '',
+      'Poste': registration.attendee?.job_title || '',
+      'Événement': registration.event?.name || '',
+      'Statut': registration.status,
+      'Date d\'inscription': registration.created_at?.toISOString().split('T')[0] || '',
+      'Date d\'invitation': registration.invited_at?.toISOString().split('T')[0] || '',
+      'Date de confirmation': registration.confirmed_at?.toISOString().split('T')[0] || '',
+    }));
+
+    // Convert to CSV
+    const csvHeaders = Object.keys(csvData[0] || {});
+    const csvRows = csvData.map(row => 
+      csvHeaders.map(header => `"${(row[header] || '').toString().replace(/"/g, '""')}"`).join(',')
+    );
+    const csvContent = [
+      csvHeaders.join(','),
+      ...csvRows
+    ].join('\n');
+
+    const buffer = Buffer.from(csvContent, 'utf-8');
+    const timestamp = new Date().toISOString().split('T')[0];
+    const filename = `inscriptions_export_${timestamp}.csv`;
+
+    return { buffer, filename };
   }
 }

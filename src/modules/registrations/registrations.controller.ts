@@ -14,7 +14,9 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { RegistrationsService } from './registrations.service';
@@ -51,7 +53,7 @@ export class RegistrationsController {
     });
   }
 
-  @Put('registrations/:id/status')
+  @Put(':id/status')
   @Permissions('registrations.update')
   @ApiOperation({ summary: 'Update registration status' })
   @ApiResponse({ status: 200, description: 'Status updated successfully' })
@@ -70,11 +72,9 @@ export class RegistrationsController {
     const allowAny = req.user.permissions?.some((p: string) =>
       p.startsWith('events.') && p.endsWith(':any'),
     );
-    const orgId = resolveEffectiveOrgId({
-      reqUser: req.user,
-      explicitOrgId: undefined,
-      allowAny,
-    });
+    
+    // Pour les SUPER_ADMIN avec scope :any, passer null pour permettre l'accès cross-org
+    const orgId = allowAny ? null : req.user.org_id;
 
     return this.registrationsService.updateStatus(id, orgId, updateStatusDto);
   }
@@ -102,7 +102,7 @@ export class RegistrationsController {
     return this.registrationsService.create(eventId, orgId, createDto);
   }
 
-  @Patch('registrations/:id')
+  @Patch(':id')
   @Permissions('registrations.update')
   @ApiOperation({ summary: 'Update a registration' })
   @ApiResponse({ status: 200, description: 'Registration updated successfully' })
@@ -114,16 +114,14 @@ export class RegistrationsController {
     const allowAny = req.user.permissions?.some((p: string) =>
       p.startsWith('events.') && p.endsWith(':any'),
     );
-    const orgId = resolveEffectiveOrgId({
-      reqUser: req.user,
-      explicitOrgId: undefined,
-      allowAny,
-    });
+    
+    // Pour les SUPER_ADMIN avec scope :any, passer null pour permettre l'accès cross-org
+    const orgId = allowAny ? null : req.user.org_id;
 
     return this.registrationsService.update(id, orgId, updateDto);
   }
 
-  @Delete('registrations/:id')
+  @Delete(':id')
   @Permissions('registrations.delete')
   @ApiOperation({ summary: 'Delete a registration' })
   @ApiResponse({ status: 200, description: 'Registration deleted successfully' })
@@ -134,11 +132,9 @@ export class RegistrationsController {
     const allowAny = req.user.permissions?.some((p: string) =>
       p.startsWith('events.') && p.endsWith(':any'),
     );
-    const orgId = resolveEffectiveOrgId({
-      reqUser: req.user,
-      explicitOrgId: undefined,
-      allowAny,
-    });
+    
+    // Pour les SUPER_ADMIN avec scope :any, passer null pour permettre l'accès cross-org
+    const orgId = allowAny ? null : req.user.org_id;
 
     return this.registrationsService.remove(id, orgId);
   }
@@ -217,5 +213,48 @@ export class RegistrationsController {
       file.buffer,
       autoApproveBoolean,
     );
+  }
+
+  @Delete('bulk-delete')
+  @Permissions('registrations.delete')
+  @ApiOperation({ summary: 'Bulk delete registrations' })
+  @ApiResponse({ status: 200, description: 'Registrations deleted successfully' })
+  async bulkDelete(
+    @Body() body: { ids: string[] },
+    @Request() req,
+  ) {
+    const canAny = req.authz?.canRegistrationsAny === true;
+    const orgId = resolveEffectiveOrgId({
+      reqUser: req.user,
+      allowAny: canAny,
+    });
+
+    return this.registrationsService.bulkDelete(body.ids, orgId);
+  }
+
+  @Post('bulk-export')
+  @Permissions('registrations.read') 
+  @ApiOperation({ summary: 'Bulk export registrations' })
+  @ApiResponse({ status: 200, description: 'Registrations exported successfully' })
+  async bulkExport(
+    @Body() body: { ids: string[]; format?: string },
+    @Request() req,
+    @Res() res: Response,
+  ) {
+    const canAny = req.authz?.canRegistrationsAny === true;
+    const orgId = resolveEffectiveOrgId({
+      reqUser: req.user,
+      allowAny: canAny,
+    });
+
+    const { buffer, filename } = await this.registrationsService.bulkExport(
+      body.ids,
+      orgId,
+      body.format || 'csv'
+    );
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
   }
 }
