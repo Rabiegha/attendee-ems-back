@@ -92,7 +92,6 @@ export class CaslAbilityFactory {
       'invitations': 'Invitation',
       'analytics': 'Analytics',
       'reports': 'Report',
-      'registrations': 'Event',  // registrations mapped to Event for now
     };
 
     const mappedAction = actionMap[action];

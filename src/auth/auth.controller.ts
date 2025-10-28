@@ -86,9 +86,15 @@ export class AuthController {
       (cookieOptions as any).domain = this.configService.authCookieDomain;
     }
 
-    res.cookie(this.configService.authCookieName, result.refresh_token, cookieOptions);
+    // Detect if request is from mobile app (via custom header)
+    const isMobileApp = req.headers['x-client-type'] === 'mobile';
 
-    // Return access token, user info, and organization (no refresh token in response)
+    if (!isMobileApp) {
+      // Web: Set refresh token as HttpOnly cookie
+      res.cookie(this.configService.authCookieName, result.refresh_token, cookieOptions);
+    }
+
+    // Return access token, user info, and organization
     const response: any = {
       access_token: result.access_token,
       expires_in: result.expires_in,
@@ -98,6 +104,11 @@ export class AuthController {
     // Include organization if present
     if (result.organization) {
       response.organization = result.organization;
+    }
+
+    // Mobile: Include refresh token in response body
+    if (isMobileApp) {
+      response.refresh_token = result.refresh_token;
     }
 
     return response;
@@ -135,8 +146,15 @@ export class AuthController {
   async refresh(
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
+    @Body() body?: { refresh_token?: string },
   ) {
-    const refreshToken = req.cookies[this.configService.authCookieName];
+    // Detect if request is from mobile app
+    const isMobileApp = req.headers['x-client-type'] === 'mobile';
+    
+    // Get refresh token from cookie (web) or body (mobile)
+    const refreshToken = isMobileApp 
+      ? body?.refresh_token 
+      : req.cookies[this.configService.authCookieName];
 
     if (!refreshToken) {
       throw new UnauthorizedException('Refresh token not found');
@@ -149,25 +167,34 @@ export class AuthController {
 
     const result = await this.authService.rotateRefreshToken(refreshToken, ctx);
 
-    // Set new refresh token as HttpOnly cookie
-    const cookieOptions = {
-      httpOnly: true,
-      secure: this.configService.authCookieSecure,
-      sameSite: this.configService.authCookieSameSite as 'strict' | 'lax' | 'none',
-      path: '/',
-      maxAge: this.secondsFromTtl(this.configService.jwtRefreshTtl) * 1000,
-    };
+    // Set new refresh token as HttpOnly cookie (web only)
+    if (!isMobileApp) {
+      const cookieOptions = {
+        httpOnly: true,
+        secure: this.configService.authCookieSecure,
+        sameSite: this.configService.authCookieSameSite as 'strict' | 'lax' | 'none',
+        path: '/',
+        maxAge: this.secondsFromTtl(this.configService.jwtRefreshTtl) * 1000,
+      };
 
-    if (this.configService.authCookieDomain) {
-      (cookieOptions as any).domain = this.configService.authCookieDomain;
+      if (this.configService.authCookieDomain) {
+        (cookieOptions as any).domain = this.configService.authCookieDomain;
+      }
+
+      res.cookie(this.configService.authCookieName, result.newRefreshTokenRaw, cookieOptions);
     }
 
-    res.cookie(this.configService.authCookieName, result.newRefreshTokenRaw, cookieOptions);
-
-    return {
+    const response: any = {
       access_token: result.access.token,
       expires_in: result.access.expiresIn,
     };
+
+    // Mobile: Include new refresh token in response body
+    if (isMobileApp) {
+      response.refresh_token = result.newRefreshTokenRaw;
+    }
+
+    return response;
   }
 
   @Post('logout')
