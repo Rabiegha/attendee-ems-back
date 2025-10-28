@@ -5,6 +5,9 @@ import { seedPermissions, assignAllRolePermissions } from './permissions.seeder'
 import { seedUsers } from './users.seeder';
 import { seedEvents } from './events.seeder';
 import { seedAttendeesAndRegistrations } from './attendees.seeder';
+import { seedAttendeeTypes } from './attendee-types.seeder';
+import { seedEventAttendeeTypes } from './event-attendee-types.seeder';
+import { seedRegistrationsForEvent } from './registrations.seeder';
 
 /**
  * Main seeding function that runs all seeders in the correct order
@@ -63,13 +66,25 @@ async function runAllSeeders() {
       logError('Some users failed to seed', failedUsers.map(r => r.message));
     }
     
-    // 6. Seed Events
+    // 6. Seed Attendee Types
+    logInfo('Seeding attendee types...');
+    const attendeeTypes = await seedAttendeeTypes();
+    
+    // 7. Seed Events
     logInfo('Seeding events...');
     const events = await seedEvents();
     
-    // 7. Seed Attendees and Registrations
+    // 8. Seed Attendees and Registrations
     logInfo('Seeding attendees and registrations...');
     const { attendees, registrationsCount } = await seedAttendeesAndRegistrations();
+    
+    // 9. Seed Event Attendee Types (for specific event)
+    logInfo('Seeding event attendee types for specific event...');
+    const eventAttendeeTypes = await seedEventAttendeeTypes();
+    
+    // 10. Seed Registrations for specific event
+    logInfo('Seeding registrations for specific event...');
+    const specificEventRegistrations = await seedRegistrationsForEvent();
     
     // Get the super admin user for final log
     const superAdminRole = await getRoleByCode('SUPER_ADMIN');
@@ -84,9 +99,12 @@ async function runAllSeeders() {
     console.log(`- Permissions: ${permResults.filter(r => r.success).length} created/updated`);
     console.log(`- Permission assignments: ${permAssignResults.filter(r => r.success).length} created/updated`);
     console.log(`- Users: ${userResults.filter(r => r.success).length} created/updated`);
+    console.log(`- Attendee Types: ${attendeeTypes?.length || 0} created/updated`);
     console.log(`- Events: ${events?.length || 0} created/updated`);
     console.log(`- Attendees: ${attendees?.length || 0} created/updated`);
     console.log(`- Registrations: ${registrationsCount || 0} created`);
+    console.log(`- Event Attendee Types: ${eventAttendeeTypes?.length || 0} created/updated`);
+    console.log(`- Specific Event Registrations: ${specificEventRegistrations?.registrationsCount || 0} created`);
     console.log('');
     console.log('🔑 Demo credentials:');
     console.log('Super Admin - Email: john.doe@system.com | Password: admin123 | Role: SUPER_ADMIN');
