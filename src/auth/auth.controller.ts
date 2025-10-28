@@ -88,6 +88,12 @@ export class AuthController {
 
     // Detect if request is from mobile app (via custom header)
     const isMobileApp = req.headers['x-client-type'] === 'mobile';
+    
+    console.log('[AuthController.login] Client type:', {
+      isMobileApp,
+      header: req.headers['x-client-type'],
+      userAgent: req.get('User-Agent'),
+    });
 
     if (!isMobileApp) {
       // Web: Set refresh token as HttpOnly cookie
