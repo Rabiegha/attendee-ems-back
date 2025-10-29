@@ -10,9 +10,13 @@ import {
   UseGuards,
   Request,
   Res,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
 import { Response } from 'express';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { EventsService } from './events.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
@@ -208,6 +212,58 @@ export class EventsController {
   // ========================================
   // REGISTRATIONS ROUTES FOR EVENTS
   // ========================================
+
+  @Post(':eventId/registrations/bulk-import')
+  @Permissions('registrations.create')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Bulk import registrations from Excel file' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+        },
+        autoApprove: {
+          type: 'boolean',
+          description: 'Auto-approve all imported registrations',
+        },
+        replaceExisting: {
+          type: 'boolean',
+          description: 'Replace existing registrations instead of skipping them',
+        },
+      },
+    },
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Import summary with created, updated, and skipped counts',
+  })
+  @ApiResponse({ status: 400, description: 'Invalid file or data' })
+  async bulkImportRegistrations(
+    @Param('eventId') eventId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Body('autoApprove') autoApprove: string,
+    @Body('replaceExisting') replaceExisting: string,
+    @Request() req,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No file uploaded');
+    }
+
+    const autoApproveBoolean = autoApprove === 'true' || autoApprove === '1';
+    const replaceExistingBoolean = replaceExisting === 'true' || replaceExisting === '1';
+
+    return this.registrationsService.bulkImport(
+      eventId,
+      req.user.org_id,
+      file.buffer,
+      autoApproveBoolean,
+      replaceExistingBoolean,
+    );
+  }
 
   @Get(':eventId/registrations')
   @Permissions('registrations.read')

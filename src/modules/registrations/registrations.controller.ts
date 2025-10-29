@@ -11,14 +11,10 @@ import {
   UseGuards,
   Request,
   ForbiddenException,
-  UseInterceptors,
-  UploadedFile,
-  BadRequestException,
   Res,
 } from '@nestjs/common';
 import { Response } from 'express';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { RegistrationsService } from './registrations.service';
 import { ListRegistrationsDto } from './dto/list-registrations.dto';
 import { CreateRegistrationDto } from './dto/create-registration.dto';
@@ -121,6 +117,24 @@ export class RegistrationsController {
     return this.registrationsService.update(id, orgId, updateDto);
   }
 
+  // ⚠️ CRITICAL: bulk-delete MUST be BEFORE :id route to avoid NestJS matching ':id' with 'bulk-delete' string
+  @Delete('bulk-delete')
+  @Permissions('registrations.delete')
+  @ApiOperation({ summary: 'Bulk delete registrations' })
+  @ApiResponse({ status: 200, description: 'Registrations deleted successfully' })
+  async bulkDelete(
+    @Body() body: { ids: string[] },
+    @Request() req,
+  ) {
+    const canAny = req.authz?.canRegistrationsAny === true;
+    const orgId = resolveEffectiveOrgId({
+      reqUser: req.user,
+      allowAny: canAny,
+    });
+
+    return this.registrationsService.bulkDelete(body.ids, orgId);
+  }
+
   @Delete(':id')
   @Permissions('registrations.delete')
   @ApiOperation({ summary: 'Delete a registration' })
@@ -137,99 +151,6 @@ export class RegistrationsController {
     const orgId = allowAny ? null : req.user.org_id;
 
     return this.registrationsService.remove(id, orgId);
-  }
-
-  @Post('events/:eventId/registrations/bulk-import')
-  @Permissions('registrations.create')
-  @UseInterceptors(FileInterceptor('file'))
-  @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: 'Bulk import registrations from Excel file' })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        file: {
-          type: 'string',
-          format: 'binary',
-        },
-        autoApprove: {
-          type: 'boolean',
-          description: 'Auto-approve all imported registrations',
-        },
-      },
-    },
-  })
-  @ApiResponse({ 
-    status: 200, 
-    description: 'Import summary with created, updated, and skipped counts',
-    schema: {
-      type: 'object',
-      properties: {
-        success: { type: 'boolean' },
-        summary: {
-          type: 'object',
-          properties: {
-            total_rows: { type: 'number' },
-            created: { type: 'number' },
-            updated: { type: 'number' },
-            skipped: { type: 'number' },
-            errors: { 
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  row: { type: 'number' },
-                  email: { type: 'string' },
-                  error: { type: 'string' },
-                },
-              },
-            },
-          },
-        },
-      },
-    },
-  })
-  async bulkImport(
-    @Param('eventId') eventId: string, 
-    @UploadedFile() file: Express.Multer.File, 
-    @Body('autoApprove') autoApprove: string,
-    @Request() req
-  ) {
-    if (!file) {
-      throw new BadRequestException('File is required');
-    }
-
-    const canAny = req.authz?.canRegistrationsAny === true;
-    const orgId = resolveEffectiveOrgId({
-      reqUser: req.user,
-      allowAny: canAny,
-    });
-
-    const autoApproveBoolean = autoApprove === 'true';
-
-    return this.registrationsService.bulkImport(
-      eventId,
-      orgId,
-      file.buffer,
-      autoApproveBoolean,
-    );
-  }
-
-  @Delete('bulk-delete')
-  @Permissions('registrations.delete')
-  @ApiOperation({ summary: 'Bulk delete registrations' })
-  @ApiResponse({ status: 200, description: 'Registrations deleted successfully' })
-  async bulkDelete(
-    @Body() body: { ids: string[] },
-    @Request() req,
-  ) {
-    const canAny = req.authz?.canRegistrationsAny === true;
-    const orgId = resolveEffectiveOrgId({
-      reqUser: req.user,
-      allowAny: canAny,
-    });
-
-    return this.registrationsService.bulkDelete(body.ids, orgId);
   }
 
   @Post('bulk-export')

@@ -229,6 +229,15 @@ export class EventsService {
           settings: true,
           activitySector: true,
           eventType: true,
+          _count: {
+            select: {
+              registrations: {
+                where: {
+                  status: { in: ['awaiting', 'approved'] }, // Compter uniquement les inscriptions valides
+                },
+              },
+            },
+          },
         },
       }),
       this.prisma.event.count({ where }),
@@ -278,6 +287,15 @@ export class EventsService {
         settings: true,
         activitySector: true,
         eventType: true,
+        _count: {
+          select: {
+            registrations: {
+              where: {
+                status: { in: ['awaiting', 'approved'] },
+              },
+            },
+          },
+        },
       },
     });
 

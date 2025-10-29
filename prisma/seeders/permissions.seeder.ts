@@ -309,6 +309,18 @@ const permissionsData: PermissionSeedData[] = [
     description: 'Update registration status and information in organization' 
   },
   { 
+    code: 'registrations.delete',
+    scope: 'any',
+    name: 'Delete registrations (cross-tenant)', 
+    description: 'Delete registrations in any organization (SUPER_ADMIN)' 
+  },
+  { 
+    code: 'registrations.delete',
+    scope: 'org',
+    name: 'Delete registrations', 
+    description: 'Delete event registrations in organization' 
+  },
+  { 
     code: 'registrations.import',
     scope: 'any',
     name: 'Import registrations (cross-tenant)', 
