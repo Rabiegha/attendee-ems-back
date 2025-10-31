@@ -69,7 +69,7 @@ export class AuthService {
 
   async login(user: any) {
     const permissions = user.role?.rolePermissions?.map(
-      (rp: any) => rp.permission.code,
+      (rp: any) => `${rp.permission.code}:${rp.permission.scope}`,
     ) || [];
 
     const payload = {
@@ -112,7 +112,7 @@ export class AuthService {
 
   async signAccessToken(user: any): Promise<{ token: string; expiresIn: number }> {
     const permissions = user.role?.rolePermissions?.map(
-      (rp: any) => rp.permission.code,
+      (rp: any) => `${rp.permission.code}:${rp.permission.scope}`,
     ) || [];
 
     const payload = {
@@ -322,7 +322,7 @@ export class AuthService {
       first_name: user.first_name,
       last_name: user.last_name,
       role: user.role?.code,
-      permissions: user.role?.rolePermissions?.map((rp: any) => rp.permission.code) || [],
+      permissions: user.role?.rolePermissions?.map((rp: any) => `${rp.permission.code}:${rp.permission.scope}`) || [],
     };
 
     const result: any = {
@@ -387,9 +387,9 @@ export class AuthService {
       };
     }
 
-    // Extraire les permissions
+    // Extraire les permissions avec scopes
     const permissions = currentUser.role?.rolePermissions?.map(
-      (rp: any) => rp.permission.code,
+      (rp: any) => `${rp.permission.code}:${rp.permission.scope}`,
     ) || [];
 
     // Mapper les permissions backend en règles CASL

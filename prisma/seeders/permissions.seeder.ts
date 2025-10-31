@@ -222,6 +222,30 @@ const permissionsData: PermissionSeedData[] = [
     description: 'Delete attendees in organization' 
   },
   { 
+    code: 'attendees.restore',
+    scope: 'any',
+    name: 'Restore attendees (cross-tenant)', 
+    description: 'Restore soft-deleted attendees in any organization (SUPER_ADMIN)' 
+  },
+  { 
+    code: 'attendees.restore',
+    scope: 'org',
+    name: 'Restore attendees', 
+    description: 'Restore soft-deleted attendees in organization' 
+  },
+  { 
+    code: 'attendees.permanent-delete',
+    scope: 'any',
+    name: 'Permanently delete attendees (cross-tenant)', 
+    description: 'Permanently delete attendees and all relations in any organization (SUPER_ADMIN)' 
+  },
+  { 
+    code: 'attendees.permanent-delete',
+    scope: 'org',
+    name: 'Permanently delete attendees', 
+    description: 'Permanently delete attendees and all relations in organization' 
+  },
+  { 
     code: 'attendees.checkin',
     scope: 'any',
     name: 'Check-in attendees (cross-tenant)', 
@@ -283,6 +307,18 @@ const permissionsData: PermissionSeedData[] = [
     scope: 'org',
     name: 'Update registrations', 
     description: 'Update registration status and information in organization' 
+  },
+  { 
+    code: 'registrations.delete',
+    scope: 'any',
+    name: 'Delete registrations (cross-tenant)', 
+    description: 'Delete registrations in any organization (SUPER_ADMIN)' 
+  },
+  { 
+    code: 'registrations.delete',
+    scope: 'org',
+    name: 'Delete registrations', 
+    description: 'Delete event registrations in organization' 
   },
   { 
     code: 'registrations.import',
@@ -462,6 +498,8 @@ export const rolePermissionMapping: Record<string, string[]> = {
     'attendees.create:any',
     'attendees.update:any',
     'attendees.delete:any',
+    'attendees.restore:any',
+    'attendees.permanent-delete:any',
     'attendees.checkin:any',
     'attendees.export:any',
     
@@ -511,6 +549,8 @@ export const rolePermissionMapping: Record<string, string[]> = {
     'attendees.create:org',
     'attendees.update:org',
     'attendees.delete:org',
+    'attendees.restore:org',
+    'attendees.permanent-delete:org',
     'attendees.checkin:org',
     'attendees.export:org',
     
@@ -613,6 +653,9 @@ export const rolePermissionMapping: Record<string, string[]> = {
     
     // Attendees - PARTNER voit toute l'org
     'attendees.read:org',
+    
+    // Registrations - PARTNER peut lire les registrations de l'org
+    'registrations.read:org',
     
     // Analytics de ses événements
     'analytics.view',

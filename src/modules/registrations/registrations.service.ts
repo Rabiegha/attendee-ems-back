@@ -9,8 +9,8 @@ import { PrismaService } from '../../infra/db/prisma.service';
 import { ListRegistrationsDto } from './dto/list-registrations.dto';
 import { CreateRegistrationDto } from './dto/create-registration.dto';
 import { UpdateRegistrationStatusDto } from './dto/update-registration-status.dto';
-import { Prisma } from '@prisma/client';
 import * as XLSX from 'xlsx';
+import { Prisma } from '@prisma/client';
 import { RegistrationScope } from '../../common/utils/resolve-registration-scope.util';
 
 interface RegistrationQueryContext {
@@ -93,7 +93,7 @@ export class RegistrationsService {
     }
 
     // Execute queries in parallel
-    const [data, total] = await Promise.all([
+    const [data, total, awaitingCount, approvedCount, refusedCount] = await Promise.all([
       this.prisma.registration.findMany({
         where,
         orderBy,
@@ -109,6 +109,9 @@ export class RegistrationsService {
         },
       }),
       this.prisma.registration.count({ where }),
+      this.prisma.registration.count({ where: { ...where, status: 'awaiting' } }),
+      this.prisma.registration.count({ where: { ...where, status: 'approved' } }),
+      this.prisma.registration.count({ where: { ...where, status: 'refused' } }),
     ]);
 
     const totalPages = Math.ceil(total / limit);
@@ -120,6 +123,11 @@ export class RegistrationsService {
         limit,
         total,
         totalPages,
+        statusCounts: {
+          awaiting: awaitingCount,
+          approved: approvedCount,
+          refused: refusedCount,
+        },
       },
     };
   }
@@ -130,14 +138,19 @@ export class RegistrationsService {
    */
   async updateStatus(
     id: string,
-    orgId: string,
+    orgId: string | null,
     dto: UpdateRegistrationStatusDto,
   ) {
+    // Build where clause avec scope
+    const where: Prisma.RegistrationWhereInput = { id };
+    
+    // Si orgId est fourni (pas de scope :any), limiter à cette org
+    if (orgId !== null) {
+      where.org_id = orgId;
+    }
+
     const registration = await this.prisma.registration.findFirst({
-      where: {
-        id,
-        org_id: orgId,
-      },
+      where,
     });
 
     if (!registration) {
@@ -280,12 +293,20 @@ export class RegistrationsService {
    */
   async update(
     id: string,
-    orgId: string,
+    orgId: string | null,
     dto: Partial<CreateRegistrationDto>,
   ) {
+    // Build where clause avec scope
+    const where: Prisma.RegistrationWhereInput = { id };
+    
+    // Si orgId est fourni (pas de scope :any), limiter à cette org
+    if (orgId !== null) {
+      where.org_id = orgId;
+    }
+
     // Find registration
     const registration = await this.prisma.registration.findFirst({
-      where: { id, org_id: orgId },
+      where,
       include: { attendee: true },
     });
 
@@ -328,10 +349,18 @@ export class RegistrationsService {
   /**
    * Delete a registration
    */
-  async remove(id: string, orgId: string) {
+  async remove(id: string, orgId: string | null) {
+    // Build where clause avec scope
+    const where: Prisma.RegistrationWhereInput = { id };
+    
+    // Si orgId est fourni (pas de scope :any), limiter à cette org
+    if (orgId !== null) {
+      where.org_id = orgId;
+    }
+
     // Find registration
     const registration = await this.prisma.registration.findFirst({
-      where: { id, org_id: orgId },
+      where,
     });
 
     if (!registration) {
@@ -355,6 +384,7 @@ export class RegistrationsService {
     orgId: string,
     fileBuffer: Buffer,
     autoApprove?: boolean,
+    replaceExisting?: boolean,
   ) {
     // Parse Excel file
     const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
@@ -540,9 +570,6 @@ export class RegistrationsService {
             },
           });
 
-          // Track if attendee was created or updated
-          const wasCreated = !existingAttendee;
-
           // Check for duplicate registration
           const existingRegistration = await tx.registration.findUnique({
             where: {
@@ -553,12 +580,34 @@ export class RegistrationsService {
             },
           });
 
+          // Track if this is a registration creation or update
+          let wasRegistrationCreated = true;
+
           if (existingRegistration) {
             if (existingRegistration.status === 'refused') {
               throw new ForbiddenException('This attendee was previously declined for this event');
             }
             if (['awaiting', 'approved'].includes(existingRegistration.status)) {
-              throw new ConflictException('This attendee is already registered for this event');
+              // Si replaceExisting = true, on met à jour au lieu de throw
+              if (replaceExisting) {
+                const updatedRegistration = await tx.registration.update({
+                  where: { id: existingRegistration.id },
+                  data: {
+                    attendance_type: attendanceType,
+                    event_attendee_type_id: eventAttendeeTypeId,
+                    answers: Object.keys(answers).length > 0 ? answers : null,
+                    status: shouldAutoApprove ? 'approved' : existingRegistration.status,
+                    confirmed_at: shouldAutoApprove && !existingRegistration.confirmed_at ? new Date() : existingRegistration.confirmed_at,
+                  },
+                  include: {
+                    attendee: true,
+                  },
+                });
+                wasRegistrationCreated = false;
+                return { registration: updatedRegistration, wasRegistrationCreated };
+              } else {
+                throw new ConflictException('This attendee is already registered for this event');
+              }
             }
           }
 
@@ -584,10 +633,11 @@ export class RegistrationsService {
             },
           });
 
-          return { registration: newRegistration, wasAttendeeCreated: wasCreated };
+          return { registration: newRegistration, wasRegistrationCreated };
         });
 
-        if (registration.wasAttendeeCreated) {
+        // Count based on whether the REGISTRATION was created or updated
+        if (registration.wasRegistrationCreated) {
           results.created++;
         } else {
           results.updated++;
@@ -615,5 +665,97 @@ export class RegistrationsService {
     }
 
     return results;
+  }
+
+  /**
+   * Bulk delete registrations
+   */
+  async bulkDelete(ids: string[], orgId?: string): Promise<{ deletedCount: number }> {
+    const whereClause: any = {
+      id: { in: ids },
+    };
+
+    // Apply org filtering if provided (not for super admins)
+    if (orgId) {
+      whereClause.org_id = orgId;
+    }
+
+    const result = await this.prisma.registration.deleteMany({
+      where: whereClause,
+    });
+
+    return { deletedCount: result.count };
+  }
+
+  /**
+   * Bulk export registrations to CSV or Excel
+   */
+  async bulkExport(
+    ids: string[], 
+    orgId?: string, 
+    format: string = 'csv'
+  ): Promise<{ buffer: Buffer; filename: string }> {
+    const whereClause: any = {
+      id: { in: ids },
+    };
+
+    // Apply org filtering if provided (not for super admins)
+    if (orgId) {
+      whereClause.org_id = orgId;
+    }
+
+    const registrations = await this.prisma.registration.findMany({
+      where: whereClause,
+      include: {
+        attendee: true,
+        event: true,
+      },
+      orderBy: { created_at: 'desc' },
+    });
+
+    // Prepare data
+    const data = registrations.map((registration) => ({
+      'ID': registration.id,
+      'Prénom': registration.attendee?.first_name || '',
+      'Nom': registration.attendee?.last_name || '',
+      'Email': registration.attendee?.email || '',
+      'Téléphone': registration.attendee?.phone || '',
+      'Entreprise': registration.attendee?.company || '',
+      'Poste': registration.attendee?.job_title || '',
+      'Événement': registration.event?.name || '',
+      'Statut': registration.status,
+      'Date d\'inscription': registration.created_at?.toISOString().split('T')[0] || '',
+      'Date d\'invitation': registration.invited_at?.toISOString().split('T')[0] || '',
+      'Date de confirmation': registration.confirmed_at?.toISOString().split('T')[0] || '',
+    }));
+
+    const timestamp = new Date().toISOString().split('T')[0];
+    
+    if (format === 'excel' || format === 'xlsx') {
+      // Generate Excel file
+      const worksheet = XLSX.utils.json_to_sheet(data);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Inscriptions');
+      
+      const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      const filename = `inscriptions_export_${timestamp}.xlsx`;
+      
+      return { buffer: Buffer.from(buffer), filename };
+    } else {
+      // Generate CSV (default)
+      const csvHeaders = Object.keys(data[0] || {});
+      const csvRows = data.map(row => 
+        csvHeaders.map(header => `"${(row[header] || '').toString().replace(/"/g, '""')}"`).join(',')
+      );
+      const csvContent = [
+        csvHeaders.join(','),
+        ...csvRows
+      ].join('\n');
+
+      const buffer = Buffer.from(csvContent, 'utf-8');
+      const filename = `inscriptions_export_${timestamp}.csv`;
+
+      return { buffer, filename };
+    }
   }
 }

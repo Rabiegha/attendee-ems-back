@@ -6,6 +6,8 @@ import { RolesModule } from '../modules/roles/roles.module';
 import { PermissionsModule } from '../modules/permissions/permissions.module';
 import { InvitationModule } from '../modules/invitation/invitation.module';
 import { AttendeesModule } from '../modules/attendees/attendees.module';
+import { EventsModule } from '../modules/events/events.module';
+import { RegistrationsModule } from '../modules/registrations/registrations.module';
 
 export const appRoutes: Routes = [
   {
@@ -38,6 +40,14 @@ export const appRoutes: Routes = [
       {
         path: 'attendees',
         module: AttendeesModule,
+      },
+      {
+        path: 'events',
+        module: EventsModule,
+      },
+      {
+        path: 'registrations',
+        module: RegistrationsModule,
       },
     ],
   },

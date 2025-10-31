@@ -3,12 +3,15 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Body,
   UseGuards,
   Request,
   Query,
   Param,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import {
   ApiTags,
   ApiOperation,
@@ -231,5 +234,91 @@ export class UsersController {
     const updaterRoleLevel = updaterUser?.role?.level;
     
     return this.usersService.update(id, updateUserDto, orgId, updaterUserId, updaterRoleLevel);
+  }
+
+  @Delete('bulk-delete')
+  @Permissions('users.delete')
+  @ApiOperation({
+    summary: 'Supprimer plusieurs utilisateurs',
+    description: 'Supprime plusieurs utilisateurs par leurs IDs'
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        ids: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Liste des IDs des utilisateurs à supprimer'
+        }
+      }
+    }
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Utilisateurs supprimés avec succès',
+    schema: {
+      type: 'object',
+      properties: {
+        deletedCount: { type: 'number' }
+      }
+    }
+  })
+  async bulkDelete(@Body('ids') ids: string[], @Request() req) {
+    const { user } = req;
+    const allowAny = user.permissions?.some(p => p.permission.endsWith(':any'));
+    const orgId = allowAny ? null : user.org_id;
+    
+    const deletedCount = await this.usersService.bulkDelete(ids, orgId);
+    return { deletedCount };
+  }
+
+  @Post('bulk-export')
+  @Permissions('users.read')
+  @ApiOperation({
+    summary: 'Exporter plusieurs utilisateurs',
+    description: 'Exporte plusieurs utilisateurs au format CSV ou Excel'
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        ids: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Liste des IDs des utilisateurs à exporter'
+        },
+        format: {
+          type: 'string',
+          enum: ['csv', 'xlsx'],
+          default: 'csv',
+          description: 'Format d\'export'
+        }
+      }
+    }
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Export généré avec succès'
+  })
+  async bulkExport(
+    @Body('ids') ids: string[],
+    @Body('format') format: 'csv' | 'xlsx' = 'csv',
+    @Request() req,
+    @Res() res: Response
+  ) {
+    const { user } = req;
+    const allowAny = user.permissions?.some(p => p.permission.endsWith(':any'));
+    const orgId = allowAny ? null : user.org_id;
+    
+    const { buffer, filename, mimeType } = await this.usersService.bulkExport(ids, format, orgId);
+    
+    res.set({
+      'Content-Type': mimeType,
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': buffer.length,
+    });
+    
+    res.send(buffer);
   }
 }

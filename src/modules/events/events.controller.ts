@@ -9,13 +9,22 @@ import {
   Query,
   UseGuards,
   Request,
+  Res,
+  UseInterceptors,
+  UploadedFile,
+  BadRequestException,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { Response } from 'express';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
 import { EventsService } from './events.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
 import { ListEventsDto } from './dto/list-events.dto';
 import { ChangeEventStatusDto } from './dto/change-event-status.dto';
+import { RegistrationsService } from '../registrations/registrations.service';
+import { ListRegistrationsDto } from '../registrations/dto/list-registrations.dto';
+import { resolveRegistrationReadScope } from '../../common/utils/resolve-registration-scope.util';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
@@ -24,10 +33,13 @@ import { resolveEventReadScope } from '../../common/utils/resolve-event-scope.ut
 
 @ApiTags('Events')
 @ApiBearerAuth()
-@Controller('events')
+@Controller()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class EventsController {
-  constructor(private readonly eventsService: EventsService) {}
+  constructor(
+    private readonly eventsService: EventsService,
+    private readonly registrationsService: RegistrationsService,
+  ) {}
 
   @Post()
   @Permissions('events.create')
@@ -152,5 +164,136 @@ export class EventsController {
     });
 
     return this.eventsService.changeStatus(id, changeStatusDto, orgId);
+  }
+
+  @Delete('bulk-delete')
+  @Permissions('events.delete')
+  @ApiOperation({
+    summary: 'Supprimer plusieurs événements',
+    description: 'Supprime plusieurs événements par leurs IDs'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Événements supprimés avec succès',
+    schema: {
+      type: 'object',
+      properties: {
+        deletedCount: { type: 'number' }
+      }
+    }
+  })
+  async bulkDelete(@Body('ids') ids: string[], @Request() req) {
+    const allowAny = req.user.permissions?.some((p: string) =>
+      p.startsWith('events.') && p.endsWith(':any'),
+    );
+    const orgId = allowAny ? null : req.user.org_id;
+    
+    const deletedCount = await this.eventsService.bulkDelete(ids, orgId);
+    return { deletedCount };
+  }
+
+  @Post('bulk-export')
+  @Permissions('events.read')
+  @ApiOperation({
+    summary: 'Exporter plusieurs événements',
+    description: 'Exporte plusieurs événements au format CSV ou Excel'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Export généré avec succès'
+  })
+  async bulkExport(
+    @Body('ids') ids: string[],
+    @Body('format') format: 'csv' | 'xlsx' = 'csv',
+    @Request() req,
+    @Res() res: Response
+  ) {
+    const allowAny = req.user.permissions?.some((p: string) =>
+      p.startsWith('events.') && p.endsWith(':any'),
+    );
+    const orgId = allowAny ? null : req.user.org_id;
+    
+    const { buffer, filename, mimeType } = await this.eventsService.bulkExport(ids, format, orgId);
+    
+    res.set({
+      'Content-Type': mimeType,
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': buffer.length,
+    });
+    
+    res.send(buffer);
+  }
+
+  // ========================================
+  // REGISTRATIONS ROUTES FOR EVENTS
+  // ========================================
+
+  @Post(':eventId/registrations/bulk-import')
+  @Permissions('registrations.create')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Bulk import registrations from Excel file' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+        },
+        autoApprove: {
+          type: 'boolean',
+          description: 'Auto-approve all imported registrations',
+        },
+        replaceExisting: {
+          type: 'boolean',
+          description: 'Replace existing registrations instead of skipping them',
+        },
+      },
+    },
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Import summary with created, updated, and skipped counts',
+  })
+  @ApiResponse({ status: 400, description: 'Invalid file or data' })
+  async bulkImportRegistrations(
+    @Param('eventId') eventId: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Body('autoApprove') autoApprove: string,
+    @Body('replaceExisting') replaceExisting: string,
+    @Request() req,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No file uploaded');
+    }
+
+    const autoApproveBoolean = autoApprove === 'true' || autoApprove === '1';
+    const replaceExistingBoolean = replaceExisting === 'true' || replaceExisting === '1';
+
+    return this.registrationsService.bulkImport(
+      eventId,
+      req.user.org_id,
+      file.buffer,
+      autoApproveBoolean,
+      replaceExistingBoolean,
+    );
+  }
+
+  @Get(':eventId/registrations')
+  @Permissions('registrations.read')
+  @ApiOperation({ summary: 'List registrations for an event' })
+  @ApiResponse({ status: 200, description: 'Registrations retrieved successfully' })
+  async getEventRegistrations(
+    @Param('eventId') eventId: string,
+    @Query() listDto: ListRegistrationsDto,
+    @Request() req,
+  ) {
+    const scope = resolveRegistrationReadScope(req.user);
+    
+    return this.registrationsService.findAll(eventId, listDto, {
+      scope,
+      orgId: req.user.org_id,
+    });
   }
 }

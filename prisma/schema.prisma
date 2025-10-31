@@ -114,7 +114,7 @@ model Permission {
   // Relations
   rolePermissions RolePermission[]
 
-  @@unique([code, scope])
+  @@unique([code, scope], name: "code_scope")
   @@map("permissions")
 }
 
