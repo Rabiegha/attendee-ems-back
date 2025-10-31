@@ -88,6 +88,21 @@ export class EventsController {
     });
   }
 
+  @Get(':id/stats')
+  @Permissions('events.read')
+  @ApiOperation({ summary: 'Get event statistics' })
+  @ApiResponse({ status: 200, description: 'Event stats retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Event not found' })
+  async getStats(@Param('id') id: string, @Request() req) {
+    const scope = resolveEventReadScope(req.user);
+    
+    return this.eventsService.getEventStats(id, {
+      scope,
+      orgId: req.user.org_id,
+      userId: req.user.sub,
+    });
+  }
+
   @Put(':id')
   @Permissions('events.update')
   @ApiOperation({ summary: 'Update an event' })

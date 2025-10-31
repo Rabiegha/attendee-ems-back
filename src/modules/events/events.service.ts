@@ -11,6 +11,7 @@ import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
 import { ListEventsDto } from './dto/list-events.dto';
 import { ChangeEventStatusDto } from './dto/change-event-status.dto';
+import { EventStatsDto } from './dto/event-stats.dto';
 import { Event, EventSetting, Prisma, EventStatus as PrismaEventStatus } from '@prisma/client';
 import { generatePublicToken } from '../../common/utils/token.util';
 import { EventScope } from '../../common/utils/resolve-event-scope.util';
@@ -291,7 +292,7 @@ export class EventsService {
    * - 'org': filtré par org_id
    * - 'assigned': filtré par org_id + EventAccess.user_id
    */
-  async findOne(id: string, ctx: EventQueryContext): Promise<Event & { settings: EventSetting | null }> {
+  async findOne(id: string, ctx: EventQueryContext): Promise<Event & { settings: EventSetting | null; stats?: EventStatsDto }> {
     const where: Prisma.EventWhereInput = {
       id,
     };
@@ -342,7 +343,106 @@ export class EventsService {
       throw new NotFoundException('Event not found');
     }
 
-    return event;
+    console.log('[findOne] Event found:', {
+      eventId: id,
+      eventOrgId: event.org_id,
+      contextScope: ctx.scope,
+      contextOrgId: ctx.orgId,
+    });
+
+    // Calculer les stats en utilisant l'org_id de l'événement, pas celui du user
+    // Pour un super admin (scope any), on ne filtre pas par org
+    const statsOrgId = ctx.scope === 'any' ? undefined : event.org_id;
+    console.log('[findOne] Stats will use orgId:', statsOrgId);
+    
+    const stats = await this.calculateEventStats(id, statsOrgId);
+
+    return {
+      ...event,
+      stats,
+    };
+  }
+
+  /**
+   * Calculate event statistics (extracted method for reuse)
+   */
+  private async calculateEventStats(
+    eventId: string,
+    orgId?: string,
+  ): Promise<EventStatsDto> {
+    console.log('[calculateEventStats] START', { eventId, orgId });
+
+    // Base where clause
+    const whereBase = {
+      event_id: eventId,
+      ...(orgId ? { org_id: orgId } : {}),
+    };
+
+    console.log('[calculateEventStats] whereBase:', JSON.stringify(whereBase));
+
+    // Total without org filter (for debugging)
+    const totalWithoutOrgFilter = await this.prisma.registration.count({
+      where: { event_id: eventId },
+    });
+    console.log('[calculateEventStats] Total registrations without org filter:', totalWithoutOrgFilter);
+
+    // Total des inscriptions
+    const totalRegistrations = await this.prisma.registration.count({
+      where: whereBase,
+    });
+
+    console.log('[calculateEventStats] Total registrations WITH org filter:', totalRegistrations);
+
+    // Inscriptions check-in (ceux qui ont au moins une PresenceVisit)
+    const checkedIn = await this.prisma.registration.count({
+      where: {
+        ...whereBase,
+        presenceVisits: {
+          some: {},
+        },
+      },
+    });
+
+    // Grouper par statut
+    const registrationsByStatus = await this.prisma.registration.groupBy({
+      by: ['status'],
+      where: whereBase,
+      _count: {
+        status: true,
+      },
+    });
+
+    console.log('[calculateEventStats] registrationsByStatus:', JSON.stringify(registrationsByStatus));
+
+    // Extraire les compteurs par statut
+    const approved =
+      registrationsByStatus.find((r) => r.status === 'approved')?._count
+        ?.status || 0;
+    const pending =
+      registrationsByStatus.find((r) => r.status === 'awaiting')?._count
+        ?.status || 0;
+    const cancelled =
+      registrationsByStatus.find((r) => r.status === 'cancelled')?._count
+        ?.status || 0;
+
+    // Pourcentage de check-in
+    const checkedInPercentage =
+      totalRegistrations > 0
+        ? Math.round((checkedIn / totalRegistrations) * 100)
+        : 0;
+
+    const finalStats = {
+      totalRegistrations,
+      checkedIn,
+      approved,
+      pending,
+      cancelled,
+      checkedInPercentage,
+    };
+
+    console.log('[calculateEventStats] Final stats:', JSON.stringify(finalStats));
+
+    return finalStats;
   }
 
   /**
@@ -613,6 +713,21 @@ export class EventsService {
         status: dto.status as PrismaEventStatus,
       },
     });
+  }
+
+  /**
+   * Get event statistics (registrations count by status)
+   */
+  async getEventStats(
+    id: string,
+    context: EventQueryContext,
+  ): Promise<EventStatsDto> {
+    // Verify event exists and user has access
+    const event = await this.findOne(id, context);
+
+    // Use event's org_id for stats, or no filter for super admin
+    const statsOrgId = context.scope === 'any' ? undefined : event.org_id;
+    return this.calculateEventStats(id, statsOrgId);
   }
 
   async bulkDelete(ids: string[], orgId?: string): Promise<number> {
