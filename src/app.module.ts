@@ -16,6 +16,7 @@ import { appRoutes } from './router/app.routes';
 import { EventsModule } from './modules/events/events.module';
 import { PublicModule } from './modules/public/public.module';
 import { RegistrationsModule } from './modules/registrations/registrations.module';
+import { TagsModule } from './modules/tags/tags.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { RegistrationsModule } from './modules/registrations/registrations.modul
     EventsModule,
     PublicModule,
     RegistrationsModule,
+    TagsModule,
   ],
 })
 export class AppModule {

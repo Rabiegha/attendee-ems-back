@@ -11,7 +11,7 @@ export async function seedEvents() {
   });
 
   if (!acmeOrg) {
-    console.log('⚠️  Organization Acme Corp not found, skipping events seeding');
+    console.log(' Organization Acme Corp not found, skipping events seeding');
     return;
   }
 

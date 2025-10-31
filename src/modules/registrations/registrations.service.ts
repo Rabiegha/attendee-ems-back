@@ -266,7 +266,7 @@ export class RegistrationsService {
       const status = event.settings?.registration_auto_approve ? 'approved' : 'awaiting';
       const confirmedAt = status === 'approved' ? new Date() : null;
 
-      // Create registration
+      // Create registration with snapshot of attendee data
       const registration = await tx.registration.create({
         data: {
           org_id: orgId,
@@ -278,6 +278,18 @@ export class RegistrationsService {
           answers: dto.answers ? (dto.answers as Prisma.InputJsonValue) : null,
           invited_at: new Date(),
           confirmed_at: confirmedAt,
+          
+          // Source de l'inscription
+          source: dto.source || 'public_form',
+          
+          // Snapshot des données de l'attendee au moment de l'inscription
+          snapshot_first_name: attendee.first_name,
+          snapshot_last_name: attendee.last_name,
+          snapshot_email: attendee.email,
+          snapshot_phone: attendee.phone,
+          snapshot_company: attendee.company,
+          snapshot_job_title: attendee.job_title,
+          snapshot_country: attendee.country,
         },
         include: {
           attendee: true,
@@ -615,7 +627,7 @@ export class RegistrationsService {
           const status = shouldAutoApprove ? 'approved' : 'awaiting';
           const confirmedAt = status === 'approved' ? new Date() : null;
 
-          // Create registration
+          // Create registration with snapshots and source tracking
           const newRegistration = await tx.registration.create({
             data: {
               org_id: orgId,
@@ -627,6 +639,16 @@ export class RegistrationsService {
               answers: Object.keys(answers).length > 0 ? answers : null,
               invited_at: new Date(),
               confirmed_at: confirmedAt,
+              // Source tracking: mark as import
+              source: 'import',
+              // Snapshot attendee data at time of registration
+              snapshot_first_name: attendee.first_name,
+              snapshot_last_name: attendee.last_name,
+              snapshot_email: attendee.email,
+              snapshot_phone: attendee.phone,
+              snapshot_company: attendee.company,
+              snapshot_job_title: attendee.job_title,
+              snapshot_country: attendee.country,
             },
             include: {
               attendee: true,

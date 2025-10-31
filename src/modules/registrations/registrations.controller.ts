@@ -117,7 +117,7 @@ export class RegistrationsController {
     return this.registrationsService.update(id, orgId, updateDto);
   }
 
-  // ⚠️ CRITICAL: bulk-delete MUST be BEFORE :id route to avoid NestJS matching ':id' with 'bulk-delete' string
+  // CRITICAL: bulk-delete MUST be BEFORE :id route to avoid NestJS matching ':id' with 'bulk-delete' string
   @Delete('bulk-delete')
   @Permissions('registrations.delete')
   @ApiOperation({ summary: 'Bulk delete registrations' })

@@ -11,7 +11,7 @@ export async function seedAttendeesAndRegistrations() {
   });
 
   if (!acmeOrg) {
-    console.log('⚠️  Organization Acme Corp not found, skipping attendees/registrations seeding');
+    console.log(' Organization Acme Corp not found, skipping attendees/registrations seeding');
     return;
   }
 
@@ -27,7 +27,7 @@ export async function seedAttendeesAndRegistrations() {
   });
 
   if (events.length === 0) {
-    console.log('⚠️  No published events found, skipping attendees/registrations seeding');
+    console.log(' No published events found, skipping attendees/registrations seeding');
     return;
   }
 

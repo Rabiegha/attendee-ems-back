@@ -98,14 +98,23 @@ export class EventsController {
     @Body() updateEventDto: UpdateEventDto,
     @Request() req,
   ) {
+    console.log('🔍 UPDATE EVENT DEBUG:', {
+      eventId: id,
+      userOrgId: req.user.org_id,
+      userId: req.user.sub,
+      permissions: req.user.permissions?.slice(0, 3),
+    });
+
     const allowAny = req.user.permissions?.some((p: string) =>
       p.startsWith('events.') && p.endsWith(':any'),
     );
-    const orgId = resolveEffectiveOrgId({
+    const orgId = allowAny ? null : resolveEffectiveOrgId({
       reqUser: req.user,
       explicitOrgId: undefined,
       allowAny,
     });
+
+    console.log('🔍 RESOLVED ORG ID:', orgId);
 
     return this.eventsService.update(id, updateEventDto, orgId);
   }

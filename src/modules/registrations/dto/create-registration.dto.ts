@@ -15,6 +15,13 @@ export enum AttendanceType {
   HYBRID = 'hybrid',
 }
 
+export enum RegistrationSourceDto {
+  PUBLIC_FORM = 'public_form',
+  TEST_FORM = 'test_form',
+  MANUAL = 'manual',
+  IMPORT = 'import',
+}
+
 export class CreateRegistrationDto {
   @ApiProperty({ description: 'Attendee information', type: AttendeeDataDto })
   @ValidateNested()
@@ -34,4 +41,13 @@ export class CreateRegistrationDto {
   @ApiPropertyOptional({ description: 'Registration form answers (JSON)' })
   @IsOptional()
   answers?: any;
+
+  @ApiPropertyOptional({ 
+    enum: RegistrationSourceDto, 
+    description: 'Source of registration (public_form, test_form, manual, import)',
+    default: 'public_form'
+  })
+  @IsOptional()
+  @IsEnum(RegistrationSourceDto)
+  source?: RegistrationSourceDto;
 }

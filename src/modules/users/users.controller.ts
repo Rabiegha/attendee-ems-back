@@ -98,6 +98,12 @@ export class UsersController {
     description: 'Terme de recherche pour filtrer les utilisateurs',
     example: 'jean'
   })
+  @ApiQuery({
+    name: 'isActive',
+    required: false,
+    description: 'Filtrer par statut actif/inactif',
+    example: 'true'
+  })
   @ApiResponse({
     status: 200,
     description: 'Liste des utilisateurs récupérée avec succès',
@@ -116,15 +122,27 @@ export class UsersController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('q') search?: string,
+    @Query('isActive') isActive?: string,
   ) {
     const scope = resolveUserReadScope(req.user);
     const pageNumber = page ? parseInt(page, 10) : 1;
     const limitNumber = limit ? parseInt(limit, 10) : 10;
+    const isActiveFilter = isActive !== undefined ? isActive === 'true' : undefined;
+    
+    // Debug log
+    console.log('🔍 Users findAll called with:', { 
+      page: pageNumber, 
+      limit: limitNumber, 
+      search, 
+      isActive: isActiveFilter,
+      isActiveRaw: isActive 
+    });
     
     return this.usersService.findAll(pageNumber, limitNumber, search, {
       scope,
       orgId: req.user.org_id,
       userId: req.user.id || req.user.sub,
+      isActive: isActiveFilter,
     });
   }
 

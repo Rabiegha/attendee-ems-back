@@ -15,7 +15,7 @@ export async function seedEventAttendeeTypes() {
   });
 
   if (!event) {
-    console.log(`⚠️  Event with ID ${eventId} not found, skipping event attendee types seeding`);
+    console.log(` Event with ID ${eventId} not found, skipping event attendee types seeding`);
     return;
   }
 
@@ -33,7 +33,7 @@ export async function seedEventAttendeeTypes() {
   });
 
   if (attendeeTypes.length === 0) {
-    console.log('⚠️  No attendee types found for this organization, skipping event attendee types seeding');
+    console.log(' No attendee types found for this organization, skipping event attendee types seeding');
     return;
   }
 

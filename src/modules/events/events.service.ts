@@ -3,15 +3,18 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  forwardRef,
+  Inject,
 } from '@nestjs/common';
 import { PrismaService } from '../../infra/db/prisma.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
 import { ListEventsDto } from './dto/list-events.dto';
 import { ChangeEventStatusDto } from './dto/change-event-status.dto';
-import { Event, EventSetting, Prisma } from '@prisma/client';
+import { Event, EventSetting, Prisma, EventStatus as PrismaEventStatus } from '@prisma/client';
 import { generatePublicToken } from '../../common/utils/token.util';
 import { EventScope } from '../../common/utils/resolve-event-scope.util';
+import { TagsService } from '../tags/tags.service';
 
 interface EventQueryContext {
   scope: EventScope;
@@ -21,7 +24,11 @@ interface EventQueryContext {
 
 @Injectable()
 export class EventsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Inject(forwardRef(() => TagsService))
+    private readonly tagsService: TagsService,
+  ) {}
 
   /**
    * Create an event with its settings (1:1 relation)
@@ -32,7 +39,7 @@ export class EventsService {
     orgId: string,
     userId: string,
   ): Promise<Event & { settings: EventSetting }> {
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       // Check if event code already exists in org
       const existing = await tx.event.findUnique({
         where: {
@@ -65,7 +72,7 @@ export class EventsService {
           start_at: startAt,
           end_at: endAt,
           timezone: dto.timezone || 'UTC',
-          status: dto.status || 'draft',
+          status: (dto.status as PrismaEventStatus) || 'draft',
           capacity: dto.capacity,
           location_type: dto.location_type || 'physical',
           org_activity_sector_id: dto.org_activity_sector_id,
@@ -140,6 +147,13 @@ export class EventsService {
 
       return { ...event, settings };
     });
+
+    // Create tags after transaction (tags service has its own transaction)
+    if (dto.tags && dto.tags.length > 0) {
+      await this.tagsService.updateEventTags(result.id, orgId, dto.tags);
+    }
+
+    return result;
   }
 
   /**
@@ -163,6 +177,9 @@ export class EventsService {
     // Build where clause avec scope
     const where: Prisma.EventWhereInput = {};
 
+    // Exclure les événements supprimés par défaut
+    where.deleted_at = null;
+
     // Appliquer le scope
     if (ctx.scope !== 'any') {
       where.org_id = ctx.orgId!;
@@ -177,7 +194,7 @@ export class EventsService {
     }
 
     if (dto.status) {
-      where.status = dto.status;
+      where.status = dto.status as PrismaEventStatus;
     }
 
     if (dto.startAfter || dto.startBefore) {
@@ -229,6 +246,17 @@ export class EventsService {
           settings: true,
           activitySector: true,
           eventType: true,
+          eventTags: {
+            include: {
+              tag: {
+                select: {
+                  id: true,
+                  name: true,
+                  color: true,
+                },
+              },
+            },
+          },
           _count: {
             select: {
               registrations: {
@@ -287,6 +315,17 @@ export class EventsService {
         settings: true,
         activitySector: true,
         eventType: true,
+        eventTags: {
+          include: {
+            tag: {
+              select: {
+                id: true,
+                name: true,
+                color: true,
+              },
+            },
+          },
+        },
         _count: {
           select: {
             registrations: {
@@ -316,11 +355,14 @@ export class EventsService {
   ): Promise<Event> {
     return this.prisma.$transaction(async (tx) => {
       // Check if event exists
+      // For super admins (orgId undefined), don't filter by org_id
+      const whereClause: any = { id };
+      if (orgId) {
+        whereClause.org_id = orgId;
+      }
+
       const existing = await tx.event.findFirst({
-        where: {
-          id,
-          org_id: orgId,
-        },
+        where: whereClause,
       });
 
       if (!existing) {
@@ -354,19 +396,21 @@ export class EventsService {
 
       // Update event
       const event = await tx.event.update({
-        where: {
-          id_org_id: {
-            id,
-            org_id: orgId,
-          },
-        },
+        where: orgId
+          ? {
+              id_org_id: {
+                id,
+                org_id: orgId,
+              },
+            }
+          : { id },
         data: {
           code: dto.code,
           name: dto.name,
           start_at: dto.start_at ? new Date(dto.start_at) : undefined,
           end_at: dto.end_at ? new Date(dto.end_at) : undefined,
           timezone: dto.timezone,
-          status: dto.status,
+          status: dto.status as PrismaEventStatus,
           capacity: dto.capacity,
           location_type: dto.location_type,
           org_activity_sector_id: dto.org_activity_sector_id,
@@ -396,6 +440,7 @@ export class EventsService {
         dto.submit_button_color !== undefined ||
         dto.show_title !== undefined ||
         dto.show_description !== undefined ||
+        dto.is_dark_mode !== undefined ||
         dto.auto_transition_to_active !== undefined ||
         dto.auto_transition_to_completed !== undefined
       ) {
@@ -414,6 +459,7 @@ export class EventsService {
             submit_button_color: dto.submit_button_color,
             show_title: dto.show_title,
             show_description: dto.show_description,
+            is_dark_mode: dto.is_dark_mode,
             auto_transition_to_active: dto.auto_transition_to_active,
             auto_transition_to_completed: dto.auto_transition_to_completed,
           } as any, // Type cast pour nouveaux champs
@@ -451,7 +497,7 @@ export class EventsService {
   /**
    * Delete an event
    */
-  async remove(id: string, orgId: string): Promise<{ message: string }> {
+  async remove(id: string, orgId: string): Promise<{ message: string; type: 'hard' | 'soft' }> {
     return this.prisma.$transaction(async (tx) => {
       // Check if event exists
       const existing = await tx.event.findFirst({
@@ -465,18 +511,62 @@ export class EventsService {
         throw new NotFoundException('Event not found');
       }
 
-      // Check for dependencies (registrations)
-      const registrationCount = await tx.registration.count({
-        where: { event_id: id, org_id: orgId },
+      // Count total registrations
+      const totalRegistrations = await tx.registration.count({
+        where: { event_id: id },
       });
 
-      if (registrationCount > 0) {
-        throw new ConflictException(
-          `Cannot delete event: ${registrationCount} registration(s) exist`,
-        );
+      // If no registrations at all, hard delete immediately
+      if (totalRegistrations === 0) {
+        await tx.event.delete({
+          where: {
+            id_org_id: {
+              id,
+              org_id: orgId,
+            },
+          },
+        });
+
+        return { 
+          message: 'Event permanently deleted (no registrations)', 
+          type: 'hard' 
+        };
       }
 
-      // Delete event (cascade will delete settings)
+      // Count REAL external registrations (from different org AND not test)
+      const realExternalRegistrations = await tx.registration.count({
+        where: { 
+          event_id: id,
+          source: { in: ['public_form', 'import'] }, // Only real registrations
+          attendee: {
+            org_id: {
+              not: orgId // From different organization
+            }
+          }
+        },
+      });
+
+      // If at least 1 real external registration, soft delete
+      if (realExternalRegistrations > 0) {
+        await tx.event.update({
+          where: {
+            id_org_id: {
+              id,
+              org_id: orgId,
+            },
+          },
+          data: {
+            deleted_at: new Date(),
+          },
+        });
+
+        return { 
+          message: `Event archived (${realExternalRegistrations} real external registration(s) preserved)`, 
+          type: 'soft' 
+        };
+      }
+
+      // All registrations are internal OR test/manual, hard delete
       await tx.event.delete({
         where: {
           id_org_id: {
@@ -486,7 +576,10 @@ export class EventsService {
         },
       });
 
-      return { message: 'Event deleted successfully' };
+      return { 
+        message: `Event permanently deleted (${totalRegistrations} internal/test registration(s) removed)`, 
+        type: 'hard' 
+      };
     });
   }
 
@@ -517,7 +610,7 @@ export class EventsService {
         },
       },
       data: {
-        status: dto.status,
+        status: dto.status as PrismaEventStatus,
       },
     });
   }

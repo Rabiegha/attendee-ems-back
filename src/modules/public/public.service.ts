@@ -78,6 +78,7 @@ export class PublicService {
       submit_button_color: settings.submit_button_color,
       show_title: settings.show_title,
       show_description: settings.show_description,
+      is_dark_mode: settings.is_dark_mode,
       activity_sector: event.activitySector
         ? {
             code: event.activitySector.code,
@@ -207,7 +208,7 @@ export class PublicService {
       const status = eventSettings.registration_auto_approve ? 'approved' : 'awaiting';
       const confirmedAt = status === 'approved' ? new Date() : null;
 
-      // Create registration
+      // Create registration with snapshot
       const registration = await tx.registration.create({
         data: {
           org_id: orgId,
@@ -219,6 +220,16 @@ export class PublicService {
           answers: dto.answers ? (dto.answers as Prisma.InputJsonValue) : null,
           invited_at: new Date(),
           confirmed_at: confirmedAt,
+          
+          // Source et snapshot
+          source: dto.source || 'public_form',
+          snapshot_first_name: attendee.first_name,
+          snapshot_last_name: attendee.last_name,
+          snapshot_email: attendee.email,
+          snapshot_phone: attendee.phone,
+          snapshot_company: attendee.company,
+          snapshot_job_title: attendee.job_title,
+          snapshot_country: attendee.country,
         },
         include: {
           attendee: true,

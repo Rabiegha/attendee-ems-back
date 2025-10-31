@@ -9,6 +9,9 @@ import {
   IsUUID,
   IsNumber,
   IsBoolean,
+  IsArray,
+  MaxLength,
+  ArrayMaxSize,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
@@ -16,6 +19,9 @@ import { Type } from 'class-transformer';
 export enum EventStatus {
   DRAFT = 'draft',
   PUBLISHED = 'published',
+  REGISTRATION_CLOSED = 'registration_closed',
+  CANCELLED = 'cancelled',
+  POSTPONED = 'postponed',
   ARCHIVED = 'archived',
 }
 
@@ -184,6 +190,11 @@ export class CreateEventDto {
   @IsBoolean()
   show_description?: boolean;
 
+  @ApiPropertyOptional({ description: 'Enable dark mode for public form', default: false })
+  @IsOptional()
+  @IsBoolean()
+  is_dark_mode?: boolean;
+
   @ApiPropertyOptional({ description: 'Auto transition to active', default: true })
   @IsOptional()
   @IsBoolean()
@@ -198,4 +209,16 @@ export class CreateEventDto {
   @IsOptional()
   @IsUUID('4', { each: true })
   assigned_user_ids?: string[];
+
+  @ApiPropertyOptional({ 
+    description: 'Array of tag names to associate with this event', 
+    type: [String],
+    example: ['Conference', 'Tech', 'Innovation']
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  @MaxLength(50, { each: true })
+  @ArrayMaxSize(20)
+  tags?: string[];
 }

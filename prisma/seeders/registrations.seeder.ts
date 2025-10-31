@@ -22,14 +22,14 @@ export async function seedRegistrationsForEvent() {
   });
 
   if (!event) {
-    console.log(`⚠️  Event with ID ${eventId} not found, skipping registrations seeding`);
+    console.log(` Event with ID ${eventId} not found, skipping registrations seeding`);
     return;
   }
 
   console.log(`📌 Event found: ${event.name} (${event.code})`);
 
   if (event.eventAttendeeTypes.length === 0) {
-    console.log('⚠️  No event attendee types found for this event. Please run event-attendee-types seeder first.');
+    console.log(' No event attendee types found for this event. Please run event-attendee-types seeder first.');
     return;
   }
 

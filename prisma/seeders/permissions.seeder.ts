@@ -566,7 +566,7 @@ export const rolePermissionMapping: Record<string, string[]> = {
     'roles.assign',  // Peut assigner rôles SAUF son propre rôle (guard côté backend)
     
     // Invitations (lié à users.create - création d'user passe par invitation)
-    'invitations.create',  // ⚠️ Obligatoire pour users.create (logique métier)
+    'invitations.create',  // Obligatoire pour users.create (logique métier)
     'invitations.read',
     'invitations.cancel',
     
@@ -608,7 +608,7 @@ export const rolePermissionMapping: Record<string, string[]> = {
     'roles.assign',
     
     // Invitations (lié à users.create - création d'user passe par invitation)
-    'invitations.create',  // ⚠️ Obligatoire pour users.create (logique métier)
+    'invitations.create',  // Obligatoire pour users.create (logique métier)
     'invitations.read',
     
     // Analytics

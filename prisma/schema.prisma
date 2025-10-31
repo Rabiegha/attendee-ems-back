@@ -31,6 +31,7 @@ model Organization {
   badgeTemplates        BadgeTemplate[]
   emailSenders          EmailSender[]
   events                Event[]
+  tags                  Tag[]
 
   @@map("organizations")
 }
@@ -394,6 +395,7 @@ model Event {
   created_by              String?  @db.Uuid
   created_at              DateTime @default(now()) @map("created_at")
   updated_at              DateTime @updatedAt @map("updated_at")
+  deleted_at              DateTime? @map("deleted_at")
 
   // Relations
   organization            Organization @relation(fields: [org_id], references: [id], onDelete: Cascade)
@@ -406,6 +408,7 @@ model Event {
   eventAccess             EventAccess[]
   subevents               Subevent[]
   partnerScans            PartnerScan[]
+  eventTags               EventTag[]
 
   @@unique([id, org_id])
   @@unique([org_id, code])
@@ -420,6 +423,9 @@ model Event {
 enum EventStatus {
   draft
   published
+  registration_closed
+  cancelled
+  postponed
   archived
 }
 
@@ -453,6 +459,7 @@ model EventSetting {
   submit_button_color             String?
   show_title                      Boolean  @default(true)
   show_description                Boolean  @default(true)
+  is_dark_mode                    Boolean  @default(false)
   auto_transition_to_active       Boolean  @default(true)
   auto_transition_to_completed    Boolean  @default(true)
   extra                           Json?
@@ -548,6 +555,18 @@ model Registration {
   confirmed_at            DateTime?
   created_at              DateTime @default(now()) @map("created_at")
   updated_at              DateTime @updatedAt @map("updated_at")
+  
+  // Source de l'inscription (pour distinguer test/réel)
+  source                  RegistrationSource @default(public_form) @map("source")
+  
+  // Snapshot des données de l'attendee au moment de l'inscription
+  snapshot_first_name     String?  @map("snapshot_first_name")
+  snapshot_last_name      String?  @map("snapshot_last_name")
+  snapshot_email          String?  @map("snapshot_email")
+  snapshot_phone          String?  @map("snapshot_phone")
+  snapshot_company        String?  @map("snapshot_company")
+  snapshot_job_title      String?  @map("snapshot_job_title")
+  snapshot_country        String?  @map("snapshot_country")
 
   // Relations
   event                   Event @relation(fields: [event_id, org_id], references: [id, org_id], onDelete: Cascade, onUpdate: NoAction)
@@ -570,6 +589,13 @@ enum RegistrationStatus {
   approved
   refused
   cancelled
+}
+
+enum RegistrationSource {
+  public_form  // Inscription via formulaire public (vraie inscription)
+  test_form    // Inscription via formulaire de test (fake)
+  manual       // Créée manuellement par un admin
+  import       // Importée via Excel
 }
 
 // ===== Badges =====
@@ -685,3 +711,39 @@ model EventAccess {
   @@map("event_access")
 }
 
+// ===== Tags System =====
+
+model Tag {
+  id          String   @id @default(uuid()) @db.Uuid
+  org_id      String   @db.Uuid
+  name        String   // Nom du tag (ex: "Technologie", "Networking")
+  color       String?  // Couleur optionnelle pour l'affichage (hex)
+  usage_count Int      @default(0) // Nombre d'événements utilisant ce tag
+  created_at  DateTime @default(now()) @map("created_at")
+  updated_at  DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  organization Organization @relation(fields: [org_id], references: [id], onDelete: Cascade)
+  eventTags    EventTag[]
+
+  @@unique([org_id, name]) // Un tag unique par nom dans une org
+  @@index([org_id])
+  @@index([org_id, usage_count(sort: Desc)]) // Pour trier par popularité
+  @@map("tags")
+}
+
+model EventTag {
+  event_id   String   @db.Uuid
+  org_id     String   @db.Uuid
+  tag_id     String   @db.Uuid
+  created_at DateTime @default(now()) @map("created_at")
+
+  // Relations
+  event Event @relation(fields: [event_id, org_id], references: [id, org_id], onDelete: Cascade, onUpdate: NoAction)
+  tag   Tag   @relation(fields: [tag_id], references: [id], onDelete: Cascade)
+
+  @@id([event_id, tag_id])
+  @@index([org_id, event_id])
+  @@index([tag_id])
+  @@map("event_tags")
+}

@@ -69,4 +69,12 @@ export class PublicRegisterDto {
   @ApiPropertyOptional({ description: 'Registration form answers (JSON)' })
   @IsOptional()
   answers?: any;
+
+  @ApiPropertyOptional({ 
+    description: 'Registration source (test_form for test mode)', 
+    example: 'public_form' 
+  })
+  @IsOptional()
+  @IsString()
+  source?: 'public_form' | 'test_form';
 }

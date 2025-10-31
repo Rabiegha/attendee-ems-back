@@ -9,6 +9,7 @@ interface UserQueryContext {
   scope: UserScope;
   orgId?: string;
   userId?: string;
+  isActive?: boolean;
 }
 
 @Injectable()
@@ -44,7 +45,7 @@ export class UsersService {
         throw new BadRequestException('Target role not found');
       }
 
-      // ⚠️ ATTENTION : Niveau plus BAS dans la DB = plus de pouvoir
+      // ATTENTION : Niveau plus BAS dans la DB = plus de pouvoir
       // SUPER_ADMIN = 1, ADMIN = 2, MANAGER = 3, VIEWER = 4, PARTNER = 5, HOSTESS = 6
       // Un MANAGER (level 3) peut créer : VIEWER (4), PARTNER (5), HOSTESS (6)
       // Un MANAGER ne peut PAS créer : SUPER_ADMIN (1), ADMIN (2), ou autre MANAGER (3)
@@ -95,6 +96,14 @@ export class UsersService {
         whereClause.org_id = ctx.orgId!;
       }
       // Scope 'any': pas de filtre (cross-tenant)
+
+      // Filtrer par statut actif/inactif si spécifié
+      if (ctx.isActive !== undefined) {
+        whereClause.is_active = ctx.isActive;
+        console.log('✅ Applying isActive filter:', ctx.isActive);
+      } else {
+        console.log('⚠️ No isActive filter applied');
+      }
     }
 
     if (search) {
@@ -103,6 +112,8 @@ export class UsersService {
         mode: 'insensitive',
       };
     }
+
+    console.log('🔍 Final whereClause:', JSON.stringify(whereClause, null, 2));
 
     const [users, total] = await Promise.all([
       this.prisma.user.findMany({
@@ -188,7 +199,7 @@ export class UsersService {
         throw new BadRequestException('Target role not found');
       }
 
-      // ⚠️ ATTENTION : Niveau plus BAS dans la DB = plus de pouvoir
+      // ATTENTION : Niveau plus BAS dans la DB = plus de pouvoir
       // SUPER_ADMIN = 1, ADMIN = 2, MANAGER = 3, VIEWER = 4, PARTNER = 5, HOSTESS = 6
       // Vérifier que l'utilisateur cible a un niveau INFÉRIEUR (level plus élevé numériquement)
       // Un MANAGER (level 3) peut modifier uniquement : VIEWER (4), PARTNER (5), HOSTESS (6)

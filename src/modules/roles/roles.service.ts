@@ -124,7 +124,7 @@ export class RolesService {
       });
 
       if (targetRole && updaterUser?.role) {
-        // ⚠️ ATTENTION : Niveau plus BAS dans la DB = plus de pouvoir
+        // ATTENTION : Niveau plus BAS dans la DB = plus de pouvoir
         // SUPER_ADMIN = 1, ADMIN = 2, MANAGER = 3, VIEWER = 4, PARTNER = 5, HOSTESS = 6
         // Un MANAGER (level 3) peut modifier : VIEWER (4), PARTNER (5), HOSTESS (6)
         // Un MANAGER ne peut PAS modifier : SUPER_ADMIN (1), ADMIN (2), ou autre MANAGER (3)
