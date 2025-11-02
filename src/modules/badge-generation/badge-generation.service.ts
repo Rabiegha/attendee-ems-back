@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException, InternalServerErrorException, Logger } from '@nestjs/common';
-import { PrismaService } from '../../infra/database/prisma/prisma.service';
+import { PrismaService } from '../../infra/db/prisma.service';
 import { R2Service } from '../../infra/storage/r2.service';
 import * as puppeteer from 'puppeteer';
 import { BadgeStatus } from '@prisma/client';
