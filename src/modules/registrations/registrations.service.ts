@@ -133,6 +133,39 @@ export class RegistrationsService {
   }
 
   /**
+   * Find a single registration by ID
+   */
+  async findOne(eventId: string, id: string, orgId: string | null) {
+    const where: Prisma.RegistrationWhereInput = {
+      id,
+      event_id: eventId,
+    };
+
+    // If orgId is provided (not :any scope), limit to this org
+    if (orgId !== null) {
+      where.org_id = orgId;
+    }
+
+    const registration = await this.prisma.registration.findFirst({
+      where,
+      include: {
+        attendee: true,
+        eventAttendeeType: {
+          include: {
+            attendeeType: true,
+          },
+        },
+      },
+    });
+
+    if (!registration) {
+      throw new NotFoundException(`Registration ${id} not found for event ${eventId}`);
+    }
+
+    return registration;
+  }
+
+  /**
    * Update registration status
    * Sets confirmed_at when status changes to 'approved'
    */

@@ -17,6 +17,8 @@ import { EventsModule } from './modules/events/events.module';
 import { PublicModule } from './modules/public/public.module';
 import { RegistrationsModule } from './modules/registrations/registrations.module';
 import { TagsModule } from './modules/tags/tags.module';
+import { StorageModule } from './infra/storage/storage.module';
+import { BadgeTemplatesModule } from './modules/badge-templates/badge-templates.module';
 
 @Module({
   imports: [
@@ -31,6 +33,8 @@ import { TagsModule } from './modules/tags/tags.module';
     InvitationModule,
     AttendeesModule,
     HealthModule,
+    StorageModule,
+    BadgeTemplatesModule,
     RouterModule.register(appRoutes),
     EventsModule,
     PublicModule,
