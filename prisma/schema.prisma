@@ -478,23 +478,36 @@ model EventSetting {
 
 // ===== Email Settings (1:1 with Event) =====
 model EmailSetting {
-  id                      String   @id @default(uuid()) @db.Uuid
-  org_id                  String   @db.Uuid
-  event_id                String   @unique @db.Uuid
-  email_sender_id         String?  @db.Uuid
-  confirmation_enabled    Boolean  @default(false)
-  confirmation_subject    String?
-  confirmation_body       String?  @db.Text
-  reminder_enabled        Boolean  @default(false)
-  reminder_subject        String?
-  reminder_body           String?  @db.Text
-  reminder_hours_before   Int?
-  created_at              DateTime @default(now()) @map("created_at")
-  updated_at              DateTime @updatedAt @map("updated_at")
+  id                          String   @id @default(uuid()) @db.Uuid
+  org_id                      String   @db.Uuid
+  event_id                    String   @unique @db.Uuid
+  email_sender_id             String?  @db.Uuid
+  
+  // Email verification
+  require_email_verification  Boolean  @default(false)
+  
+  // Confirmation email (envoyé à l'inscription)
+  confirmation_enabled        Boolean  @default(false)
+  confirmation_subject        String?
+  confirmation_body           String?  @db.Text
+  
+  // Approval email (envoyé quand inscription approuvée)
+  approval_enabled            Boolean  @default(false)
+  approval_subject            String?
+  approval_body               String?  @db.Text
+  
+  // Reminder email
+  reminder_enabled            Boolean  @default(false)
+  reminder_subject            String?
+  reminder_body               String?  @db.Text
+  reminder_hours_before       Int?
+  
+  created_at                  DateTime @default(now()) @map("created_at")
+  updated_at                  DateTime @updatedAt @map("updated_at")
 
   // Relations
-  event                   Event @relation(fields: [event_id, org_id], references: [id, org_id], onDelete: Cascade, onUpdate: NoAction)
-  emailSender             EmailSender? @relation(fields: [email_sender_id, org_id], references: [id, org_id], onDelete: SetNull, onUpdate: NoAction)
+  event                       Event @relation(fields: [event_id, org_id], references: [id, org_id], onDelete: Cascade, onUpdate: NoAction)
+  emailSender                 EmailSender? @relation(fields: [email_sender_id, org_id], references: [id, org_id], onDelete: SetNull, onUpdate: NoAction)
 
   @@unique([event_id, org_id])
   @@index([org_id, event_id])

@@ -317,6 +317,15 @@ export class AttendeesService {
       registrationDate: registration.created_at.toISOString(),
       checkedInAt: registration.confirmed_at?.toISOString() || null,
       customData: registration.answers || null,
+      snapshot: {
+        firstName: registration.snapshot_first_name,
+        lastName: registration.snapshot_last_name,
+        email: registration.snapshot_email,
+        phone: registration.snapshot_phone,
+        company: registration.snapshot_company,
+        jobTitle: registration.snapshot_job_title,
+        country: registration.snapshot_country,
+      },
       event: {
         id: registration.event.id,
         name: registration.event.name,

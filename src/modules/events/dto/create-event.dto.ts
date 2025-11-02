@@ -205,6 +205,27 @@ export class CreateEventDto {
   @IsBoolean()
   auto_transition_to_completed?: boolean;
 
+  // Email Settings
+  @ApiPropertyOptional({ description: 'Require email verification for registration', default: false })
+  @IsOptional()
+  @IsBoolean()
+  require_email_verification?: boolean;
+
+  @ApiPropertyOptional({ description: 'Send confirmation email on registration', default: false })
+  @IsOptional()
+  @IsBoolean()
+  confirmation_enabled?: boolean;
+
+  @ApiPropertyOptional({ description: 'Send approval email when registration is approved', default: false })
+  @IsOptional()
+  @IsBoolean()
+  approval_enabled?: boolean;
+
+  @ApiPropertyOptional({ description: 'Send reminder email before event', default: false })
+  @IsOptional()
+  @IsBoolean()
+  reminder_enabled?: boolean;
+
   @ApiPropertyOptional({ description: 'Array of user IDs to assign to this event', type: [String] })
   @IsOptional()
   @IsUUID('4', { each: true })

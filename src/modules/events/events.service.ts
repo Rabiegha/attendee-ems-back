@@ -132,6 +132,18 @@ export class EventsService {
         },
       });
 
+      // Create email settings
+      await tx.emailSetting.create({
+        data: {
+          org_id: orgId,
+          event_id: event.id,
+          require_email_verification: dto.require_email_verification ?? false,
+          confirmation_enabled: dto.confirmation_enabled ?? false,
+          approval_enabled: dto.approval_enabled ?? false,
+          reminder_enabled: dto.reminder_enabled ?? false,
+        } as any,
+      });
+
       // Create event access records for assigned users
       if (dto.assigned_user_ids && dto.assigned_user_ids.length > 0) {
         await tx.eventAccess.createMany({
@@ -314,6 +326,7 @@ export class EventsService {
       where,
       include: {
         settings: true,
+        emailSettings: true,
         activitySector: true,
         eventType: true,
         eventTags: {
@@ -563,6 +576,24 @@ export class EventsService {
             auto_transition_to_active: dto.auto_transition_to_active,
             auto_transition_to_completed: dto.auto_transition_to_completed,
           } as any, // Type cast pour nouveaux champs
+        });
+      }
+
+      // Update email settings if provided
+      if (
+        dto.require_email_verification !== undefined ||
+        dto.confirmation_enabled !== undefined ||
+        dto.approval_enabled !== undefined ||
+        dto.reminder_enabled !== undefined
+      ) {
+        await tx.emailSetting.update({
+          where: { event_id: id },
+          data: {
+            require_email_verification: dto.require_email_verification,
+            confirmation_enabled: dto.confirmation_enabled,
+            approval_enabled: dto.approval_enabled,
+            reminder_enabled: dto.reminder_enabled,
+          } as any,
         });
       }
 
