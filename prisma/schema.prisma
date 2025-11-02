@@ -32,6 +32,7 @@ model Organization {
   emailSenders          EmailSender[]
   events                Event[]
   tags                  Tag[]
+  badges                Badge[]
 
   @@map("organizations")
 }
@@ -63,6 +64,7 @@ model User {
   refreshTokens RefreshToken[]
   // Relations inverses pour les invitations envoyées
   sent_invitations Invitation[]
+  generatedBadges  Badge[]  // Badges générés par cet utilisateur
 
   @@unique([email, org_id])
   @@unique([id, org_id])
@@ -327,15 +329,26 @@ model AttendeeType {
 model BadgeTemplate {
   id              String   @id @default(uuid()) @db.Uuid
   org_id          String   @db.Uuid
+  event_id        String?  @db.Uuid // Optionnel : template global ou spécifique à un événement
   code            String
   name            String
-  template_data   Json?
+  description     String?  @db.Text
+  html            String?  @db.Text // Code HTML du template (généré par GrapesJS)
+  css             String?  @db.Text // CSS du template (généré par GrapesJS)
+  width           Int      @default(400) // Largeur du badge en pixels
+  height          Int      @default(600) // Hauteur du badge en pixels
+  template_data   Json?    // Données GrapesJS complètes (pour ré-éditer)
+  variables       Json?    // Variables utilisées: ["attendee_name", "company", "qrcode", etc.]
+  is_default      Boolean  @default(false) // Template par défaut de l'org
   is_active       Boolean  @default(true)
+  usage_count     Int      @default(0) // Nombre de fois utilisé
+  created_by      String?  @db.Uuid // ID de l'utilisateur qui a créé le template
   created_at      DateTime @default(now()) @map("created_at")
   updated_at      DateTime @updatedAt @map("updated_at")
 
   // Relations
   organization         Organization @relation(fields: [org_id], references: [id], onDelete: Cascade)
+  event                Event?       @relation(fields: [event_id, org_id], references: [id, org_id], onDelete: Cascade, onUpdate: NoAction)
   eventSettings        EventSetting[]
   eventAttendeeTypeBadges EventAttendeeTypeBadge[]
   registrations        Registration[]
@@ -344,6 +357,8 @@ model BadgeTemplate {
   @@unique([org_id, code])
   @@unique([id, org_id])
   @@index([org_id])
+  @@index([org_id, event_id])
+  @@index([org_id, is_default])
   @@map("badge_templates")
 }
 
@@ -409,6 +424,8 @@ model Event {
   subevents               Subevent[]
   partnerScans            PartnerScan[]
   eventTags               EventTag[]
+  badgeTemplates          BadgeTemplate[] // Templates de badges pour cet événement
+  badges                  Badge[]         // Badges générés pour cet événement
 
   @@unique([id, org_id])
   @@unique([org_id, code])
@@ -568,6 +585,10 @@ model Registration {
   snapshot_job_title      String?  @map("snapshot_job_title")
   snapshot_country        String?  @map("snapshot_country")
 
+  // Badge URLs (générés par le backend)
+  badge_pdf_url           String?  @map("badge_pdf_url")
+  badge_image_url         String?  @map("badge_image_url")
+
   // Relations
   event                   Event @relation(fields: [event_id, org_id], references: [id, org_id], onDelete: Cascade, onUpdate: NoAction)
   attendee                Attendee @relation(fields: [attendee_id, org_id], references: [id, org_id], onDelete: Cascade, onUpdate: NoAction)
@@ -599,23 +620,63 @@ enum RegistrationSource {
 }
 
 // ===== Badges =====
+enum BadgeStatus {
+  pending      // En attente de génération
+  generating   // En cours de génération
+  completed    // Généré avec succès
+  failed       // Échec de génération
+}
+
 model Badge {
-  id                String   @id @default(uuid()) @db.Uuid
-  org_id            String   @db.Uuid
-  registration_id   String   @db.Uuid
-  badge_template_id String   @db.Uuid
+  id                String       @id @default(uuid()) @db.Uuid
+  org_id            String       @db.Uuid
+  registration_id   String       @db.Uuid
+  badge_template_id String       @db.Uuid
+  event_id          String       @db.Uuid
+  
+  // URLs des fichiers générés
+  pdf_url           String?      // URL du PDF sur Cloudflare R2
+  image_url         String?      // URL de l'image preview (optionnel)
+  
+  // Données du badge (ancienne structure, gardée pour compatibilité)
   badge_data        Json?
   qr_code_url       String?
-  created_at        DateTime @default(now()) @map("created_at")
-  updated_at        DateTime @updatedAt @map("updated_at")
+  
+  // Métadonnées de génération
+  generated_at      DateTime?    @map("generated_at")
+  generated_by      String?      @db.Uuid
+  
+  // Snapshot du contenu au moment de la génération (pour audit trail)
+  html_snapshot     String?      @db.Text
+  css_snapshot      String?      @db.Text
+  data_snapshot     Json?
+  
+  // Statut de génération
+  status            BadgeStatus  @default(pending)
+  error_message     String?      @db.Text
+  
+  // Suivi d'impression
+  print_count       Int          @default(0)
+  last_printed_at   DateTime?    @map("last_printed_at")
+  
+  created_at        DateTime     @default(now()) @map("created_at")
+  updated_at        DateTime     @updatedAt @map("updated_at")
 
   // Relations
-  registration      Registration @relation(fields: [registration_id], references: [id], onDelete: Cascade)
+  registration      Registration  @relation(fields: [registration_id], references: [id], onDelete: Cascade)
   badgeTemplate     BadgeTemplate @relation(fields: [badge_template_id, org_id], references: [id, org_id], onDelete: Restrict, onUpdate: NoAction)
+  organization      Organization  @relation(fields: [org_id], references: [id], onDelete: Cascade)
+  event             Event         @relation(fields: [event_id, org_id], references: [id, org_id], onDelete: Cascade, onUpdate: NoAction)
+  generatedByUser   User?         @relation(fields: [generated_by], references: [id], onDelete: SetNull)
   prints            BadgePrint[]
 
   @@unique([id, org_id])
+  @@unique([registration_id]) // Un seul badge par registration
   @@index([org_id, registration_id])
+  @@index([org_id, event_id])
+  @@index([badge_template_id])
+  @@index([status])
+  @@index([generated_at])
   @@map("badges")
 }
 

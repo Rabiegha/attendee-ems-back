@@ -231,9 +231,18 @@ export class EventsService {
       ? (sortByMapping[dto.sortBy] || dto.sortBy)
       : 'start_at';
 
+    // Déterminer l'ordre de tri
+    // Pour les événements futurs (startAfter), trier ASC pour avoir les plus proches en premier
+    // Pour les événements passés (startBefore), trier DESC pour avoir les plus récents en premier
+    let sortOrder = dto.sortOrder || 'desc';
+    if (!dto.sortOrder && dto.startAfter && !dto.startBefore) {
+      // Événements futurs sans ordre spécifié → tri ASC (plus proches en premier)
+      sortOrder = 'asc';
+    }
+
     // Build orderBy
     const orderBy: Prisma.EventOrderByWithRelationInput = {
-      [mappedSortBy]: dto.sortOrder || 'desc',
+      [mappedSortBy]: sortOrder,
     };
 
     // Execute queries in parallel

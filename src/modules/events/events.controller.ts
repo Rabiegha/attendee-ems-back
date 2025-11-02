@@ -305,4 +305,23 @@ export class EventsController {
       orgId: req.user.org_id,
     });
   }
+
+  @Get(':eventId/registrations/:id')
+  @Permissions('registrations.read')
+  @ApiOperation({ summary: 'Get a single registration by ID' })
+  @ApiResponse({ status: 200, description: 'Registration retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Registration not found' })
+  async getEventRegistration(
+    @Param('eventId') eventId: string,
+    @Param('id') id: string,
+    @Request() req,
+  ) {
+    const allowAny = req.user.permissions?.some((p: string) =>
+      p.startsWith('events.') && p.endsWith(':any'),
+    );
+    
+    const orgId = allowAny ? null : req.user.org_id;
+
+    return this.registrationsService.findOne(eventId, id, orgId);
+  }
 }

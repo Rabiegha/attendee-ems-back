@@ -5,17 +5,14 @@ const prisma = new PrismaClient();
 export async function seedEventAttendeeTypes() {
   console.log('ℹ️  Seeding event attendee types...');
 
-  // ID de l'événement spécifique
-  const eventId = '8639f5cc-a4b5-4790-89a5-ffcb96f82c81';
-
-  // Vérifier que l'événement existe
-  const event = await prisma.event.findUnique({
-    where: { id: eventId },
+  // Trouver l'événement "Workshop Live Coding AUJOURD'HUI" par son code
+  const event = await prisma.event.findFirst({
+    where: { code: 'TODAY-2025-11-02' },
     include: { organization: true },
   });
 
   if (!event) {
-    console.log(` Event with ID ${eventId} not found, skipping event attendee types seeding`);
+    console.log('❌ Event "TODAY-2025-11-02" not found, skipping event attendee types seeding');
     return;
   }
 
@@ -44,7 +41,7 @@ export async function seedEventAttendeeTypes() {
     // Vérifier si l'association existe déjà
     const existing = await prisma.eventAttendeeType.findFirst({
       where: {
-        event_id: eventId,
+        event_id: event.id,
         attendee_type_id: attendeeType.id,
       },
     });
@@ -83,7 +80,7 @@ export async function seedEventAttendeeTypes() {
 
     const eventAttendeeType = await prisma.eventAttendeeType.create({
       data: {
-        event_id: eventId,
+        event_id: event.id,
         org_id: event.org_id,
         attendee_type_id: attendeeType.id,
         capacity,

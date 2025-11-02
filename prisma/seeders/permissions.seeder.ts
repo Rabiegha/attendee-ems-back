@@ -333,6 +333,57 @@ const permissionsData: PermissionSeedData[] = [
     description: 'Bulk import registrations from files in organization' 
   },
   
+  // ==================== BADGE TEMPLATES ====================
+  // Templates de badges pour génération PDF
+  { 
+    code: 'badge-templates.read',
+    scope: 'any',
+    name: 'Read all badge templates (cross-tenant)', 
+    description: 'View badge templates across all organizations (SUPER_ADMIN)' 
+  },
+  { 
+    code: 'badge-templates.read',
+    scope: 'org',
+    name: 'Read badge templates', 
+    description: 'View badge templates in own organization (ADMIN only)' 
+  },
+  { 
+    code: 'badge-templates.create',
+    scope: 'any',
+    name: 'Create badge templates (cross-tenant)', 
+    description: 'Create badge templates in any organization (SUPER_ADMIN)' 
+  },
+  { 
+    code: 'badge-templates.create',
+    scope: 'org',
+    name: 'Create badge templates', 
+    description: 'Create new badge templates in organization (ADMIN only)' 
+  },
+  { 
+    code: 'badge-templates.update',
+    scope: 'any',
+    name: 'Update badge templates (cross-tenant)', 
+    description: 'Update badge templates in any organization (SUPER_ADMIN)' 
+  },
+  { 
+    code: 'badge-templates.update',
+    scope: 'org',
+    name: 'Update badge templates', 
+    description: 'Update badge templates in organization (ADMIN only)' 
+  },
+  { 
+    code: 'badge-templates.delete',
+    scope: 'any',
+    name: 'Delete badge templates (cross-tenant)', 
+    description: 'Delete badge templates in any organization (SUPER_ADMIN)' 
+  },
+  { 
+    code: 'badge-templates.delete',
+    scope: 'org',
+    name: 'Delete badge templates', 
+    description: 'Delete badge templates in organization (ADMIN only)' 
+  },
+  
   // ==================== ROLES & PERMISSIONS ====================
   { 
     code: 'roles.read',
@@ -559,6 +610,12 @@ export const rolePermissionMapping: Record<string, string[]> = {
     'registrations.create:org',
     'registrations.update:org',
     'registrations.import:org',
+    
+    // Badge Templates - ADMIN only
+    'badge-templates.read:org',
+    'badge-templates.create:org',
+    'badge-templates.update:org',
+    'badge-templates.delete:org',
     
     // Roles
     'roles.read',
