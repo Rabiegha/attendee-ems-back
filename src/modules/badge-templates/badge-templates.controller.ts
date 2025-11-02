@@ -8,15 +8,14 @@ import {
   Param,
   Query,
   UseGuards,
+  Request,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { BadgeTemplatesService } from './badge-templates.service';
 import { CreateBadgeTemplateDto, UpdateBadgeTemplateDto, PreviewBadgeTemplateDto } from './dto/badge-template.dto';
-import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
+import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
-import { GetOrgId } from '../../common/decorators/get-org-id.decorator';
-import { GetUserId } from '../../common/decorators/get-user-id.decorator';
 
 @ApiTags('Badge Templates')
 @ApiBearerAuth()
@@ -32,9 +31,10 @@ export class BadgeTemplatesController {
   @ApiResponse({ status: 409, description: 'Un template avec ce nom existe déjà' })
   create(
     @Body() createDto: CreateBadgeTemplateDto,
-    @GetOrgId() orgId: string,
-    @GetUserId() userId: string,
+    @Request() req,
   ) {
+    const orgId = req.user.org_id;
+    const userId = req.user.sub;
     return this.badgeTemplatesService.create(createDto, orgId, userId);
   }
 
@@ -43,12 +43,13 @@ export class BadgeTemplatesController {
   @ApiOperation({ summary: 'Liste des templates de badges (ADMIN only)' })
   @ApiResponse({ status: 200, description: 'Liste des templates' })
   findAll(
-    @GetOrgId() orgId: string,
+    @Request() req,
     @Query('eventId') eventId?: string,
     @Query('isActive') isActive?: string,
     @Query('isDefault') isDefault?: string,
     @Query('search') search?: string,
   ) {
+    const orgId = req.user.org_id;
     const filters = {
       eventId,
       isActive: isActive === 'true' ? true : isActive === 'false' ? false : undefined,
@@ -64,7 +65,8 @@ export class BadgeTemplatesController {
   @ApiOperation({ summary: 'Détails d\'un template (ADMIN only)' })
   @ApiResponse({ status: 200, description: 'Détails du template' })
   @ApiResponse({ status: 404, description: 'Template non trouvé' })
-  findOne(@Param('id') id: string, @GetOrgId() orgId: string) {
+  findOne(@Param('id') id: string, @Request() req) {
+    const orgId = req.user.org_id;
     return this.badgeTemplatesService.findOne(id, orgId);
   }
 
@@ -76,8 +78,9 @@ export class BadgeTemplatesController {
   update(
     @Param('id') id: string,
     @Body() updateDto: UpdateBadgeTemplateDto,
-    @GetOrgId() orgId: string,
+    @Request() req,
   ) {
+    const orgId = req.user.org_id;
     return this.badgeTemplatesService.update(id, updateDto, orgId);
   }
 
@@ -87,7 +90,8 @@ export class BadgeTemplatesController {
   @ApiResponse({ status: 200, description: 'Template supprimé' })
   @ApiResponse({ status: 400, description: 'Template utilisé, impossible de supprimer' })
   @ApiResponse({ status: 404, description: 'Template non trouvé' })
-  remove(@Param('id') id: string, @GetOrgId() orgId: string) {
+  remove(@Param('id') id: string, @Request() req) {
+    const orgId = req.user.org_id;
     return this.badgeTemplatesService.remove(id, orgId);
   }
 

@@ -19,6 +19,7 @@ import { RegistrationsModule } from './modules/registrations/registrations.modul
 import { TagsModule } from './modules/tags/tags.module';
 import { StorageModule } from './infra/storage/storage.module';
 import { BadgeTemplatesModule } from './modules/badge-templates/badge-templates.module';
+import { BadgeGenerationModule } from './modules/badge-generation/badge-generation.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { BadgeTemplatesModule } from './modules/badge-templates/badge-templates.
     HealthModule,
     StorageModule,
     BadgeTemplatesModule,
+    BadgeGenerationModule,
     RouterModule.register(appRoutes),
     EventsModule,
     PublicModule,

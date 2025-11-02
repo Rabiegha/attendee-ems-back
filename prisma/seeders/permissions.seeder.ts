@@ -383,6 +383,56 @@ const permissionsData: PermissionSeedData[] = [
     name: 'Delete badge templates', 
     description: 'Delete badge templates in organization (ADMIN only)' 
   },
+
+  // ==================== BADGES ====================
+  { 
+    code: 'badges.read',
+    scope: 'any',
+    name: 'Read badges (cross-tenant)', 
+    description: 'View badges in any organization (SUPER_ADMIN)' 
+  },
+  { 
+    code: 'badges.read',
+    scope: 'org',
+    name: 'Read badges', 
+    description: 'View badges in organization' 
+  },
+  { 
+    code: 'badges.create',
+    scope: 'any',
+    name: 'Create badges (cross-tenant)', 
+    description: 'Generate badges in any organization (SUPER_ADMIN)' 
+  },
+  { 
+    code: 'badges.create',
+    scope: 'org',
+    name: 'Create badges', 
+    description: 'Generate badges in organization' 
+  },
+  { 
+    code: 'badges.update',
+    scope: 'any',
+    name: 'Update badges (cross-tenant)', 
+    description: 'Regenerate badges in any organization (SUPER_ADMIN)' 
+  },
+  { 
+    code: 'badges.update',
+    scope: 'org',
+    name: 'Update badges', 
+    description: 'Regenerate badges in organization' 
+  },
+  { 
+    code: 'badges.delete',
+    scope: 'any',
+    name: 'Delete badges (cross-tenant)', 
+    description: 'Delete badges in any organization (SUPER_ADMIN)' 
+  },
+  { 
+    code: 'badges.delete',
+    scope: 'org',
+    name: 'Delete badges', 
+    description: 'Delete badges in organization' 
+  },
   
   // ==================== ROLES & PERMISSIONS ====================
   { 
@@ -616,6 +666,12 @@ export const rolePermissionMapping: Record<string, string[]> = {
     'badge-templates.create:org',
     'badge-templates.update:org',
     'badge-templates.delete:org',
+    
+    // Badges - ADMIN only
+    'badges.read:org',
+    'badges.create:org',
+    'badges.update:org',
+    'badges.delete:org',
     
     // Roles
     'roles.read',

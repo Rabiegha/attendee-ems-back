@@ -1,13 +1,13 @@
 import { Injectable, NotFoundException, BadRequestException, InternalServerErrorException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../infra/db/prisma.service';
 import { R2Service } from '../../infra/storage/r2.service';
-import * as puppeteer from 'puppeteer';
+import puppeteer, { Browser } from 'puppeteer';
 import { BadgeStatus } from '@prisma/client';
 
 @Injectable()
 export class BadgeGenerationService {
   private readonly logger = new Logger(BadgeGenerationService.name);
-  private browser: puppeteer.Browser | null = null;
+  private browser: Browser | null = null;
 
   constructor(
     private prisma: PrismaService,
@@ -17,7 +17,7 @@ export class BadgeGenerationService {
   /**
    * Initialise le browser Puppeteer (singleton pour performance)
    */
-  private async getBrowser(): Promise<puppeteer.Browser> {
+  private async getBrowser(): Promise<Browser> {
     if (!this.browser || !this.browser.isConnected()) {
       this.logger.log('Initializing Puppeteer browser...');
       this.browser = await puppeteer.launch({
@@ -78,17 +78,13 @@ export class BadgeGenerationService {
         },
         include: {
           attendee: true,
-          event: {
-            include: {
-              settings: true,
-            },
-          },
+          event: true,
           eventAttendeeType: {
             include: {
               attendeeType: true,
-              badgeTemplate: true,
             },
           },
+          badgeTemplate: true,
         },
       });
 
@@ -97,29 +93,23 @@ export class BadgeGenerationService {
       }
 
       // 2. Déterminer le template à utiliser
-      let badgeTemplate = registration.eventAttendeeType?.badgeTemplate;
+      let badgeTemplate = registration.badgeTemplate;
 
-      // Si pas de template sur l'attendee type, chercher le template par défaut de l'event
+      // Si pas de template sur la registration, chercher le template par défaut de l'event
       if (!badgeTemplate) {
         badgeTemplate = await this.prisma.badgeTemplate.findFirst({
           where: {
             org_id: orgId,
-            event_id: registration.event_id,
             is_active: true,
             is_default: true,
+            OR: [
+              { event_id: registration.event_id },
+              { event_id: null },
+            ],
           },
-        });
-      }
-
-      // Si toujours pas de template, chercher le template par défaut global
-      if (!badgeTemplate) {
-        badgeTemplate = await this.prisma.badgeTemplate.findFirst({
-          where: {
-            org_id: orgId,
-            event_id: null,
-            is_active: true,
-            is_default: true,
-          },
+          orderBy: [
+            { event_id: 'desc' }, // Prioriser les templates spécifiques à l'event
+          ],
         });
       }
 
@@ -127,22 +117,20 @@ export class BadgeGenerationService {
         throw new BadRequestException('No badge template found for this registration');
       }
 
-      // 3. Préparer les données du badge
+      // 3. Préparer les données du badge (utilise les snapshots ou les données actuelles de l'attendee)
       const badgeData = {
-        first_name: registration.attendee.first_name || '',
-        last_name: registration.attendee.last_name || '',
-        full_name: `${registration.attendee.first_name || ''} ${registration.attendee.last_name || ''}`.trim(),
-        email: registration.attendee.email || '',
-        phone: registration.attendee.phone || '',
-        company: registration.attendee.company || '',
-        job_title: registration.attendee.job_title || '',
-        country: registration.attendee.country || '',
+        first_name: registration.snapshot_first_name || registration.attendee.first_name || '',
+        last_name: registration.snapshot_last_name || registration.attendee.last_name || '',
+        full_name: `${registration.snapshot_first_name || registration.attendee.first_name || ''} ${registration.snapshot_last_name || registration.attendee.last_name || ''}`.trim(),
+        email: registration.snapshot_email || registration.attendee.email || '',
+        phone: registration.snapshot_phone || registration.attendee.phone || '',
+        company: registration.snapshot_company || registration.attendee.company || '',
+        job_title: registration.snapshot_job_title || registration.attendee.job_title || '',
+        country: registration.snapshot_country || registration.attendee.country || '',
         attendee_type: registration.eventAttendeeType?.attendeeType?.name || '',
         event_name: registration.event.name || '',
         event_code: registration.event.code || '',
-        registration_number: registration.registration_number || '',
-        qr_code: registration.qr_code || '',
-        qr_code_url: registration.qr_code_url || '',
+        registration_id: registration.id,
       };
 
       // 4. Générer le HTML final avec variables remplacées
@@ -197,7 +185,6 @@ export class BadgeGenerationService {
             status: BadgeStatus.generating,
             generated_by: userId,
             badge_data: badgeData,
-            qr_code_url: badgeData.qr_code_url,
           },
         });
       }
@@ -230,7 +217,7 @@ export class BadgeGenerationService {
       this.logger.log(`PDF generated: ${pdfBuffer.length} bytes`);
 
       // 7. Upload du PDF sur Cloudflare R2
-      const pdfUrl = await this.r2Service.uploadBadgePdf(registrationId, pdfBuffer);
+      const pdfUrl = await this.r2Service.uploadBadgePdf(registrationId, Buffer.from(pdfBuffer));
 
       // 8. Incrémenter le compteur d'utilisation du template
       await this.prisma.badgeTemplate.update({

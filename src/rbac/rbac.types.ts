@@ -23,6 +23,7 @@ export type Subjects =
   | 'Invitation'
   | 'Analytics'
   | 'Report'
-  | 'BadgeTemplate'; // Templates de badges
+  | 'BadgeTemplate' // Templates de badges
+  | 'Badge';         // Badges générés
 
 export type AppAbility = Ability<[Action, Subjects]>;
