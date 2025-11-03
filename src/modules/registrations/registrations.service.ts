@@ -9,7 +9,9 @@ import { PrismaService } from '../../infra/db/prisma.service';
 import { ListRegistrationsDto } from './dto/list-registrations.dto';
 import { CreateRegistrationDto } from './dto/create-registration.dto';
 import { UpdateRegistrationStatusDto } from './dto/update-registration-status.dto';
+import { CheckinRegistrationDto } from './dto/checkin-registration.dto';
 import * as XLSX from 'xlsx';
+import * as QRCode from 'qrcode';
 import { Prisma } from '@prisma/client';
 import { RegistrationScope } from '../../common/utils/resolve-registration-scope.util';
 
@@ -1050,5 +1052,147 @@ export class RegistrationsService {
   async generateBadge(eventId: string, registrationId: string, orgId: string) {
     // Utiliser la méthode bulk avec un seul ID
     return this.generateBadgesBulk(eventId, [registrationId], orgId);
+  }
+
+  /**
+   * Generate QR Code for a registration (on-the-fly generation)
+   * QR Code contains only the registrationId (UUID)
+   */
+  async generateQrCode(
+    registrationId: string,
+    orgId: string | null,
+    format: 'png' | 'svg' | 'base64' = 'png',
+  ): Promise<Buffer | string> {
+    // Validate registration exists
+    const where: any = { id: registrationId };
+    if (orgId) {
+      where.org_id = orgId;
+    }
+
+    const registration = await this.prisma.registration.findFirst({
+      where,
+      select: { id: true, org_id: true },
+    });
+
+    if (!registration) {
+      throw new NotFoundException('Registration not found');
+    }
+
+    // Generate QR Code with just the UUID
+    const qrData = registrationId;
+
+    try {
+      if (format === 'base64') {
+        return await QRCode.toDataURL(qrData, {
+          errorCorrectionLevel: 'M',
+          width: 300,
+          margin: 2,
+        });
+      }
+
+      if (format === 'svg') {
+        return await QRCode.toString(qrData, { 
+          type: 'svg',
+          errorCorrectionLevel: 'M',
+          width: 300,
+          margin: 2,
+        });
+      }
+
+      // PNG by default
+      return await QRCode.toBuffer(qrData, {
+        errorCorrectionLevel: 'M',
+        width: 300,
+        margin: 2,
+      });
+    } catch (error) {
+      throw new BadRequestException(`Failed to generate QR Code: ${error.message}`);
+    }
+  }
+
+  /**
+   * Check-in a registration (scan QR code)
+   * Validates eventId to ensure scan is at correct event
+   */
+  async checkIn(
+    registrationId: string,
+    orgId: string | null,
+    userId: string,
+    dto: CheckinRegistrationDto,
+  ): Promise<any> {
+    // Fetch registration with event and attendee
+    const where: any = { id: registrationId };
+    if (orgId) {
+      where.org_id = orgId;
+    }
+
+    const registration = await this.prisma.registration.findFirst({
+      where,
+      include: {
+        event: {
+          include: { settings: true },
+        },
+        attendee: true,
+      },
+    });
+
+    if (!registration) {
+      throw new NotFoundException('Registration not found');
+    }
+
+    // CRITICAL: Validate eventId matches (cross-validation)
+    if (dto.eventId !== registration.event_id) {
+      throw new BadRequestException(
+        `QR Code mismatch: This attendee is registered for a different event. ` +
+        `Expected event ${dto.eventId}, but QR code is for event ${registration.event_id}.`
+      );
+    }
+
+    // Validate registration status
+    if (registration.status === 'refused') {
+      throw new BadRequestException(
+        `Cannot check-in: Registration was refused`
+      );
+    }
+
+    if (registration.status === 'cancelled') {
+      throw new BadRequestException(
+        `Cannot check-in: Registration was cancelled`
+      );
+    }
+
+    // Validate event settings allow check-in
+    if (!registration.event.settings?.allow_checkin_out) {
+      throw new BadRequestException(
+        `Check-in is disabled for this event`
+      );
+    }
+
+    // Validate not already checked-in
+    if (registration.checked_in_at) {
+      throw new BadRequestException(
+        `Already checked-in at ${new Date(registration.checked_in_at).toLocaleString()}`
+      );
+    }
+
+    // Perform check-in
+    const updated = await this.prisma.registration.update({
+      where: { id: registrationId },
+      data: {
+        checked_in_at: new Date(),
+        checked_in_by: userId,
+        checkin_location: dto.checkinLocation as any,
+      },
+      include: {
+        attendee: true,
+        event: true,
+      },
+    });
+
+    return {
+      success: true,
+      message: `${updated.attendee.first_name} ${updated.attendee.last_name} checked-in successfully`,
+      registration: updated,
+    };
   }
 }

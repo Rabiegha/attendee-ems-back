@@ -14,11 +14,12 @@ import {
   Res,
 } from '@nestjs/common';
 import { Response } from 'express';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { RegistrationsService } from './registrations.service';
 import { ListRegistrationsDto } from './dto/list-registrations.dto';
 import { CreateRegistrationDto } from './dto/create-registration.dto';
 import { UpdateRegistrationStatusDto } from './dto/update-registration-status.dto';
+import { CheckinRegistrationDto } from './dto/checkin-registration.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
@@ -177,6 +178,59 @@ export class RegistrationsController {
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(buffer);
+  }
+
+  @Get(':id/qr-code')
+  @Permissions('registrations.read')
+  @ApiOperation({ summary: 'Generate QR code for a registration (on-the-fly)' })
+  @ApiQuery({ name: 'format', required: false, enum: ['png', 'svg', 'base64'], description: 'QR code format' })
+  @ApiResponse({ status: 200, description: 'QR code generated successfully' })
+  @ApiResponse({ status: 404, description: 'Registration not found' })
+  async getQrCode(
+    @Param('id') id: string,
+    @Query('format') format: 'png' | 'svg' | 'base64' = 'png',
+    @Request() req,
+    @Res() res: Response,
+  ) {
+    const allowAny = req.user.permissions?.some((p: string) =>
+      p.startsWith('registrations.') && p.endsWith(':any'),
+    );
+    const orgId = allowAny ? null : req.user.org_id;
+
+    const qrCode = await this.registrationsService.generateQrCode(id, orgId, format);
+
+    if (format === 'base64') {
+      return res.json({ qrCode });
+    }
+
+    if (format === 'svg') {
+      res.setHeader('Content-Type', 'image/svg+xml');
+      return res.send(qrCode);
+    }
+
+    // PNG by default
+    res.setHeader('Content-Type', 'image/png');
+    res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache 1 hour
+    return res.send(qrCode);
+  }
+
+  @Post(':id/check-in')
+  @Permissions('registrations.checkin')
+  @ApiOperation({ summary: 'Check-in a registration (scan QR code with event validation)' })
+  @ApiResponse({ status: 200, description: 'Registration checked-in successfully' })
+  @ApiResponse({ status: 400, description: 'Already checked-in, invalid status, or event mismatch' })
+  @ApiResponse({ status: 404, description: 'Registration not found' })
+  async checkIn(
+    @Param('id') id: string,
+    @Body() checkinDto: CheckinRegistrationDto,
+    @Request() req,
+  ) {
+    const allowAny = req.user.permissions?.some((p: string) =>
+      p.startsWith('registrations.') && p.endsWith(':any'),
+    );
+    const orgId = allowAny ? null : req.user.org_id;
+
+    return this.registrationsService.checkIn(id, orgId, req.user.id, checkinDto);
   }
 }
 

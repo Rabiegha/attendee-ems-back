@@ -65,6 +65,7 @@ model User {
   // Relations inverses pour les invitations envoyées
   sent_invitations Invitation[]
   generatedBadges  Badge[]  // Badges générés par cet utilisateur
+  checkedInRegistrations Registration[] @relation("CheckedInBy") // Registrations checked-in par cet utilisateur
 
   @@unique([email, org_id])
   @@unique([id, org_id])
@@ -602,8 +603,14 @@ model Registration {
   badge_pdf_url           String?  @map("badge_pdf_url")
   badge_image_url         String?  @map("badge_image_url")
 
+  // Check-in tracking
+  checked_in_at           DateTime? @map("checked_in_at")
+  checked_in_by           String?   @db.Uuid @map("checked_in_by")
+  checkin_location        Json?     @map("checkin_location") // { lat, lng }
+
   // Relations
   event                   Event @relation(fields: [event_id, org_id], references: [id, org_id], onDelete: Cascade, onUpdate: NoAction)
+  checkedInByUser         User? @relation("CheckedInBy", fields: [checked_in_by], references: [id], onDelete: SetNull)
   attendee                Attendee @relation(fields: [attendee_id, org_id], references: [id, org_id], onDelete: Cascade, onUpdate: NoAction)
   eventAttendeeType       EventAttendeeType? @relation(fields: [event_attendee_type_id], references: [id], onDelete: SetNull)
   badgeTemplate           BadgeTemplate? @relation(fields: [badge_template_id, org_id], references: [id, org_id], onDelete: SetNull, onUpdate: NoAction)
