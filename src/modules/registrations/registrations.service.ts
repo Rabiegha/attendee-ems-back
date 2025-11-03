@@ -4,6 +4,7 @@ import {
   ConflictException,
   ForbiddenException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { PrismaService } from '../../infra/db/prisma.service';
@@ -24,6 +25,8 @@ interface RegistrationQueryContext {
 
 @Injectable()
 export class RegistrationsService {
+  private readonly logger = new Logger(RegistrationsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly badgeGenerationService: BadgeGenerationService,
@@ -1115,7 +1118,7 @@ export class RegistrationsService {
       });
 
       // Si pas de badge ou si la génération a échoué, générer un nouveau badge
-      if (!badge || badge.status !== 'completed' || !badge.pdf_url) {
+      if (!badge || badge.status !== 'completed' || !badge.pdf_url || !badge.image_url) {
         badge = await this.badgeGenerationService.generateBadge(
           registration.id,
           orgId,
@@ -1126,8 +1129,27 @@ export class RegistrationsService {
       const badgeUrl = format === 'pdf' ? badge.pdf_url : badge.image_url;
       
       if (badgeUrl) {
-        // Rediriger vers l'URL publique du badge
-        return res.redirect(badgeUrl);
+        try {
+          // Télécharger le fichier depuis R2 et le servir directement
+          const response = await fetch(badgeUrl);
+          
+          if (!response.ok) {
+            throw new Error(`Failed to fetch badge: ${response.statusText}`);
+          }
+          
+          const buffer = await response.arrayBuffer();
+          const contentType = format === 'pdf' ? 'application/pdf' : 'image/png';
+          const fileExtension = format === 'pdf' ? 'pdf' : 'png';
+          
+          res.setHeader('Content-Type', contentType);
+          res.setHeader('Content-Disposition', `attachment; filename="badge-${registration.id}.${fileExtension}"`);
+          res.setHeader('Content-Length', buffer.byteLength.toString());
+          
+          return res.send(Buffer.from(buffer));
+        } catch (error) {
+          this.logger.error(`Erreur lors du téléchargement du badge depuis R2:`, error);
+          throw new BadRequestException('Erreur lors du téléchargement du badge');
+        }
       } else {
         throw new NotFoundException(`URL du badge ${format} non disponible`);
       }
@@ -1274,5 +1296,105 @@ export class RegistrationsService {
       message: `${updated.attendee.first_name} ${updated.attendee.last_name} checked-in successfully`,
       registration: updated,
     };
+  }
+
+  /**
+   * Get event statistics (total, checked-in, percentage)
+   */
+  async getEventStats(eventId: string, orgId: string | null): Promise<{
+    total: number;
+    checkedIn: number;
+    percentage: number;
+  }> {
+    const where: any = {
+      event_id: eventId,
+      status: 'approved', // Seulement les participants approuvés
+    };
+
+    if (orgId) {
+      where.org_id = orgId;
+    }
+
+    // Compter le total et les checked-in en parallèle
+    const [total, checkedIn] = await Promise.all([
+      this.prisma.registration.count({ where }),
+      this.prisma.registration.count({
+        where: {
+          ...where,
+          checked_in_at: { not: null },
+        },
+      }),
+    ]);
+
+    const percentage = total > 0 ? Math.round((checkedIn / total) * 100) : 0;
+
+    return {
+      total,
+      checkedIn,
+      percentage,
+    };
+  }
+
+  /**
+   * Mark badge as printed for a registration
+   */
+  async markBadgePrinted(eventId: string, registrationId: string, orgId: string | null) {
+    // Vérifier que la registration existe et appartient à l'org
+    const whereClause: any = {
+      id: registrationId,
+      event_id: eventId,
+    };
+
+    if (orgId !== null) {
+      whereClause.org_id = orgId;
+    }
+
+    const registration = await this.prisma.registration.findFirst({
+      where: whereClause,
+    });
+
+    if (!registration) {
+      throw new NotFoundException('Registration not found');
+    }
+
+    // Mettre à jour le compteur d'impression du badge
+    const updatedRegistration = await this.prisma.registration.update({
+      where: { id: registrationId },
+      data: {
+        // Optionnel: ajouter un champ pour tracker les impressions
+        // print_count: registration.print_count ? registration.print_count + 1 : 1,
+        // last_printed_at: new Date(),
+      },
+      include: {
+        attendee: true,
+        event: true,
+        eventAttendeeType: {
+          include: {
+            attendeeType: true,
+          },
+        },
+      },
+    });
+
+    // Optionnel: Mettre à jour le badge dans la table badges si il existe
+    try {
+      await this.prisma.badge.updateMany({
+        where: {
+          registration_id: registrationId,
+        },
+        data: {
+          print_count: {
+            increment: 1,
+          },
+          last_printed_at: new Date(),
+        },
+      });
+    } catch (error) {
+      // Ignore si pas de badge trouvé
+      this.logger.warn('Could not update badge print count:', error);
+    }
+
+    this.logger.log(`Badge marked as printed for registration ${registrationId}`);
+    return updatedRegistration;
   }
 }

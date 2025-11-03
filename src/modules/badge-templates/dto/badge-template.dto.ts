@@ -50,14 +50,14 @@ export class CreateBadgeTemplateDto {
   @ApiPropertyOptional({ example: 400, description: 'Largeur en pixels' })
   @IsInt()
   @Min(100)
-  @Max(2000)
+  @Max(5000)
   @IsOptional()
   width?: number = 400;
 
   @ApiPropertyOptional({ example: 600, description: 'Hauteur en pixels' })
   @IsInt()
   @Min(100)
-  @Max(2000)
+  @Max(5000)
   @IsOptional()
   height?: number = 600;
 
@@ -65,7 +65,6 @@ export class CreateBadgeTemplateDto {
     example: { blocks: [], styles: [] },
     description: 'Données GrapesJS complètes pour ré-édition' 
   })
-  @IsObject()
   @IsOptional()
   template_data?: any;
 
@@ -113,14 +112,14 @@ export class UpdateBadgeTemplateDto {
   @ApiPropertyOptional({ example: 500 })
   @IsInt()
   @Min(100)
-  @Max(2000)
+  @Max(5000)
   @IsOptional()
   width?: number;
 
   @ApiPropertyOptional({ example: 700 })
   @IsInt()
   @Min(100)
-  @Max(2000)
+  @Max(5000)
   @IsOptional()
   height?: number;
 

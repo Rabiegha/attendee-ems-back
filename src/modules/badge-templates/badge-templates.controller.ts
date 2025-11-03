@@ -25,7 +25,7 @@ export class BadgeTemplatesController {
   constructor(private readonly badgeTemplatesService: BadgeTemplatesService) {}
 
   @Post()
-  @Permissions('badge-templates.create')
+  @Permissions('badge-templates.create:org')
   @ApiOperation({ summary: 'Créer un template de badge (ADMIN only)' })
   @ApiResponse({ status: 201, description: 'Template créé avec succès' })
   @ApiResponse({ status: 409, description: 'Un template avec ce nom existe déjà' })
@@ -39,7 +39,7 @@ export class BadgeTemplatesController {
   }
 
   @Get()
-  @Permissions('badge-templates.read')
+  @Permissions('badge-templates.read:org')
   @ApiOperation({ summary: 'Liste des templates de badges (ADMIN only)' })
   @ApiResponse({ status: 200, description: 'Liste des templates' })
   findAll(
@@ -61,7 +61,7 @@ export class BadgeTemplatesController {
   }
 
   @Get(':id')
-  @Permissions('badge-templates.read')
+  @Permissions('badge-templates.read:org')
   @ApiOperation({ summary: 'Détails d\'un template (ADMIN only)' })
   @ApiResponse({ status: 200, description: 'Détails du template' })
   @ApiResponse({ status: 404, description: 'Template non trouvé' })
@@ -71,7 +71,7 @@ export class BadgeTemplatesController {
   }
 
   @Put(':id')
-  @Permissions('badge-templates.update')
+  @Permissions('badge-templates.update:org')
   @ApiOperation({ summary: 'Mettre à jour un template (ADMIN only)' })
   @ApiResponse({ status: 200, description: 'Template mis à jour' })
   @ApiResponse({ status: 404, description: 'Template non trouvé' })
@@ -85,7 +85,7 @@ export class BadgeTemplatesController {
   }
 
   @Delete(':id')
-  @Permissions('badge-templates.delete')
+  @Permissions('badge-templates.delete:org')
   @ApiOperation({ summary: 'Supprimer un template (ADMIN only)' })
   @ApiResponse({ status: 200, description: 'Template supprimé' })
   @ApiResponse({ status: 400, description: 'Template utilisé, impossible de supprimer' })
@@ -96,7 +96,7 @@ export class BadgeTemplatesController {
   }
 
   @Post('preview')
-  @Permissions('badge-templates.read')
+  @Permissions('badge-templates.read:org')
   @ApiOperation({ summary: 'Preview d\'un template avec données de test (ADMIN only)' })
   @ApiResponse({ status: 200, description: 'Preview générée' })
   preview(@Body() previewDto: PreviewBadgeTemplateDto) {
@@ -104,7 +104,7 @@ export class BadgeTemplatesController {
   }
 
   @Post(':id/test-badge')
-  @Permissions('badge-templates.read')
+  @Permissions('badge-templates.read:org')
   @ApiOperation({ summary: 'Générer un badge de test avec un template (ADMIN only)' })
   @ApiResponse({ status: 200, description: 'Badge de test généré' })
   testBadge(

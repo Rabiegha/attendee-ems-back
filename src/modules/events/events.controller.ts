@@ -328,6 +328,34 @@ export class EventsController {
     return this.registrationsService.findOne(eventId, id, orgId);
   }
 
+  @Get(':eventId/check-in-stats')
+  // @Permissions('registrations.read') // Temporairement commenté pour test
+  @ApiOperation({ summary: 'Get event check-in statistics (total registrations, checked-in count, etc.)' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Event check-in statistics retrieved successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        total: { type: 'number', description: 'Total approved registrations' },
+        checkedIn: { type: 'number', description: 'Number of checked-in registrations' },
+        percentage: { type: 'number', description: 'Check-in percentage' }
+      }
+    }
+  })
+  async getEventCheckinStats(
+    @Param('eventId') eventId: string,
+    @Request() req,
+  ) {
+    const allowAny = req.user.permissions?.some((p: string) =>
+      p.startsWith('events.') && p.endsWith(':any'),
+    );
+    
+    const orgId = allowAny ? null : req.user.org_id;
+
+    return this.registrationsService.getEventStats(eventId, orgId);
+  }
+
   // Badge generation endpoints
   @Post(':eventId/registrations/generate-badges')
   @Permissions('registrations.read')
@@ -413,5 +441,22 @@ export class EventsController {
       },
       res
     );
+  }
+
+  @Post(':eventId/registrations/:id/print-badge')
+  @Permissions('registrations.update')
+  @ApiOperation({ summary: 'Mark badge as printed for a registration' })
+  @ApiResponse({ status: 200, description: 'Badge marked as printed successfully' })
+  async markBadgePrinted(
+    @Param('eventId') eventId: string,
+    @Param('id') registrationId: string,
+    @Request() req,
+  ) {
+    const allowAny = req.user.role === 'SUPER_ADMIN' || req.user.permissions?.some((p: string) =>
+      p.endsWith(':any')
+    );
+    const orgId = allowAny ? null : req.user.org_id;
+    
+    return this.registrationsService.markBadgePrinted(eventId, registrationId, orgId);
   }
 }

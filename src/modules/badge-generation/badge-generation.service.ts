@@ -20,9 +20,10 @@ export class BadgeGenerationService {
   private async getBrowser(): Promise<Browser> {
     if (!this.browser || !this.browser.isConnected()) {
       this.logger.log('Initializing Puppeteer browser...');
-      this.browser = await puppeteer.launch({
+      
+      // Configuration flexible pour différents environnements
+      const browserOptions: any = {
         headless: true,
-        executablePath: '/usr/bin/chromium-browser',
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
@@ -32,8 +33,49 @@ export class BadgeGenerationService {
           '--disable-background-timer-throttling',
           '--disable-backgrounding-occluded-windows',
           '--disable-renderer-backgrounding',
+          '--disable-web-security',
+          '--disable-features=VizDisplayCompositor',
         ],
-      });
+      };
+
+      // Essayer de détecter le chemin du navigateur automatiquement
+      try {
+        // Laisser Puppeteer détecter automatiquement le navigateur
+        this.logger.log('Attempting to launch browser with auto-detection...');
+        this.browser = await puppeteer.launch(browserOptions);
+        this.logger.log('✅ Browser launched successfully with auto-detection');
+      } catch (autoError) {
+        this.logger.warn('Auto-detection failed, trying with explicit paths...', autoError.message);
+        
+        // Essayer différents chemins communs
+        const possiblePaths = [
+          '/usr/bin/chromium-browser',
+          '/usr/bin/chromium',
+          '/usr/bin/google-chrome',
+          '/usr/bin/google-chrome-stable',
+          '/opt/google/chrome/chrome',
+          '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', // macOS
+        ];
+
+        for (const path of possiblePaths) {
+          try {
+            this.logger.log(`Trying browser path: ${path}`);
+            this.browser = await puppeteer.launch({
+              ...browserOptions,
+              executablePath: path,
+            });
+            this.logger.log(`✅ Browser launched successfully with path: ${path}`);
+            break;
+          } catch (pathError) {
+            this.logger.warn(`Failed with path ${path}:`, pathError.message);
+            continue;
+          }
+        }
+
+        if (!this.browser) {
+          throw new Error('Could not find a suitable browser executable. Please install Chromium or Chrome.');
+        }
+      }
     }
     return this.browser;
   }
@@ -222,7 +264,7 @@ export class BadgeGenerationService {
       } else {
         badge = await this.prisma.badge.create({
           data: {
-            org_id: orgId,
+            org_id: registration.org_id, // Utiliser l'org_id de la registration au lieu de orgId qui peut être null
             registration_id: registrationId,
             badge_template_id: badgeTemplate.id,
             event_id: registration.event_id,
@@ -256,12 +298,26 @@ export class BadgeGenerationService {
         preferCSSPageSize: true,
       });
 
+      // Générer aussi une image PNG
+      const imageBuffer = await page.screenshot({
+        type: 'png',
+        clip: {
+          x: 0,
+          y: 0,
+          width: badgeTemplate.width,
+          height: badgeTemplate.height,
+        },
+        omitBackground: false,
+      });
+
       await page.close();
 
       this.logger.log(`PDF generated: ${pdfBuffer.length} bytes`);
+      this.logger.log(`Image generated: ${imageBuffer.length} bytes`);
 
-      // 7. Upload du PDF sur Cloudflare R2
+      // 7. Upload du PDF et de l'image sur Cloudflare R2
       const pdfUrl = await this.r2Service.uploadBadgePdf(registrationId, Buffer.from(pdfBuffer));
+      const imageUrl = await this.r2Service.uploadBadgeImage(registrationId, Buffer.from(imageBuffer));
 
       // 8. Incrémenter le compteur d'utilisation du template
       await this.prisma.badgeTemplate.update({
@@ -278,6 +334,7 @@ export class BadgeGenerationService {
         where: { id: badge.id },
         data: {
           pdf_url: pdfUrl,
+          image_url: imageUrl,
           html_snapshot: htmlContent,
           css_snapshot: cssContent,
           data_snapshot: badgeData,
@@ -295,7 +352,16 @@ export class BadgeGenerationService {
         },
       });
 
-      this.logger.log(`Badge ${badge.id} generated successfully`);
+      // 10. Mettre à jour la registration avec les URLs des badges
+      await this.prisma.registration.update({
+        where: { id: registrationId },
+        data: {
+          badge_pdf_url: pdfUrl,
+          badge_image_url: imageUrl,
+        },
+      });
+
+      this.logger.log(`Badge ${badge.id} generated successfully and registration updated`);
 
       return updatedBadge;
     } catch (error) {

@@ -5,6 +5,20 @@ WORKDIR /usr/src/app
 # Dépendances système utiles (bcrypt, etc.)
 RUN apk add --no-cache python3 make g++ bash openssl
 
+# Installer Chromium pour Puppeteer
+RUN apk add --no-cache \
+    chromium \
+    nss \
+    freetype \
+    freetype-dev \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont
+
+# Dire à Puppeteer d'utiliser le Chromium installé
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+
 COPY package*.json ./
 RUN npm install
 
