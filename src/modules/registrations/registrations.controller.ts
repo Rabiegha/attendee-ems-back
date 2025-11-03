@@ -179,3 +179,47 @@ export class RegistrationsController {
     res.send(buffer);
   }
 }
+
+// Routes pour la génération de badges (doivent être dans le EventsController ou un module dédié)
+// Temporairement commentées - à déplacer
+/*
+  @Post('events/:eventId/registrations/generate-badges')
+  @Permissions('badges.create')
+  @ApiOperation({ summary: 'Generate badges for all registrations in an event' })
+  @ApiResponse({ status: 200, description: 'Badges generated successfully' })
+  async generateBadgesForEvent(
+    @Param('eventId') eventId: string,
+    @Request() req,
+  ) {
+    return this.registrationsService.generateBadgesForEvent(eventId, req.user.org_id);
+  }
+
+  @Post('events/:eventId/registrations/generate-badges-bulk')
+  @Permissions('badges.create')
+  @ApiOperation({ summary: 'Generate badges for selected registrations' })
+  @ApiResponse({ status: 200, description: 'Badges generated successfully' })
+  async generateBadgesBulk(
+    @Param('eventId') eventId: string,
+    @Body() body: { registrationIds: string[] },
+    @Request() req,
+  ) {
+    return this.registrationsService.generateBadgesBulk(
+      eventId,
+      body.registrationIds,
+      req.user.org_id,
+    );
+  }
+
+  @Post('events/:eventId/registrations/:id/generate-badge')
+  @Permissions('badges.create')
+  @ApiOperation({ summary: 'Generate badge for a single registration' })
+  @ApiResponse({ status: 200, description: 'Badge generated successfully' })
+  async generateBadge(
+    @Param('eventId') eventId: string,
+    @Param('id') registrationId: string,
+    @Request() req,
+  ) {
+    return this.registrationsService.generateBadge(eventId, registrationId, req.user.org_id);
+  }
+}
+*/

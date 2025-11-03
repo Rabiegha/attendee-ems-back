@@ -485,7 +485,7 @@ model EventSetting {
 
   // Relations
   event                           Event @relation(fields: [event_id, org_id], references: [id, org_id], onDelete: Cascade, onUpdate: NoAction)
-  badgeTemplate                   BadgeTemplate? @relation(fields: [badge_template_id, org_id], references: [id, org_id], onDelete: SetNull, onUpdate: NoAction)
+  badgeTemplate                   BadgeTemplate? @relation(fields: [badge_template_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@unique([event_id, org_id])
   @@index([org_id, event_id])
@@ -677,7 +677,7 @@ model Badge {
 
   // Relations
   registration      Registration  @relation(fields: [registration_id], references: [id], onDelete: Cascade)
-  badgeTemplate     BadgeTemplate @relation(fields: [badge_template_id, org_id], references: [id, org_id], onDelete: Restrict, onUpdate: NoAction)
+  badgeTemplate     BadgeTemplate @relation(fields: [badge_template_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
   organization      Organization  @relation(fields: [org_id], references: [id], onDelete: Cascade)
   event             Event         @relation(fields: [event_id, org_id], references: [id, org_id], onDelete: Cascade, onUpdate: NoAction)
   generatedByUser   User?         @relation(fields: [generated_by], references: [id], onDelete: SetNull)

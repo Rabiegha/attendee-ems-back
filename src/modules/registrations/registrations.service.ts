@@ -813,4 +813,242 @@ export class RegistrationsService {
       return { buffer, filename };
     }
   }
+
+  /**
+   * Generate badges for all registrations in an event
+   */
+  async generateBadgesForEvent(eventId: string, orgId: string) {
+    // 1. Récupérer l'événement avec son template de badge
+    const whereClause: any = { id: eventId };
+    if (orgId) {
+      whereClause.org_id = orgId;
+    }
+
+    const event = await this.prisma.event.findFirst({
+      where: whereClause,
+      include: {
+        settings: {
+          include: {
+            badgeTemplate: true,
+          },
+        },
+      },
+    });
+
+    if (!event) {
+      throw new NotFoundException('Événement non trouvé');
+    }
+
+    if (!event.settings?.badgeTemplate) {
+      throw new BadRequestException(
+        'Aucun template de badge configuré pour cet événement',
+      );
+    }
+
+    // 2. Récupérer toutes les registrations approuvées
+    const registrations = await this.prisma.registration.findMany({
+      where: {
+        event_id: eventId,
+        org_id: event.org_id, // Use the event's org_id
+        status: 'approved',
+      },
+      include: {
+        attendee: true,
+        eventAttendeeType: {
+          include: {
+            attendeeType: true,
+          },
+        },
+      },
+    });
+
+    if (registrations.length === 0) {
+      return {
+        success: true,
+        message: 'Aucune inscription approuvée à traiter',
+        generated: 0,
+      };
+    }
+
+    // 3. Générer les badges pour chaque registration
+    const template = event.settings.badgeTemplate;
+    let generatedCount = 0;
+
+    for (const registration of registrations) {
+      // Remplacer les variables dans le HTML
+      let html = template.html || '';
+      const variables = {
+        full_name: `${registration.attendee?.first_name || ''} ${registration.attendee?.last_name || ''}`.trim(),
+        first_name: registration.attendee?.first_name || '',
+        last_name: registration.attendee?.last_name || '',
+        email: registration.attendee?.email || '',
+        company: registration.attendee?.company || '',
+        job_title: registration.attendee?.job_title || '',
+        event_name: event.name,
+        attendee_type: registration.eventAttendeeType?.attendeeType?.name || '',
+      };
+
+      Object.entries(variables).forEach(([key, value]) => {
+        const regex = new RegExp(`{{${key}}}`, 'gi');
+        html = html.replace(regex, value);
+      });
+
+      // Créer ou mettre à jour le badge
+      await this.prisma.badge.upsert({
+        where: {
+          registration_id: registration.id,
+        },
+        create: {
+          org_id: event.org_id, // Use event's org_id
+          event_id: eventId,
+          registration_id: registration.id,
+          badge_template_id: template.id,
+          html_snapshot: html,
+          css_snapshot: template.css,
+          data_snapshot: variables,
+          status: 'completed',
+          generated_at: new Date(),
+        },
+        update: {
+          badge_template_id: template.id,
+          html_snapshot: html,
+          css_snapshot: template.css,
+          data_snapshot: variables,
+          status: 'completed',
+          generated_at: new Date(),
+          updated_at: new Date(),
+        },
+      });
+
+      generatedCount++;
+    }
+
+    return {
+      success: true,
+      message: `${generatedCount} badge(s) généré(s) avec succès`,
+      generated: generatedCount,
+    };
+  }
+
+  /**
+   * Generate badges for selected registrations
+   */
+  async generateBadgesBulk(
+    eventId: string,
+    registrationIds: string[],
+    orgId: string,
+  ) {
+    // 1. Récupérer l'événement avec son template
+    const whereClause: any = { id: eventId };
+    if (orgId) {
+      whereClause.org_id = orgId;
+    }
+
+    const event = await this.prisma.event.findFirst({
+      where: whereClause,
+      include: {
+        settings: {
+          include: {
+            badgeTemplate: true,
+          },
+        },
+      },
+    });
+
+    if (!event) {
+      throw new NotFoundException('Événement non trouvé');
+    }
+
+    if (!event.settings?.badgeTemplate) {
+      throw new BadRequestException(
+        'Aucun template de badge configuré pour cet événement',
+      );
+    }
+
+    // 2. Récupérer les registrations sélectionnées
+    const registrations = await this.prisma.registration.findMany({
+      where: {
+        id: { in: registrationIds },
+        event_id: eventId,
+        org_id: event.org_id, // Use event's org_id
+      },
+      include: {
+        attendee: true,
+        eventAttendeeType: {
+          include: {
+            attendeeType: true,
+          },
+        },
+      },
+    });
+
+    if (registrations.length === 0) {
+      throw new NotFoundException('Aucune inscription trouvée');
+    }
+
+    // 3. Générer les badges
+    const template = event.settings.badgeTemplate;
+    let generatedCount = 0;
+
+    for (const registration of registrations) {
+      let html = template.html || '';
+      const variables = {
+        full_name: `${registration.attendee?.first_name || ''} ${registration.attendee?.last_name || ''}`.trim(),
+        first_name: registration.attendee?.first_name || '',
+        last_name: registration.attendee?.last_name || '',
+        email: registration.attendee?.email || '',
+        company: registration.attendee?.company || '',
+        job_title: registration.attendee?.job_title || '',
+        event_name: event.name,
+        attendee_type: registration.eventAttendeeType?.attendeeType?.name || '',
+      };
+
+      Object.entries(variables).forEach(([key, value]) => {
+        const regex = new RegExp(`{{${key}}}`, 'gi');
+        html = html.replace(regex, value);
+      });
+
+      await this.prisma.badge.upsert({
+        where: {
+          registration_id: registration.id,
+        },
+        create: {
+          org_id: event.org_id, // Use event's org_id
+          event_id: eventId,
+          registration_id: registration.id,
+          badge_template_id: template.id,
+          html_snapshot: html,
+          css_snapshot: template.css,
+          data_snapshot: variables,
+          status: 'completed',
+          generated_at: new Date(),
+        },
+        update: {
+          badge_template_id: template.id,
+          html_snapshot: html,
+          css_snapshot: template.css,
+          data_snapshot: variables,
+          status: 'completed',
+          generated_at: new Date(),
+          updated_at: new Date(),
+        },
+      });
+
+      generatedCount++;
+    }
+
+    return {
+      success: true,
+      message: `${generatedCount} badge(s) généré(s) avec succès`,
+      generated: generatedCount,
+    };
+  }
+
+  /**
+   * Generate badge for a single registration
+   */
+  async generateBadge(eventId: string, registrationId: string, orgId: string) {
+    // Utiliser la méthode bulk avec un seul ID
+    return this.generateBadgesBulk(eventId, [registrationId], orgId);
+  }
 }

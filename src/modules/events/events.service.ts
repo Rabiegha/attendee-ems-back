@@ -113,6 +113,23 @@ export class EventsService {
         throw new Error('Failed to generate unique public token after multiple attempts');
       }
 
+      // Validate badge template if provided
+      if (dto.badge_template_id) {
+        const badgeTemplate = await tx.badgeTemplate.findUnique({
+          where: {
+            id: dto.badge_template_id,
+          },
+        });
+
+        if (!badgeTemplate) {
+          throw new BadRequestException(`Badge template not found`);
+        }
+
+        if (!badgeTemplate.is_active) {
+          throw new BadRequestException('Badge template is not active');
+        }
+      }
+
       // Create event settings
       const settings = await tx.eventSetting.create({
         data: {
@@ -124,6 +141,7 @@ export class EventsService {
           registration_auto_approve: dto.registration_auto_approve ?? false,
           allow_checkin_out: dto.allow_checkin_out ?? true,
           has_event_reminder: dto.has_event_reminder ?? false,
+          badge_template_id: dto.badge_template_id,
           registration_fields: dto.registration_fields
             ? (dto.registration_fields as Prisma.InputJsonValue)
             : null,
@@ -550,6 +568,23 @@ export class EventsService {
         },
       });
 
+      // Validate badge template if provided
+      if (dto.badge_template_id) {
+        const badgeTemplate = await tx.badgeTemplate.findUnique({
+          where: {
+            id: dto.badge_template_id,
+          },
+        });
+
+        if (!badgeTemplate) {
+          throw new BadRequestException(`Badge template not found`);
+        }
+
+        if (!badgeTemplate.is_active) {
+          throw new BadRequestException('Badge template is not active');
+        }
+      }
+
       // Update settings if provided
       if (
         dto.website_url !== undefined ||
@@ -557,6 +592,7 @@ export class EventsService {
         dto.registration_auto_approve !== undefined ||
         dto.allow_checkin_out !== undefined ||
         dto.has_event_reminder !== undefined ||
+        dto.badge_template_id !== undefined ||
         dto.registration_fields !== undefined ||
         dto.submit_button_text !== undefined ||
         dto.submit_button_color !== undefined ||
@@ -574,6 +610,7 @@ export class EventsService {
             registration_auto_approve: dto.registration_auto_approve,
             allow_checkin_out: dto.allow_checkin_out,
             has_event_reminder: dto.has_event_reminder,
+            badge_template_id: dto.badge_template_id,
             registration_fields: dto.registration_fields
               ? (dto.registration_fields as any)
               : undefined,
@@ -595,9 +632,17 @@ export class EventsService {
         dto.approval_enabled !== undefined ||
         dto.reminder_enabled !== undefined
       ) {
-        await tx.emailSetting.update({
+        await tx.emailSetting.upsert({
           where: { event_id: id },
-          data: {
+          create: {
+            org_id: existing.org_id,
+            event_id: id,
+            require_email_verification: dto.require_email_verification ?? false,
+            confirmation_enabled: dto.confirmation_enabled ?? false,
+            approval_enabled: dto.approval_enabled ?? false,
+            reminder_enabled: dto.reminder_enabled ?? false,
+          } as any,
+          update: {
             require_email_verification: dto.require_email_verification,
             confirmation_enabled: dto.confirmation_enabled,
             approval_enabled: dto.approval_enabled,

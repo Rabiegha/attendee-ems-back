@@ -166,6 +166,11 @@ export class CreateEventDto {
   @IsBoolean()
   has_event_reminder?: boolean;
 
+  @ApiPropertyOptional({ description: 'Badge template ID for this event' })
+  @IsOptional()
+  @IsUUID()
+  badge_template_id?: string;
+
   @ApiPropertyOptional({ description: 'Registration form fields (JSON)' })
   @IsOptional()
   registration_fields?: any;
