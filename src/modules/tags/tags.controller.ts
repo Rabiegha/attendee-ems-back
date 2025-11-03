@@ -1,14 +1,18 @@
-import { Controller, Get, Post, Put, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, Param, Query, UseGuards, Request, NotFoundException } from '@nestjs/common';
 import { TagsService } from './tags.service';
 import { CreateTagDto, SearchTagsDto } from './dto/tag.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { PrismaService } from '../../infra/db/prisma.service';
 
 @Controller('tags')
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class TagsController {
-  constructor(private readonly tagsService: TagsService) {}
+  constructor(
+    private readonly tagsService: TagsService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   /**
    * GET /tags/search?search=tech
@@ -61,6 +65,17 @@ export class TagsController {
     @Param('eventId') eventId: string,
     @Body('tags') tags: string[],
   ) {
-    return this.tagsService.updateEventTags(eventId, req.user.org_id, tags);
+    // Récupérer l'org_id de l'événement plutôt que celui de l'utilisateur
+    // car un SUPER_ADMIN peut gérer des événements d'autres organisations
+    const event = await this.prisma.event.findUnique({
+      where: { id: eventId },
+      select: { org_id: true },
+    });
+    
+    if (!event) {
+      throw new NotFoundException('Event not found');
+    }
+    
+    return this.tagsService.updateEventTags(eventId, event.org_id, tags);
   }
 }
