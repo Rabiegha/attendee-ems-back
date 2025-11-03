@@ -31,9 +31,19 @@ async function bootstrap() {
   // Cookie parser middleware
   app.use(cookieParser());
 
-  // Enable CORS with credentials
+  // Enable CORS with credentials - handle multiple origins
+  const allowedOrigins = configService.apiCorsOrigin.split(',').map(o => o.trim());
   app.enableCors({
-    origin: configService.apiCorsOrigin,
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps or Postman)
+      if (!origin) return callback(null, true);
+      
+      if (allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
