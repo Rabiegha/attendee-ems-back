@@ -25,6 +25,7 @@ import { ListEventsDto } from './dto/list-events.dto';
 import { ChangeEventStatusDto } from './dto/change-event-status.dto';
 import { RegistrationsService } from '../registrations/registrations.service';
 import { ListRegistrationsDto } from '../registrations/dto/list-registrations.dto';
+import { CreateRegistrationDto } from '../registrations/dto/create-registration.dto';
 import { resolveRegistrationReadScope, RegistrationScope } from '../../common/utils/resolve-registration-scope.util';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
@@ -307,6 +308,29 @@ export class EventsController {
       scope,
       orgId: req.user.org_id,
     });
+  }
+
+  @Post(':eventId/registrations')
+  @Permissions('registrations.create')
+  @ApiOperation({ summary: 'Create a registration for an event' })
+  @ApiResponse({ status: 201, description: 'Registration created successfully' })
+  @ApiResponse({ status: 409, description: 'Event full or duplicate registration' })
+  @ApiResponse({ status: 403, description: 'Previously declined' })
+  async createEventRegistration(
+    @Param('eventId') eventId: string,
+    @Body() createDto: CreateRegistrationDto,
+    @Request() req,
+  ) {
+    const allowAny = req.user.permissions?.some((p: string) =>
+      p.startsWith('events.') && p.endsWith(':any'),
+    );
+    const orgId = resolveEffectiveOrgId({
+      reqUser: req.user,
+      explicitOrgId: undefined,
+      allowAny,
+    });
+
+    return this.registrationsService.create(eventId, orgId, createDto);
   }
 
   @Get(':eventId/registrations/:id')
