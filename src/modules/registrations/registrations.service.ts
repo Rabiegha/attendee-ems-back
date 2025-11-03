@@ -1299,6 +1299,92 @@ export class RegistrationsService {
   }
 
   /**
+   * Undo check-in of a registration
+   * Validates eventId to ensure operation is at correct event
+   */
+  async undoCheckIn(
+    registrationId: string,
+    orgId: string | null,
+    userId: string,
+    dto: CheckinRegistrationDto,
+  ): Promise<any> {
+    // Fetch registration with event and attendee
+    const where: any = { id: registrationId };
+    if (orgId) {
+      where.org_id = orgId;
+    }
+
+    const registration = await this.prisma.registration.findFirst({
+      where,
+      include: {
+        event: {
+          include: { settings: true },
+        },
+        attendee: true,
+      },
+    });
+
+    if (!registration) {
+      throw new NotFoundException('Registration not found');
+    }
+
+    // CRITICAL: Validate eventId matches (cross-validation)
+    if (dto.eventId !== registration.event_id) {
+      throw new BadRequestException(
+        `Event mismatch: Cannot undo check-in for different event. ` +
+        `Expected event ${dto.eventId}, but registration is for event ${registration.event_id}.`
+      );
+    }
+
+    // Validate registration status
+    if (registration.status === 'refused') {
+      throw new BadRequestException(
+        `Cannot undo check-in: Registration was refused`
+      );
+    }
+
+    if (registration.status === 'cancelled') {
+      throw new BadRequestException(
+        `Cannot undo check-in: Registration was cancelled`
+      );
+    }
+
+    // Validate event settings allow check-in/out
+    if (!registration.event.settings?.allow_checkin_out) {
+      throw new BadRequestException(
+        `Check-in/out is disabled for this event`
+      );
+    }
+
+    // Validate currently checked-in
+    if (!registration.checked_in_at) {
+      throw new BadRequestException(
+        `Cannot undo: Not currently checked-in`
+      );
+    }
+
+    // Perform undo check-in
+    const updated = await this.prisma.registration.update({
+      where: { id: registrationId },
+      data: {
+        checked_in_at: null,
+        checked_in_by: null,
+        checkin_location: null,
+      },
+      include: {
+        attendee: true,
+        event: true,
+      },
+    });
+
+    return {
+      success: true,
+      message: `${updated.attendee.first_name} ${updated.attendee.last_name} check-in undone successfully`,
+      registration: updated,
+    };
+  }
+
+  /**
    * Get event statistics (total, checked-in, percentage)
    */
   async getEventStats(eventId: string, orgId: string | null): Promise<{
