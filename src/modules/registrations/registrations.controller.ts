@@ -232,6 +232,25 @@ export class RegistrationsController {
 
     return this.registrationsService.checkIn(id, orgId, req.user.id, checkinDto);
   }
+
+  @Post(':id/undo-check-in')
+  @Permissions('registrations.checkin')
+  @ApiOperation({ summary: 'Undo check-in of a registration' })
+  @ApiResponse({ status: 200, description: 'Registration check-in undone successfully' })
+  @ApiResponse({ status: 400, description: 'Not checked-in or invalid status' })
+  @ApiResponse({ status: 404, description: 'Registration not found' })
+  async undoCheckIn(
+    @Param('id') id: string,
+    @Body() checkinDto: CheckinRegistrationDto,
+    @Request() req,
+  ) {
+    const allowAny = req.user.permissions?.some((p: string) =>
+      p.startsWith('registrations.') && p.endsWith(':any'),
+    );
+    const orgId = allowAny ? null : req.user.org_id;
+
+    return this.registrationsService.undoCheckIn(id, orgId, req.user.id, checkinDto);
+  }
 }
 
 // Routes pour la génération de badges (doivent être dans le EventsController ou un module dédié)
