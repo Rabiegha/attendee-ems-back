@@ -5,14 +5,19 @@ import {
   Delete,
   Param,
   Query,
+  Body,
   UseGuards,
   Req,
 } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { BadgeGenerationService } from './badge-generation.service';
+import { TestBadgeDto } from './dto/test-badge.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 
+@ApiTags('Badge Generation')
+@ApiBearerAuth()
 @Controller()
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 export class BadgeGenerationController {
@@ -31,8 +36,22 @@ export class BadgeGenerationController {
     @Param('id') registrationId: string,
     @Req() req: any,
   ) {
-    const orgId = req.user.org_id;
+    // Pour SUPER_ADMIN, permettre l'accès à toutes les organisations
+    const allowAny = req.user.role === 'SUPER_ADMIN' || req.user.permissions?.some((p: string) =>
+      p.endsWith(':any')
+    );
+    const orgId = allowAny ? null : req.user.org_id;
     const userId = req.user.sub;
+
+    console.log('🔍 BADGE GENERATION DEBUG:', {
+      eventId,
+      registrationId,
+      userRole: req.user.role,
+      userOrgId: req.user.org_id,
+      allowAny,
+      finalOrgId: orgId,
+      permissions: req.user.permissions?.filter((p: string) => p.includes('badges'))
+    });
 
     const badge = await this.badgeGenerationService.generateBadge(
       registrationId,
@@ -58,7 +77,11 @@ export class BadgeGenerationController {
     @Query('status') status?: string,
     @Req() req?: any,
   ) {
-    const orgId = req.user.org_id;
+    // Pour SUPER_ADMIN, permettre l'accès à toutes les organisations
+    const allowAny = req.user.role === 'SUPER_ADMIN' || req.user.permissions?.some((p: string) =>
+      p.endsWith(':any')
+    );
+    const orgId = allowAny ? null : req.user.org_id;
     const userId = req.user.sub;
 
     const result = await this.badgeGenerationService.generateBulk(
@@ -141,6 +164,36 @@ export class BadgeGenerationController {
 
     return {
       data: badge,
+    };
+  }
+
+  /**
+   * POST /badge-templates/:id/test-generate
+   * Génère un badge de test avec un template spécifique
+   */
+  @Post('badge-templates/:id/test-generate')
+  @Permissions('badges.create:org')
+  @ApiOperation({ summary: 'Générer un badge de test avec un template spécifique' })
+  @ApiResponse({ status: 201, description: 'Badge de test généré avec succès' })
+  @ApiResponse({ status: 404, description: 'Template non trouvé' })
+  async generateTestBadge(
+    @Param('id') templateId: string,
+    @Body() testDto: TestBadgeDto,
+    @Req() req: any,
+  ) {
+    const orgId = req.user.org_id;
+    const userId = req.user.sub;
+
+    const result = await this.badgeGenerationService.generateTestBadge(
+      templateId,
+      testDto.testData,
+      orgId,
+      userId,
+    );
+
+    return {
+      message: 'Test badge generated successfully',
+      data: result,
     };
   }
 

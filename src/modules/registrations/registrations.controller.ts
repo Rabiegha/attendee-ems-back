@@ -275,5 +275,7 @@ export class RegistrationsController {
   ) {
     return this.registrationsService.generateBadge(eventId, registrationId, req.user.org_id);
   }
+
+
 }
 */

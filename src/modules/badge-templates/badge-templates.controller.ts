@@ -102,4 +102,17 @@ export class BadgeTemplatesController {
   preview(@Body() previewDto: PreviewBadgeTemplateDto) {
     return this.badgeTemplatesService.preview(previewDto);
   }
+
+  @Post(':id/test-badge')
+  @Permissions('badge-templates.read')
+  @ApiOperation({ summary: 'Générer un badge de test avec un template (ADMIN only)' })
+  @ApiResponse({ status: 200, description: 'Badge de test généré' })
+  testBadge(
+    @Param('id') id: string,
+    @Body() testData: Record<string, any>,
+    @Request() req,
+  ) {
+    const orgId = req.user.org_id;
+    return this.badgeTemplatesService.generateTestBadge(id, orgId, testData);
+  }
 }

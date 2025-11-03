@@ -246,6 +246,57 @@ export class BadgeTemplatesService {
   }
 
   /**
+   * Génère un PDF de test pour un template avec des données d'exemple
+   */
+  async generateTestBadge(id: string, orgId: string, testData: Record<string, any>) {
+    const template = await this.findOne(id, orgId);
+
+    if (!template.html) {
+      throw new BadRequestException('Ce template n\'a pas de contenu HTML');
+    }
+
+    // Remplacer les variables dans le HTML et CSS
+    let renderedHtml = template.html;
+    let renderedCss = template.css || '';
+
+    Object.entries(testData).forEach(([key, value]) => {
+      const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
+      renderedHtml = renderedHtml.replace(regex, String(value));
+      renderedCss = renderedCss.replace(regex, String(value));
+    });
+
+    // HTML complet pour Puppeteer
+    const fullHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { 
+              width: ${template.width}px; 
+              height: ${template.height}px;
+              overflow: hidden;
+            }
+            ${renderedCss}
+          </style>
+        </head>
+        <body>
+          ${renderedHtml}
+        </body>
+      </html>
+    `;
+
+    return {
+      html: fullHtml,
+      renderedHtml,
+      renderedCss,
+      width: template.width,
+      height: template.height
+    };
+  }
+
+  /**
    * Incrémenter le compteur d'utilisation
    */
   async incrementUsage(id: string) {

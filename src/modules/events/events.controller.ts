@@ -13,10 +13,11 @@ import {
   UseInterceptors,
   UploadedFile,
   BadRequestException,
+  NotFoundException,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiConsumes, ApiBody } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiConsumes, ApiBody, ApiQuery } from '@nestjs/swagger';
 import { EventsService } from './events.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
@@ -24,12 +25,13 @@ import { ListEventsDto } from './dto/list-events.dto';
 import { ChangeEventStatusDto } from './dto/change-event-status.dto';
 import { RegistrationsService } from '../registrations/registrations.service';
 import { ListRegistrationsDto } from '../registrations/dto/list-registrations.dto';
-import { resolveRegistrationReadScope } from '../../common/utils/resolve-registration-scope.util';
+import { resolveRegistrationReadScope, RegistrationScope } from '../../common/utils/resolve-registration-scope.util';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { resolveEffectiveOrgId } from '../../common/utils/org-scope.util';
 import { resolveEventReadScope } from '../../common/utils/resolve-event-scope.util';
+import { PrismaService } from '../../infra/db/prisma.service';
 
 @ApiTags('Events')
 @ApiBearerAuth()
@@ -39,6 +41,7 @@ export class EventsController {
   constructor(
     private readonly eventsService: EventsService,
     private readonly registrationsService: RegistrationsService,
+    private readonly prisma: PrismaService,
   ) {}
 
   @Post()
@@ -327,7 +330,7 @@ export class EventsController {
 
   // Badge generation endpoints
   @Post(':eventId/registrations/generate-badges')
-  @Permissions('badges.create')
+  @Permissions('registrations.read')
   @ApiOperation({ summary: 'Generate badges for all registrations in an event' })
   @ApiResponse({ status: 200, description: 'Badges generated successfully' })
   async generateBadgesForEvent(
@@ -335,15 +338,17 @@ export class EventsController {
     @Request() req,
   ) {
     const allowAny = req.user.permissions?.some((p: string) =>
-      p.startsWith('badges.') && p.endsWith(':any'),
+      p.startsWith('registrations.') && p.endsWith(':any'),
     );
+    
+    // Pour SUPER_ADMIN avec permission :any, on passe null pour ignorer la contrainte org_id
     const orgId = allowAny ? null : req.user.org_id;
     
     return this.registrationsService.generateBadgesForEvent(eventId, orgId);
   }
 
   @Post(':eventId/registrations/generate-badges-bulk')
-  @Permissions('badges.create')
+  @Permissions('registrations.read')
   @ApiOperation({ summary: 'Generate badges for selected registrations' })
   @ApiResponse({ status: 200, description: 'Badges generated successfully' })
   async generateBadgesBulk(
@@ -352,7 +357,7 @@ export class EventsController {
     @Request() req,
   ) {
     const allowAny = req.user.permissions?.some((p: string) =>
-      p.startsWith('badges.') && p.endsWith(':any'),
+      p.startsWith('registrations.') && p.endsWith(':any'),
     );
     const orgId = allowAny ? null : req.user.org_id;
     
@@ -372,11 +377,41 @@ export class EventsController {
     @Param('id') registrationId: string,
     @Request() req,
   ) {
-    const allowAny = req.user.permissions?.some((p: string) =>
-      p.startsWith('badges.') && p.endsWith(':any'),
+    const allowAny = req.user.role === 'SUPER_ADMIN' || req.user.permissions?.some((p: string) =>
+      p.endsWith(':any')
     );
     const orgId = allowAny ? null : req.user.org_id;
     
     return this.registrationsService.generateBadge(eventId, registrationId, orgId);
+  }
+
+  @Get(':eventId/registrations/:id/badge/download')
+  @Permissions('registrations.read')
+  @ApiOperation({ summary: 'Download badge in specified format' })
+  @ApiQuery({ name: 'format', enum: ['pdf', 'image', 'html'], required: false, description: 'Badge format (default: pdf)' })
+  @ApiResponse({ status: 200, description: 'Badge downloaded successfully' })
+  async downloadBadge(
+    @Param('eventId') eventId: string,
+    @Param('id') registrationId: string,
+    @Query('format') format: 'pdf' | 'image' | 'html' = 'pdf',
+    @Request() req,
+    @Res() res: Response,
+  ) {
+    const allowAny = req.user.role === 'SUPER_ADMIN' || req.user.permissions?.some((p: string) =>
+      p.endsWith(':any')
+    );
+    const orgId = allowAny ? null : req.user.org_id;
+    const scope = resolveRegistrationReadScope(req.user);
+    
+    return this.registrationsService.downloadBadge(
+      eventId, 
+      registrationId, 
+      format,
+      {
+        scope,
+        orgId,
+      },
+      res
+    );
   }
 }

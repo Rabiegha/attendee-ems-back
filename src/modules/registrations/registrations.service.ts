@@ -5,7 +5,9 @@ import {
   ForbiddenException,
   BadRequestException,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { PrismaService } from '../../infra/db/prisma.service';
+import { BadgeGenerationService } from '../badge-generation/badge-generation.service';
 import { ListRegistrationsDto } from './dto/list-registrations.dto';
 import { CreateRegistrationDto } from './dto/create-registration.dto';
 import { UpdateRegistrationStatusDto } from './dto/update-registration-status.dto';
@@ -22,7 +24,10 @@ interface RegistrationQueryContext {
 
 @Injectable()
 export class RegistrationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly badgeGenerationService: BadgeGenerationService,
+  ) {}
 
   /**
    * List registrations for an event with filters and pagination
@@ -819,7 +824,7 @@ export class RegistrationsService {
   /**
    * Generate badges for all registrations in an event
    */
-  async generateBadgesForEvent(eventId: string, orgId: string) {
+  async generateBadgesForEvent(eventId: string, orgId: string | null) {
     // 1. Récupérer l'événement avec son template de badge
     const whereClause: any = { id: eventId };
     if (orgId) {
@@ -872,57 +877,18 @@ export class RegistrationsService {
       };
     }
 
-    // 3. Générer les badges pour chaque registration
-    const template = event.settings.badgeTemplate;
+    // 3. Générer les badges pour chaque registration avec PDF et image
     let generatedCount = 0;
 
     for (const registration of registrations) {
-      // Remplacer les variables dans le HTML
-      let html = template.html || '';
-      const variables = {
-        full_name: `${registration.attendee?.first_name || ''} ${registration.attendee?.last_name || ''}`.trim(),
-        first_name: registration.attendee?.first_name || '',
-        last_name: registration.attendee?.last_name || '',
-        email: registration.attendee?.email || '',
-        company: registration.attendee?.company || '',
-        job_title: registration.attendee?.job_title || '',
-        event_name: event.name,
-        attendee_type: registration.eventAttendeeType?.attendeeType?.name || '',
-      };
-
-      Object.entries(variables).forEach(([key, value]) => {
-        const regex = new RegExp(`{{${key}}}`, 'gi');
-        html = html.replace(regex, value);
-      });
-
-      // Créer ou mettre à jour le badge
-      await this.prisma.badge.upsert({
-        where: {
-          registration_id: registration.id,
-        },
-        create: {
-          org_id: event.org_id, // Use event's org_id
-          event_id: eventId,
-          registration_id: registration.id,
-          badge_template_id: template.id,
-          html_snapshot: html,
-          css_snapshot: template.css,
-          data_snapshot: variables,
-          status: 'completed',
-          generated_at: new Date(),
-        },
-        update: {
-          badge_template_id: template.id,
-          html_snapshot: html,
-          css_snapshot: template.css,
-          data_snapshot: variables,
-          status: 'completed',
-          generated_at: new Date(),
-          updated_at: new Date(),
-        },
-      });
-
-      generatedCount++;
+      try {
+        // Utiliser le service de génération complet qui génère PDF + image + met à jour les URLs
+        await this.badgeGenerationService.generateBadge(registration.id, event.org_id);
+        generatedCount++;
+      } catch (error) {
+        // Log l'erreur mais continue avec les autres
+        console.error(`Erreur génération badge pour registration ${registration.id}:`, error);
+      }
     }
 
     return {
@@ -938,7 +904,7 @@ export class RegistrationsService {
   async generateBadgesBulk(
     eventId: string,
     registrationIds: string[],
-    orgId: string,
+    orgId: string | null,
   ) {
     // 1. Récupérer l'événement avec son template
     const whereClause: any = { id: eventId };
@@ -968,12 +934,19 @@ export class RegistrationsService {
     }
 
     // 2. Récupérer les registrations sélectionnées
+    const registrationWhere: any = {
+      id: { in: registrationIds },
+      event_id: eventId,
+    };
+    
+    // Pour SUPER_ADMIN (orgId = null), on ne filtre pas par org_id
+    // Pour les autres rôles, on filtre par l'org_id de l'événement
+    if (orgId !== null) {
+      registrationWhere.org_id = event.org_id;
+    }
+    
     const registrations = await this.prisma.registration.findMany({
-      where: {
-        id: { in: registrationIds },
-        event_id: eventId,
-        org_id: event.org_id, // Use event's org_id
-      },
+      where: registrationWhere,
       include: {
         attendee: true,
         eventAttendeeType: {
@@ -1049,9 +1022,116 @@ export class RegistrationsService {
   /**
    * Generate badge for a single registration
    */
-  async generateBadge(eventId: string, registrationId: string, orgId: string) {
-    // Utiliser la méthode bulk avec un seul ID
-    return this.generateBadgesBulk(eventId, [registrationId], orgId);
+  async generateBadge(eventId: string, registrationId: string, orgId: string | null) {
+    // Utiliser le BadgeGenerationService pour la génération réelle des badges avec PDF/images
+    return this.badgeGenerationService.generateBadge(registrationId, orgId);
+  }
+
+  /**
+   * Download badge in specified format (PDF, Image, or HTML)
+   */
+  async downloadBadge(
+    eventId: string,
+    registrationId: string,
+    format: 'pdf' | 'image' | 'html',
+    context: RegistrationQueryContext,
+    res: Response,
+  ) {
+    const { scope, orgId } = context;
+    
+    // Vérifier que l'inscription existe et est accessible
+    const whereClause: any = { 
+      id: registrationId,
+      event_id: eventId,
+    };
+    
+    if (orgId) {
+      whereClause.org_id = orgId;
+    }
+
+    const registration = await this.prisma.registration.findFirst({
+      where: whereClause,
+      include: {
+        event: {
+          include: {
+            settings: {
+              include: {
+                badgeTemplate: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!registration) {
+      throw new NotFoundException('Inscription non trouvée');
+    }
+
+    const event = registration.event;
+    if (!event) {
+      throw new NotFoundException('Événement non trouvé');
+    }
+
+    const badgeTemplate = event.settings?.badgeTemplate;
+    if (!badgeTemplate) {
+      throw new NotFoundException('Aucun template de badge configuré pour cet événement');
+    }
+
+    // Générer et télécharger le badge selon le format demandé
+    if (format === 'html') {
+      // Pour HTML, générer le badge et extraire le HTML
+      const result = await this.badgeGenerationService.generateBadge(
+        registration.id,
+        orgId,
+      );
+
+      if (!result.success) {
+        throw new BadRequestException('Échec de la génération du badge HTML');
+      }
+
+      // Récupérer le HTML généré
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Badge - ${registration.snapshot_first_name} ${registration.snapshot_last_name}</title>
+          <style>${badgeTemplate.css || ''}</style>
+        </head>
+        <body>
+          ${badgeTemplate.html || ''}
+        </body>
+        </html>
+      `;
+      
+      res.setHeader('Content-Type', 'text/html');
+      res.setHeader('Content-Disposition', `attachment; filename="badge-${registration.id}.html"`);
+      return res.send(htmlContent);
+    } else {
+      // Pour PDF et image, vérifier d'abord si un badge existe
+      let badge = await this.prisma.badge.findFirst({
+        where: { registration_id: registrationId },
+        include: { badgeTemplate: true }
+      });
+
+      // Si pas de badge ou si la génération a échoué, générer un nouveau badge
+      if (!badge || badge.status !== 'completed' || !badge.pdf_url) {
+        badge = await this.badgeGenerationService.generateBadge(
+          registration.id,
+          orgId,
+        );
+      }
+
+      // Récupérer l'URL selon le format demandé
+      const badgeUrl = format === 'pdf' ? badge.pdf_url : badge.image_url;
+      
+      if (badgeUrl) {
+        // Rediriger vers l'URL publique du badge
+        return res.redirect(badgeUrl);
+      } else {
+        throw new NotFoundException(`URL du badge ${format} non disponible`);
+      }
+    }
   }
 
   /**

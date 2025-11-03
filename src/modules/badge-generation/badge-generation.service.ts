@@ -22,11 +22,16 @@ export class BadgeGenerationService {
       this.logger.log('Initializing Puppeteer browser...');
       this.browser = await puppeteer.launch({
         headless: true,
+        executablePath: '/usr/bin/chromium-browser',
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
           '--disable-dev-shm-usage',
           '--disable-gpu',
+          '--disable-extensions',
+          '--disable-background-timer-throttling',
+          '--disable-backgrounding-occluded-windows',
+          '--disable-renderer-backgrounding',
         ],
       });
     }
@@ -66,16 +71,29 @@ export class BadgeGenerationService {
    */
   async generateBadge(
     registrationId: string,
-    orgId: string,
+    orgId: string | null,
     userId?: string,
   ): Promise<any> {
     try {
       // 1. Récupérer l'inscription avec ses relations
+      const whereClause: any = { 
+        id: registrationId,
+      };
+      
+      // Pour SUPER_ADMIN (orgId = null), on ne filtre pas par org_id
+      // Pour les autres rôles, on filtre par org_id pour la sécurité
+      if (orgId !== null) {
+        whereClause.org_id = orgId;
+      }
+
+      this.logger.log(`🔍 BADGE DEBUG: Searching registration with:`, {
+        registrationId,
+        orgId,
+        whereClause,
+      });
+
       const registration = await this.prisma.registration.findFirst({
-        where: { 
-          id: registrationId,
-          org_id: orgId,
-        },
+        where: whereClause,
         include: {
           attendee: true,
           event: true,
@@ -95,22 +113,48 @@ export class BadgeGenerationService {
       // 2. Déterminer le template à utiliser
       let badgeTemplate = registration.badgeTemplate;
 
-      // Si pas de template sur la registration, chercher le template par défaut de l'event
+      // Si pas de template sur la registration, chercher le template configuré dans l'event
       if (!badgeTemplate) {
-        badgeTemplate = await this.prisma.badgeTemplate.findFirst({
-          where: {
-            org_id: orgId,
+        // D'abord, chercher le template configuré dans les settings de l'événement
+        const eventSettingsWhere: any = {
+          event_id: registration.event_id,
+        };
+        
+        if (orgId) {
+          eventSettingsWhere.org_id = orgId;
+        }
+
+        const eventSettings = await this.prisma.eventSetting.findFirst({
+          where: eventSettingsWhere,
+          include: {
+            badgeTemplate: true,
+          },
+        });
+
+        if (eventSettings?.badgeTemplate) {
+          badgeTemplate = eventSettings.badgeTemplate;
+        } else {
+          // Sinon, chercher le template par défaut de l'org
+          const templateWhere: any = {
             is_active: true,
             is_default: true,
             OR: [
               { event_id: registration.event_id },
               { event_id: null },
             ],
-          },
-          orderBy: [
-            { event_id: 'desc' }, // Prioriser les templates spécifiques à l'event
-          ],
-        });
+          };
+          
+          if (orgId) {
+            templateWhere.org_id = orgId;
+          }
+
+          badgeTemplate = await this.prisma.badgeTemplate.findFirst({
+            where: templateWhere,
+            orderBy: [
+              { event_id: 'desc' }, // Prioriser les templates spécifiques à l'event
+            ],
+          });
+        }
       }
 
       if (!badgeTemplate) {
@@ -281,7 +325,7 @@ export class BadgeGenerationService {
    */
   async generateBulk(
     eventId: string,
-    orgId: string,
+    orgId: string | null,
     userId?: string,
     filters?: {
       attendeeTypeId?: string;
@@ -294,17 +338,26 @@ export class BadgeGenerationService {
     results: any[];
   }> {
     // Récupérer toutes les inscriptions de l'événement
+    const whereClause: any = {
+      event_id: eventId,
+    };
+    
+    // Pour SUPER_ADMIN (orgId = null), on ne filtre pas par org_id
+    // Pour les autres rôles, on filtre par org_id pour la sécurité
+    if (orgId !== null) {
+      whereClause.org_id = orgId;
+    }
+    
+    if (filters?.attendeeTypeId) {
+      whereClause.attendee_type_id = filters.attendeeTypeId;
+    }
+    
+    if (filters?.status) {
+      whereClause.status = filters.status as any;
+    }
+
     const registrations = await this.prisma.registration.findMany({
-      where: {
-        event_id: eventId,
-        org_id: orgId,
-        ...(filters?.attendeeTypeId && {
-          attendee_type_id: filters.attendeeTypeId,
-        }),
-        ...(filters?.status && {
-          status: filters.status as any,
-        }),
-      },
+      where: whereClause,
       select: {
         id: true,
       },
@@ -431,6 +484,89 @@ export class BadgeGenerationService {
     });
 
     return badge; // Peut être null si pas encore généré
+  }
+
+  /**
+   * Génère un badge de test avec un template et des données fictives
+   */
+  async generateTestBadge(
+    templateId: string,
+    testData: Record<string, any>,
+    orgId: string,
+    userId?: string,
+  ): Promise<{ pdf_url: string; test_data: Record<string, any> }> {
+    // 1. Récupérer le template
+    const badgeTemplate = await this.prisma.badgeTemplate.findFirst({
+      where: {
+        id: templateId,
+        org_id: orgId,
+        is_active: true,
+      },
+    });
+
+    if (!badgeTemplate) {
+      throw new NotFoundException('Badge template not found');
+    }
+
+    // 2. Générer le HTML final avec variables remplacées
+    const htmlContent = this.replaceVariables(badgeTemplate.html || '', testData);
+    const cssContent = badgeTemplate.css || '';
+
+    // HTML complet pour Puppeteer
+    const fullHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { 
+              width: ${badgeTemplate.width}px; 
+              height: ${badgeTemplate.height}px;
+              overflow: hidden;
+            }
+            ${cssContent}
+          </style>
+        </head>
+        <body>
+          ${htmlContent}
+        </body>
+      </html>
+    `;
+
+    // 3. Générer le PDF avec Puppeteer
+    const browser = await this.getBrowser();
+    const page = await browser.newPage();
+    
+    await page.setViewport({
+      width: badgeTemplate.width,
+      height: badgeTemplate.height,
+      deviceScaleFactor: 2,
+    });
+
+    await page.setContent(fullHtml, {
+      waitUntil: 'networkidle0',
+    });
+
+    const pdfBuffer = await page.pdf({
+      width: `${badgeTemplate.width}px`,
+      height: `${badgeTemplate.height}px`,
+      printBackground: true,
+      preferCSSPageSize: true,
+    });
+
+    await page.close();
+
+    // 4. Upload du PDF sur Cloudflare R2 avec nom de test
+    const testKey = `test-${templateId}-${Date.now()}`;
+    const pdfUrl = await this.r2Service.uploadBadgePdf(testKey, Buffer.from(pdfBuffer));
+
+    this.logger.log(`Test badge generated for template ${templateId}: ${pdfUrl}`);
+
+    return {
+      pdf_url: pdfUrl,
+      test_data: testData,
+    };
   }
 
   /**
