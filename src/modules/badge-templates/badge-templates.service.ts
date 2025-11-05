@@ -190,17 +190,38 @@ export class BadgeTemplatesService {
   async remove(id: string, orgId: string) {
     const template = await this.findOne(id, orgId);
 
-    // Vérifier si le template est utilisé
-    if (template.usage_count > 0) {
+    // Vérifier si le template est utilisé dans EventSettings
+    const usedInSettings = await this.prisma.eventSetting.count({
+      where: {
+        badge_template_id: id,
+        org_id: orgId,
+      },
+    });
+
+    if (usedInSettings > 0) {
       throw new BadRequestException(
-        `Ce template est utilisé par ${template.usage_count} badge(s) et ne peut pas être supprimé`,
+        `Ce template est assigné à ${usedInSettings} événement(s). Veuillez d'abord le retirer de ces événements.`,
       );
+    }
+
+    // Vérifier si le template est utilisé dans des badges générés
+    const usedInBadges = await this.prisma.badge.count({
+      where: {
+        badge_template_id: id,
+        org_id: orgId,
+      },
+    });
+
+    if (usedInBadges > 0) {
+      this.logger.warn(`Template ${id} has ${usedInBadges} generated badges but will be deleted`);
+      // On permet la suppression même si des badges existent, car ils gardent le PDF/Image
     }
 
     await this.prisma.badgeTemplate.delete({
       where: { id },
     });
 
+    this.logger.log(`Template ${id} deleted successfully`);
     return { message: 'Template supprimé avec succès' };
   }
 
@@ -306,6 +327,63 @@ export class BadgeTemplatesService {
         usage_count: { increment: 1 },
       },
     });
+  }
+
+  /**
+   * Récupérer le template de badge approprié pour un événement
+   * Ordre de priorité:
+   * 1. Template assigné à l'événement (via EventSettings.badge_template_id)
+   * 2. Template par défaut de l'organisation (is_default = true)
+   * 3. Premier template actif de l'organisation
+   */
+  async getTemplateForEvent(eventId: string, orgId: string) {
+    // 1. Vérifier si un template est assigné à l'événement
+    const eventSettings = await this.prisma.eventSetting.findFirst({
+      where: {
+        event_id: eventId,
+        org_id: orgId,
+      },
+      include: {
+        badgeTemplate: true,
+      },
+    });
+
+    if (eventSettings?.badgeTemplate && eventSettings.badgeTemplate.is_active) {
+      this.logger.log(`Using event-specific template: ${eventSettings.badgeTemplate.name}`);
+      return eventSettings.badgeTemplate;
+    }
+
+    // 2. Chercher le template par défaut de l'organisation
+    const defaultTemplate = await this.prisma.badgeTemplate.findFirst({
+      where: {
+        org_id: orgId,
+        is_default: true,
+        is_active: true,
+      },
+    });
+
+    if (defaultTemplate) {
+      this.logger.log(`Using default template: ${defaultTemplate.name}`);
+      return defaultTemplate;
+    }
+
+    // 3. Prendre le premier template actif
+    const firstTemplate = await this.prisma.badgeTemplate.findFirst({
+      where: {
+        org_id: orgId,
+        is_active: true,
+      },
+      orderBy: {
+        created_at: 'asc',
+      },
+    });
+
+    if (firstTemplate) {
+      this.logger.log(`Using first active template: ${firstTemplate.name}`);
+      return firstTemplate;
+    }
+
+    return null;
   }
 
   /**

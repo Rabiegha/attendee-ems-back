@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, InternalServerErrorException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../infra/db/prisma.service';
 import { R2Service } from '../../infra/storage/r2.service';
+import { BadgeTemplatesService } from '../badge-templates/badge-templates.service';
 import puppeteer, { Browser } from 'puppeteer';
 import { BadgeStatus } from '@prisma/client';
 
@@ -12,6 +13,7 @@ export class BadgeGenerationService {
   constructor(
     private prisma: PrismaService,
     private r2Service: R2Service,
+    private badgeTemplatesService: BadgeTemplatesService,
   ) {}
 
   /**
@@ -152,51 +154,30 @@ export class BadgeGenerationService {
         throw new NotFoundException('Registration not found');
       }
 
-      // 2. Déterminer le template à utiliser
-      let badgeTemplate = registration.badgeTemplate;
-
-      // Si pas de template sur la registration, chercher le template configuré dans l'event
-      if (!badgeTemplate) {
-        // D'abord, chercher le template configuré dans les settings de l'événement
-        const eventSettingsWhere: any = {
-          event_id: registration.event_id,
+            // 2. Récupérer le template de badge approprié
+      let badgeTemplate = null;
+      
+      if (registration.badge_template_id) {
+        // Si un template est déjà assigné à la registration, l'utiliser
+        const templateWhere: any = {
+          id: registration.badge_template_id,
+          is_active: true,
         };
         
         if (orgId) {
-          eventSettingsWhere.org_id = orgId;
+          templateWhere.org_id = orgId;
         }
 
-        const eventSettings = await this.prisma.eventSetting.findFirst({
-          where: eventSettingsWhere,
-          include: {
-            badgeTemplate: true,
-          },
-        });
-
-        if (eventSettings?.badgeTemplate) {
-          badgeTemplate = eventSettings.badgeTemplate;
-        } else {
-          // Sinon, chercher le template par défaut de l'org
-          const templateWhere: any = {
-            is_active: true,
-            is_default: true,
-            OR: [
-              { event_id: registration.event_id },
-              { event_id: null },
-            ],
-          };
-          
-          if (orgId) {
-            templateWhere.org_id = orgId;
-          }
-
-          badgeTemplate = await this.prisma.badgeTemplate.findFirst({
-            where: templateWhere,
-            orderBy: [
-              { event_id: 'desc' }, // Prioriser les templates spécifiques à l'event
-            ],
-          });
-        }
+        badgeTemplate = await this.badgeTemplatesService.findOne(
+          registration.badge_template_id,
+          orgId || registration.org_id,
+        );
+      } else {
+        // Sinon, utiliser la nouvelle fonction pour récupérer le bon template
+        badgeTemplate = await this.badgeTemplatesService.getTemplateForEvent(
+          registration.event_id,
+          orgId || registration.org_id,
+        );
       }
 
       if (!badgeTemplate) {
@@ -259,6 +240,8 @@ export class BadgeGenerationService {
           data: {
             status: BadgeStatus.generating,
             error_message: null,
+            badge_template_id: badgeTemplate.id, // Mettre à jour le template lors de la régénération
+            badge_data: badgeData, // Mettre à jour les données aussi
           },
         });
       } else {
@@ -295,7 +278,15 @@ export class BadgeGenerationService {
         width: `${badgeTemplate.width}px`,
         height: `${badgeTemplate.height}px`,
         printBackground: true,
-        preferCSSPageSize: true,
+        preferCSSPageSize: false, // Désactiver pour forcer nos dimensions
+        scale: 1, // Échelle 1:1
+        pageRanges: '1', // Forcer uniquement la première page
+        margin: {
+          top: 0,
+          right: 0,
+          bottom: 0,
+          left: 0,
+        },
       });
 
       // Générer aussi une image PNG
@@ -618,7 +609,15 @@ export class BadgeGenerationService {
       width: `${badgeTemplate.width}px`,
       height: `${badgeTemplate.height}px`,
       printBackground: true,
-      preferCSSPageSize: true,
+      preferCSSPageSize: false, // Désactiver pour forcer nos dimensions
+      scale: 1, // Échelle 1:1
+      pageRanges: '1', // Forcer uniquement la première page
+      margin: {
+        top: 0,
+        right: 0,
+        bottom: 0,
+        left: 0,
+      },
     });
 
     await page.close();

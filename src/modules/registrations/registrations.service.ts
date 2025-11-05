@@ -305,8 +305,10 @@ export class RegistrationsService {
         }
       }
 
-      // Determine status based on auto-approve setting
-      const status = event.settings?.registration_auto_approve ? 'approved' : 'awaiting';
+      // Determine status based on auto-approve setting or source
+      // Mobile registrations are always auto-approved
+      const isMobileRegistration = dto.source === 'mobile_app';
+      const status = (event.settings?.registration_auto_approve || isMobileRegistration) ? 'approved' : 'awaiting';
       const confirmedAt = status === 'approved' ? new Date() : null;
 
       // Create registration with snapshot of attendee data
@@ -324,6 +326,9 @@ export class RegistrationsService {
           
           // Source de l'inscription
           source: dto.source || 'public_form',
+          
+          // Comment from mobile app
+          comment: dto.comment,
           
           // Snapshot des données de l'attendee au moment de l'inscription
           snapshot_first_name: attendee.first_name,
@@ -1076,33 +1081,47 @@ export class RegistrationsService {
       throw new NotFoundException('Événement non trouvé');
     }
 
-    const badgeTemplate = event.settings?.badgeTemplate;
-    if (!badgeTemplate) {
-      throw new NotFoundException('Aucun template de badge configuré pour cet événement');
+    // Vérifier d'abord si un badge existe déjà
+    let badge = await this.prisma.badge.findFirst({
+      where: { registration_id: registrationId },
+      include: { badgeTemplate: true }
+    });
+
+    // Si pas de badge ou si la génération a échoué, générer un nouveau badge
+    if (!badge || badge.status !== 'completed' || !badge.pdf_url || !badge.image_url) {
+      badge = await this.badgeGenerationService.generateBadge(
+        registration.id,
+        orgId,
+      );
     }
 
     // Générer et télécharger le badge selon le format demandé
     if (format === 'html') {
-      // Pour HTML, générer le badge et extraire le HTML
-      const result = await this.badgeGenerationService.generateBadge(
-        registration.id,
-        orgId,
-      );
-
-      if (!result.success) {
-        throw new BadRequestException('Échec de la génération du badge HTML');
-      }
-
-      // Récupérer le HTML généré
+      // Récupérer les dimensions du template
+      const width = badge.badgeTemplate?.width || 400;
+      const height = badge.badgeTemplate?.height || 600;
+      
+      // Récupérer le HTML généré depuis le badge avec les variables remplies
+      // Important : on garde le HTML exact tel que généré par GrapesJS pour préserver le positionnement
       const htmlContent = `
         <!DOCTYPE html>
         <html>
         <head>
+          <meta charset="UTF-8">
+          <meta name="badge-width" content="${width}">
+          <meta name="badge-height" content="${height}">
           <title>Badge - ${registration.snapshot_first_name} ${registration.snapshot_last_name}</title>
-          <style>${badgeTemplate.css || ''}</style>
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            html, body { 
+              width: ${width}px; 
+              height: ${height}px; 
+            }
+            ${badge.css_snapshot || badge.badgeTemplate?.css || ''}
+          </style>
         </head>
         <body>
-          ${badgeTemplate.html || ''}
+          ${badge.html_snapshot || badge.badgeTemplate?.html || ''}
         </body>
         </html>
       `;
@@ -1111,19 +1130,6 @@ export class RegistrationsService {
       res.setHeader('Content-Disposition', `attachment; filename="badge-${registration.id}.html"`);
       return res.send(htmlContent);
     } else {
-      // Pour PDF et image, vérifier d'abord si un badge existe
-      let badge = await this.prisma.badge.findFirst({
-        where: { registration_id: registrationId },
-        include: { badgeTemplate: true }
-      });
-
-      // Si pas de badge ou si la génération a échoué, générer un nouveau badge
-      if (!badge || badge.status !== 'completed' || !badge.pdf_url || !badge.image_url) {
-        badge = await this.badgeGenerationService.generateBadge(
-          registration.id,
-          orgId,
-        );
-      }
 
       // Récupérer l'URL selon le format demandé
       const badgeUrl = format === 'pdf' ? badge.pdf_url : badge.image_url;

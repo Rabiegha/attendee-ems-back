@@ -607,6 +607,9 @@ model Registration {
   checked_in_at           DateTime? @map("checked_in_at")
   checked_in_by           String?   @db.Uuid @map("checked_in_by")
   checkin_location        Json?     @map("checkin_location") // { lat, lng }
+  
+  // Comment from mobile app during registration
+  comment                 String?   @db.Text @map("comment")
 
   // Relations
   event                   Event @relation(fields: [event_id, org_id], references: [id, org_id], onDelete: Cascade, onUpdate: NoAction)
@@ -637,6 +640,7 @@ enum RegistrationSource {
   test_form    // Inscription via formulaire de test (fake)
   manual       // Créée manuellement par un admin
   import       // Importée via Excel
+  mobile_app   // Créée depuis l'app mobile
 }
 
 // ===== Badges =====

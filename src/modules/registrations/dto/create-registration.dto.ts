@@ -4,6 +4,7 @@ import {
   IsOptional,
   IsUUID,
   ValidateNested,
+  IsString,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
@@ -20,6 +21,7 @@ export enum RegistrationSourceDto {
   TEST_FORM = 'test_form',
   MANUAL = 'manual',
   IMPORT = 'import',
+  MOBILE_APP = 'mobile_app',
 }
 
 export class CreateRegistrationDto {
@@ -50,4 +52,9 @@ export class CreateRegistrationDto {
   @IsOptional()
   @IsEnum(RegistrationSourceDto)
   source?: RegistrationSourceDto;
+
+  @ApiPropertyOptional({ description: 'Optional comment from mobile app' })
+  @IsOptional()
+  @IsString()
+  comment?: string;
 }
