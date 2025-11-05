@@ -1,4 +1,5 @@
 import { IsString, IsOptional, IsArray, IsObject, IsNumber, IsBoolean } from 'class-validator';
+import { BadgeDesignData } from '../../badge-templates/interfaces/badge-design.interface';
 
 export class CreateBadgeTemplateDto {
   @IsString()
@@ -33,7 +34,7 @@ export class CreateBadgeTemplateDto {
 
   @IsOptional()
   @IsObject()
-  template_data?: any;
+  template_data?: BadgeDesignData;
 
   @IsOptional()
   @IsArray()
@@ -79,7 +80,7 @@ export class UpdateBadgeTemplateDto {
 
   @IsOptional()
   @IsObject()
-  template_data?: any;
+  template_data?: BadgeDesignData;
 
   @IsOptional()
   @IsArray()

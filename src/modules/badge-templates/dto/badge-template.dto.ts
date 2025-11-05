@@ -10,6 +10,7 @@ import {
   Max,
   MaxLength,
 } from 'class-validator';
+import { BadgeDesignData } from '../interfaces/badge-design.interface';
 
 export class CreateBadgeTemplateDto {
   @ApiProperty({ example: 'Badge VIP', description: 'Nom du template' })
@@ -62,11 +63,15 @@ export class CreateBadgeTemplateDto {
   height?: number = 600;
 
   @ApiPropertyOptional({ 
-    example: { blocks: [], styles: [] },
-    description: 'Données GrapesJS complètes pour ré-édition' 
+    example: { 
+      dimensions: { width: 400, height: 600 },
+      elements: [],
+      variables: [] 
+    },
+    description: 'Données de design de badge custom pour ré-édition' 
   })
   @IsOptional()
-  template_data?: any;
+  template_data?: BadgeDesignData;
 
   @ApiPropertyOptional({ 
     example: ['attendee_name', 'company', 'qrcode'],
@@ -126,7 +131,7 @@ export class UpdateBadgeTemplateDto {
   @ApiPropertyOptional()
   @IsObject()
   @IsOptional()
-  template_data?: any;
+  template_data?: BadgeDesignData;
 
   @ApiPropertyOptional()
   @IsOptional()

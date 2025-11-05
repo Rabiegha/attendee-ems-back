@@ -8,6 +8,7 @@ import { InvitationModule } from '../modules/invitation/invitation.module';
 import { AttendeesModule } from '../modules/attendees/attendees.module';
 import { EventsModule } from '../modules/events/events.module';
 import { RegistrationsModule } from '../modules/registrations/registrations.module';
+import { BadgeTemplatesModule } from '../modules/badge-templates/badge-templates.module';
 
 export const appRoutes: Routes = [
   {
@@ -48,6 +49,10 @@ export const appRoutes: Routes = [
       {
         path: 'registrations',
         module: RegistrationsModule,
+      },
+      {
+        path: 'badge-templates',
+        module: BadgeTemplatesModule,
       },
     ],
   },

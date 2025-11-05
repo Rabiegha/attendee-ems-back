@@ -101,10 +101,10 @@ export class BadgeGenerationController {
   }
 
   /**
-   * POST /badges/:id/regenerate
+   * POST /badge/:id/regenerate
    * Régénère un badge existant
    */
-  @Post('badges/:id/regenerate')
+  @Post('badge/:id/regenerate')
   @Permissions('badges.update:org')
   async regenerateBadge(
     @Param('id') badgeId: string,
@@ -126,10 +126,10 @@ export class BadgeGenerationController {
   }
 
   /**
-   * GET /badges/:id
+   * GET /badge/:id
    * Récupère les infos d'un badge
    */
-  @Get('badges/:id')
+  @Get('badge/:id')
   @Permissions('badges.read:org')
   async getBadge(
     @Param('id') badgeId: string,
@@ -198,10 +198,10 @@ export class BadgeGenerationController {
   }
 
   /**
-   * DELETE /badges/:id
+   * DELETE /badge/:id
    * Supprime un badge
    */
-  @Delete('badges/:id')
+  @Delete('badge/:id')
   @Permissions('badges.delete:org')
   async deleteBadge(
     @Param('id') badgeId: string,
