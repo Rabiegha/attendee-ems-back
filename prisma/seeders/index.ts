@@ -1,9 +1,10 @@
-import { disconnectPrisma, logSuccess, logError, logInfo } from './utils';
+import { disconnectPrisma, logSuccess, logError, logInfo, prisma } from './utils';
 import { seedOrganizations, getOrganizationBySlug } from './organizations.seeder';
 import { seedRoles, getRoleByCode } from './roles.seeder';
 import { seedPermissions, assignAllRolePermissions } from './permissions.seeder';
 import { seedUsers } from './users.seeder';
 import { seedEvents } from './events.seeder';
+import { seedBadgeTemplates } from './badge-templates.seeder';
 import { seedAttendeesAndRegistrations } from './attendees.seeder';
 import { seedAttendeeTypes } from './attendee-types.seeder';
 import { seedEventAttendeeTypes } from './event-attendee-types.seeder';
@@ -73,6 +74,10 @@ async function runAllSeeders() {
     // 7. Seed Events
     logInfo('Seeding events...');
     const events = await seedEvents();
+    
+    // 7.5. Seed Badge Templates
+    logInfo('Seeding badge templates...');
+    await seedBadgeTemplates(prisma);
     
     // 8. Seed Attendees and Registrations
     logInfo('Seeding attendees and registrations...');

@@ -437,19 +437,19 @@ const permissionsData: PermissionSeedData[] = [
   // ==================== ROLES & PERMISSIONS ====================
   { 
     code: 'roles.read',
-    scope: 'none',
+    scope: 'org',
     name: 'Read roles', 
     description: 'View role information' 
   },
   { 
     code: 'roles.manage',
-    scope: 'none',
+    scope: 'org',
     name: 'Manage roles & permissions', 
     description: 'Access role management page and modify role permissions (ADMIN+ only)' 
   },
   { 
     code: 'roles.assign',
-    scope: 'none',
+    scope: 'org',
     name: 'Assign roles', 
     description: 'Assign roles to users (ADMIN cannot change own role)' 
   },
@@ -715,6 +715,12 @@ export const rolePermissionMapping: Record<string, string[]> = {
     'registrations.read:org',
     'registrations.create:org',
     'registrations.import:org',
+    
+    // Badges - MANAGER peut gérer les badges
+    'badges.read:org',
+    'badges.create:org',
+    'badges.update:org',
+    'badges.delete:org',
     
     // Roles - Peut voir et assigner des rôles (≤ MANAGER seulement, guard backend)
     'roles.read',
