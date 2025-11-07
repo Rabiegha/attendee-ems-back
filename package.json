@@ -23,6 +23,7 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
+    "db:migrate:docker": "docker-compose -f docker-compose.dev.yml run --rm migrate",
     "db:migrate:reset": "prisma migrate reset",
     "db:seed": "prisma db seed",
     "db:seed:orgs": "ts-node scripts/seed-specific.ts organizations",

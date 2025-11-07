@@ -16,12 +16,13 @@ export enum AttendanceType {
   HYBRID = 'hybrid',
 }
 
+// Aligné avec le enum Prisma RegistrationSource
 export enum RegistrationSourceDto {
-  PUBLIC_FORM = 'public_form',
-  TEST_FORM = 'test_form',
-  MANUAL = 'manual',
-  IMPORT = 'import',
-  MOBILE_APP = 'mobile_app',
+  public_form = 'public_form',
+  test_form = 'test_form',
+  manual = 'manual',
+  import = 'import',
+  mobile_app = 'mobile_app',
 }
 
 export class CreateRegistrationDto {
