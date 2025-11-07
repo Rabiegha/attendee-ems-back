@@ -29,6 +29,9 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    # Limites de ressources pour Chromium/Puppeteer
+    mem_limit: 2g
+    mem_reservation: 1g
     command: npm run start:dev
 
   # Service utilitaire pour exécuter migrations/seeders en dev

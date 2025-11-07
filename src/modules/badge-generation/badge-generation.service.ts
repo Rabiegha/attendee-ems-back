@@ -4,6 +4,7 @@ import { R2Service } from '../../infra/storage/r2.service';
 import { BadgeTemplatesService } from '../badge-templates/badge-templates.service';
 import puppeteer, { Browser } from 'puppeteer';
 import { BadgeStatus } from '@prisma/client';
+import * as QRCode from 'qrcode';
 
 @Injectable()
 export class BadgeGenerationService {
@@ -40,6 +41,20 @@ export class BadgeGenerationService {
         ],
       };
 
+      // Vérifier si PUPPETEER_EXECUTABLE_PATH est défini (Docker/Production)
+      if (process.env.PUPPETEER_EXECUTABLE_PATH) {
+        this.logger.log(`Using Chromium from env: ${process.env.PUPPETEER_EXECUTABLE_PATH}`);
+        browserOptions.executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+        try {
+          this.browser = await puppeteer.launch(browserOptions);
+          this.logger.log('✅ Browser launched successfully with env path');
+          return this.browser;
+        } catch (error) {
+          this.logger.error('❌ Failed to launch with env path:', error.message);
+          // Continue vers auto-détection
+        }
+      }
+
       // Essayer de détecter le chemin du navigateur automatiquement
       try {
         // Laisser Puppeteer détecter automatiquement le navigateur
@@ -49,14 +64,19 @@ export class BadgeGenerationService {
       } catch (autoError) {
         this.logger.warn('Auto-detection failed, trying with explicit paths...', autoError.message);
         
-        // Essayer différents chemins communs
+        // Essayer différents chemins communs (Windows en dev, Linux en prod)
         const possiblePaths = [
+          // Windows (développement local)
+          'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+          'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+          // Linux (production Docker/Ubuntu)
           '/usr/bin/chromium-browser',
           '/usr/bin/chromium',
           '/usr/bin/google-chrome',
           '/usr/bin/google-chrome-stable',
           '/opt/google/chrome/chrome',
-          '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', // macOS
+          // macOS
+          '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
         ];
 
         for (const path of possiblePaths) {
@@ -108,6 +128,126 @@ export class BadgeGenerationService {
     result = result.replace(/{{[^}]+}}/g, '');
     
     return result;
+  }
+
+  /**
+   * Génère un QR Code en base64 à partir de données
+   */
+  private async generateQRCode(data: string): Promise<string> {
+    try {
+      // Générer le QR Code en Data URL (base64)
+      const qrCodeDataUrl = await QRCode.toDataURL(data, {
+        errorCorrectionLevel: 'M',
+        type: 'image/png',
+        width: 500, // Taille suffisante pour une bonne qualité
+        margin: 1,
+        color: {
+          dark: '#000000',
+          light: '#FFFFFF',
+        },
+      });
+      
+      return qrCodeDataUrl;
+    } catch (error) {
+      this.logger.error(`Error generating QR Code: ${error.message}`);
+      // Retourner un QR Code vide en cas d'erreur
+      return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+    }
+  }
+
+  /**
+   * Génère le HTML et CSS depuis template_data si html/css sont vides
+   */
+  private generateHTMLFromTemplateData(badgeTemplate: any): { html: string; css: string } {
+    try {
+      const templateData = badgeTemplate.template_data as any;
+      
+      if (!templateData || !templateData.elements) {
+        this.logger.warn('No elements found in template_data');
+        return { html: '', css: '' };
+      }
+
+      const elements = templateData.elements;
+      const background = templateData.background;
+      const format = templateData.format || { width: 400, height: 600 };
+      
+      // Generate HTML
+      let html = '<div class="badge-container">\n';
+      
+      elements.forEach((el: any) => {
+        if (el.type === 'text') {
+          const content = el.content || '';
+          html += `  <div class="element element-${el.id}">${content}</div>\n`;
+        } else if (el.type === 'image') {
+          html += `  <div class="element element-${el.id}"><img src="{{photo_url}}" alt="Photo" /></div>\n`;
+        } else if (el.type === 'qrcode' || el.type === 'qr') {
+          html += `  <div class="element element-${el.id}"><img src="{{qr_code_url}}" alt="QR Code" style="width: 100%; height: 100%; object-fit: contain;" /></div>\n`;
+        }
+      });
+      
+      html += '</div>';
+      
+      // Generate CSS
+      const badgeWidth = badgeTemplate.width;
+      const badgeHeight = badgeTemplate.height;
+      
+      let css = `.badge-container {
+  position: relative;
+  width: ${badgeWidth}px;
+  height: ${badgeHeight}px;
+  ${background ? `background: ${background.startsWith('http') || background.startsWith('data:') ? `url(${background})` : background};` : 'background: #ffffff;'}
+  background-size: cover;
+  background-position: center;
+  overflow: hidden;
+}\n\n`;
+
+      css += `.element {
+  position: absolute;
+  box-sizing: border-box;
+}\n\n`;
+
+      css += `.element img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}\n\n`;
+
+      elements.forEach((el: any) => {
+        const style = el.style || {};
+        
+        css += `.element-${el.id} {
+  left: ${el.x}px;
+  top: ${el.y}px;
+  width: ${el.width || 'auto'}px;
+  height: ${el.height || 'auto'}px;`;
+        
+        if (el.type === 'text') {
+          css += `\n  font-size: ${style.fontSize || el.fontSize || 16}px;
+  font-weight: ${style.fontWeight || el.fontWeight || 'normal'};
+  font-style: ${style.fontStyle || el.fontStyle || 'normal'};
+  text-align: ${style.textAlign || el.textAlign || 'left'};
+  color: ${style.color || el.color || '#000000'};`;
+          if (style.fontFamily || el.fontFamily) {
+            css += `\n  font-family: ${style.fontFamily || el.fontFamily};`;
+          }
+          if (style.textTransform) css += `\n  text-transform: ${style.textTransform};`;
+        }
+        
+        if (el.borderRadius) css += `\n  border-radius: ${el.borderRadius};`;
+        if (style.rotation) css += `\n  transform: rotate(${style.rotation}deg);`;
+        if (style.opacity !== undefined) css += `\n  opacity: ${style.opacity};`;
+        if (style.zIndex !== undefined) css += `\n  z-index: ${style.zIndex};`;
+        
+        css += '\n}\n\n';
+      });
+      
+      this.logger.log(`✅ Generated HTML/CSS from template_data`);
+      
+      return { html, css };
+    } catch (error) {
+      this.logger.error('Error generating HTML/CSS from template_data:', error);
+      return { html: '', css: '' };
+    }
   }
 
   /**
@@ -185,24 +325,65 @@ export class BadgeGenerationService {
       }
 
       // 3. Préparer les données du badge (utilise les snapshots ou les données actuelles de l'attendee)
+      const firstName = registration.snapshot_first_name || registration.attendee.first_name || '';
+      const lastName = registration.snapshot_last_name || registration.attendee.last_name || '';
+      const email = registration.snapshot_email || registration.attendee.email || '';
+      const phone = registration.snapshot_phone || registration.attendee.phone || '';
+      const company = registration.snapshot_company || registration.attendee.company || '';
+      const jobTitle = registration.snapshot_job_title || registration.attendee.job_title || '';
+      const country = registration.snapshot_country || registration.attendee.country || '';
+      const attendeeType = registration.eventAttendeeType?.attendeeType?.name || '';
+      const eventName = registration.event.name || '';
+      const eventCode = registration.event.code || '';
+      
       const badgeData = {
-        first_name: registration.snapshot_first_name || registration.attendee.first_name || '',
-        last_name: registration.snapshot_last_name || registration.attendee.last_name || '',
-        full_name: `${registration.snapshot_first_name || registration.attendee.first_name || ''} ${registration.snapshot_last_name || registration.attendee.last_name || ''}`.trim(),
-        email: registration.snapshot_email || registration.attendee.email || '',
-        phone: registration.snapshot_phone || registration.attendee.phone || '',
-        company: registration.snapshot_company || registration.attendee.company || '',
-        job_title: registration.snapshot_job_title || registration.attendee.job_title || '',
-        country: registration.snapshot_country || registration.attendee.country || '',
-        attendee_type: registration.eventAttendeeType?.attendeeType?.name || '',
-        event_name: registration.event.name || '',
-        event_code: registration.event.code || '',
+        // Snake_case (pour compatibilité avec anciens templates)
+        first_name: firstName,
+        last_name: lastName,
+        full_name: `${firstName} ${lastName}`.trim(),
+        email,
+        phone,
+        company,
+        job_title: jobTitle,
+        country,
+        attendee_type: attendeeType,
+        event_name: eventName,
+        event_code: eventCode,
         registration_id: registration.id,
+        
+        // CamelCase (pour les nouveaux templates)
+        firstName,
+        lastName,
+        fullName: `${firstName} ${lastName}`.trim(),
+        jobTitle,
+        attendeeType,
+        eventName,
+        eventCode,
+        registrationId: registration.id,
       };
 
+      // 3.5 Générer le QR Code avec l'ID de l'inscription
+      const qrCodeData = registration.id; // Utiliser l'ID de registration comme donnée du QR Code
+      const qrCodeDataUrl = await this.generateQRCode(qrCodeData);
+      
+      // Ajouter le QR Code aux données du badge
+      badgeData['qr_code_url'] = qrCodeDataUrl;
+      badgeData['qrCodeUrl'] = qrCodeDataUrl;
+
       // 4. Générer le HTML final avec variables remplacées
-      const htmlContent = this.replaceVariables(badgeTemplate.html || '', badgeData);
-      const cssContent = badgeTemplate.css || '';
+      // Fallback: si html/css sont vides, générer depuis template_data
+      let htmlContent = badgeTemplate.html || '';
+      let cssContent = badgeTemplate.css || '';
+      
+      if (!htmlContent || !cssContent) {
+        this.logger.warn(`Template ${badgeTemplate.id} has no HTML/CSS, generating from template_data`);
+        const generated = this.generateHTMLFromTemplateData(badgeTemplate);
+        if (!htmlContent) htmlContent = generated.html;
+        if (!cssContent) cssContent = generated.css;
+      }
+      
+      // Remplacer les variables
+      htmlContent = this.replaceVariables(htmlContent, badgeData);
 
       // HTML complet pour Puppeteer
       const fullHtml = `
@@ -225,6 +406,10 @@ export class BadgeGenerationService {
           </body>
         </html>
       `;
+
+      this.logger.debug(`Generated HTML Preview (first 500 chars): ${fullHtml.substring(0, 500)}`);
+      this.logger.debug(`Badge dimensions: ${badgeTemplate.width}x${badgeTemplate.height}`);
+      this.logger.debug(`Badge data:`, badgeData);
 
       // 5. Vérifier si un badge existe déjà
       let badge = await this.prisma.badge.findFirst({
@@ -270,9 +455,16 @@ export class BadgeGenerationService {
         deviceScaleFactor: 2, // Pour une meilleure qualité
       });
 
+      // Log du HTML pour debug
+      this.logger.debug(`HTML Content length: ${fullHtml.length} characters`);
+      
       await page.setContent(fullHtml, {
-        waitUntil: 'networkidle0',
+        waitUntil: ['load', 'domcontentloaded'],
+        timeout: 30000,
       });
+
+      // Attendre un délai supplémentaire pour que le CSS soit bien appliqué
+      await new Promise(resolve => setTimeout(resolve, 1000));
 
       const pdfBuffer = await page.pdf({
         width: `${badgeTemplate.width}px`,
@@ -667,4 +859,177 @@ export class BadgeGenerationService {
       where: { id: badgeId },
     });
   }
+
+  /**
+   * Génère une preview PNG du badge (qualité basse ou haute)
+   * Utilisé pour l'affichage rapide dans le modal de preview
+   */
+  async generateBadgePreview(
+    registrationId: string,
+    orgId: string | null,
+    quality: 'low' | 'high' = 'low',
+  ): Promise<string> {
+    // 1. Récupérer l'inscription avec ses relations
+    const whereClause: any = { id: registrationId };
+    if (orgId !== null) {
+      whereClause.org_id = orgId;
+    }
+
+    const registration = await this.prisma.registration.findFirst({
+      where: whereClause,
+      include: {
+        attendee: true,
+        event: true,
+        eventAttendeeType: {
+          include: {
+            attendeeType: true,
+          },
+        },
+        badgeTemplate: true,
+      },
+    });
+
+    if (!registration) {
+      throw new NotFoundException('Registration not found');
+    }
+
+    // 2. Récupérer le template de badge approprié
+    let badgeTemplate = null;
+    
+    if (registration.badge_template_id) {
+      badgeTemplate = await this.badgeTemplatesService.findOne(
+        registration.badge_template_id,
+        orgId || registration.org_id,
+      );
+    } else {
+      badgeTemplate = await this.badgeTemplatesService.getTemplateForEvent(
+        registration.event_id,
+        orgId || registration.org_id,
+      );
+    }
+
+    if (!badgeTemplate) {
+      throw new BadRequestException('No badge template found for this registration');
+    }
+
+    // 3. Générer HTML/CSS depuis template_data si nécessaire
+    if (!badgeTemplate.html || !badgeTemplate.css) {
+      const generated = this.generateHTMLFromTemplateData(badgeTemplate);
+      badgeTemplate = {
+        ...badgeTemplate,
+        html: generated.html || badgeTemplate.html,
+        css: generated.css || badgeTemplate.css,
+      };
+    }
+
+    // 4. Préparer les données du badge
+    const firstName = registration.snapshot_first_name || registration.attendee.first_name || '';
+    const lastName = registration.snapshot_last_name || registration.attendee.last_name || '';
+    const email = registration.snapshot_email || registration.attendee.email || '';
+    const phone = registration.snapshot_phone || registration.attendee.phone || '';
+    const company = registration.snapshot_company || registration.attendee.company || '';
+    const jobTitle = registration.snapshot_job_title || registration.attendee.job_title || '';
+    const country = registration.snapshot_country || registration.attendee.country || '';
+    const attendeeType = registration.eventAttendeeType?.attendeeType?.name || '';
+    const eventName = registration.event.name || '';
+    const eventCode = registration.event.code || '';
+
+    const badgeData = {
+      // Snake_case (backward compatibility)
+      first_name: firstName,
+      last_name: lastName,
+      email,
+      phone,
+      company,
+      job_title: jobTitle,
+      country,
+      full_name: `${firstName} ${lastName}`.trim(),
+      event_name: eventName,
+      event_code: eventCode,
+      attendee_type: attendeeType,
+      registration_id: registration.id,
+      
+      // CamelCase (new templates)
+      firstName,
+      lastName,
+      jobTitle,
+      fullName: `${firstName} ${lastName}`.trim(),
+      eventName,
+      eventCode,
+      attendeeType,
+      registrationId: registration.id,
+      
+      // URLs dynamiques (si disponibles - photo_url pas encore implémenté)
+      photo_url: '', // TODO: Ajouter quand le champ sera dans le schema
+    };
+
+    // 4.5 Générer le QR Code
+    const qrCodeData = registration.id;
+    const qrCodeDataUrl = await this.generateQRCode(qrCodeData);
+    badgeData['qr_code_url'] = qrCodeDataUrl;
+    badgeData['qrCodeUrl'] = qrCodeDataUrl;
+
+    // 5. Remplacer les variables dans HTML
+    const htmlContent = this.replaceVariables(badgeTemplate.html || '', badgeData);
+    const cssContent = badgeTemplate.css || '';
+
+    // 6. HTML complet
+    const fullHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <style>
+            * { margin: 0; padding: 0; box-sizing: border-box; }
+            body { 
+              width: ${badgeTemplate.width}px; 
+              height: ${badgeTemplate.height}px;
+              overflow: hidden;
+            }
+            ${cssContent}
+          </style>
+        </head>
+        <body>
+          ${htmlContent}
+        </body>
+      </html>
+    `;
+
+    // 7. Générer PNG avec Puppeteer
+    const browser = await this.getBrowser();
+    const page = await browser.newPage();
+
+    // Qualité basse : petit viewport et compression
+    // Qualité haute : plein viewport et meilleure compression
+    const scaleFactor = quality === 'low' ? 0.3 : 1;
+    const jpegQuality = quality === 'low' ? 40 : 90;
+
+    await page.setViewport({
+      width: Math.round(badgeTemplate.width * scaleFactor),
+      height: Math.round(badgeTemplate.height * scaleFactor),
+      deviceScaleFactor: 1,
+    });
+
+    await page.setContent(fullHtml, {
+      waitUntil: quality === 'low' ? 'domcontentloaded' : 'networkidle0',
+    });
+
+    // Générer PNG
+    const pngBuffer = await page.screenshot({
+      type: 'jpeg', // JPEG pour compression
+      quality: jpegQuality,
+      fullPage: true,
+    });
+
+    await page.close();
+
+    // 8. Upload temporaire sur R2 (ou retourner base64)
+    // Pour simplifier, on retourne en base64
+    const base64Image = `data:image/jpeg;base64,${Buffer.from(pngBuffer).toString('base64')}`;
+
+    this.logger.log(`✅ Badge preview generated (${quality}) for registration ${registrationId}`);
+
+    return base64Image;
+  }
 }
+ 

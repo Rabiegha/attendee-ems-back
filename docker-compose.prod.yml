@@ -31,6 +31,9 @@ services:
     # Lance migrations/seeders au démarrage si RUN_MIGRATIONS=true
     environment:
       RUN_MIGRATIONS: "true"
+    # Limites de ressources pour Chromium/Puppeteer
+    mem_limit: 2g
+    mem_reservation: 1g
     networks:
       - app-network
 

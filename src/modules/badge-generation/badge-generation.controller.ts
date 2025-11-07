@@ -168,6 +168,37 @@ export class BadgeGenerationController {
   }
 
   /**
+   * GET /events/:eventId/registrations/:id/badge-preview
+   * Génère une image PNG de preview (avec qualité basse/haute)
+   */
+  @Get('events/:eventId/registrations/:id/badge-preview')
+  @Permissions('badges.read:org')
+  async getBadgePreview(
+    @Param('eventId') eventId: string,
+    @Param('id') registrationId: string,
+    @Query('quality') quality: string = 'low', // 'low' ou 'high'
+    @Req() req: any,
+  ) {
+    const allowAny = req.user.role === 'SUPER_ADMIN' || req.user.permissions?.some((p: string) =>
+      p.endsWith(':any')
+    );
+    const orgId = allowAny ? null : req.user.org_id;
+
+    const previewUrl = await this.badgeGenerationService.generateBadgePreview(
+      registrationId,
+      orgId,
+      quality as 'low' | 'high',
+    );
+
+    return {
+      data: {
+        previewUrl,
+        quality,
+      },
+    };
+  }
+
+  /**
    * POST /badge-templates/:id/test-generate
    * Génère un badge de test avec un template spécifique
    */

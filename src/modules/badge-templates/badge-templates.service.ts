@@ -158,13 +158,16 @@ export class BadgeTemplatesService {
       await this.unsetDefaultTemplates(orgId, template.event_id);
     }
 
+    // Si template_data est fourni, vider html/css pour forcer la régénération depuis template_data
+    const shouldClearHtmlCss = dto.template_data !== undefined;
+
     return this.prisma.badgeTemplate.update({
       where: { id },
       data: {
         name: dto.name,
         description: dto.description,
-        html: dto.html,
-        css: dto.css,
+        html: shouldClearHtmlCss ? '' : dto.html,
+        css: shouldClearHtmlCss ? '' : dto.css,
         width: dto.width,
         height: dto.height,
         template_data: dto.template_data !== undefined ? dto.template_data : undefined,

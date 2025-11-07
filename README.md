@@ -78,6 +78,13 @@ npm run start:dev
 
 Toute la documentation est disponible dans le dossier `/docs` :
 
+### 🚀 Configuration et Setup
+- **[CHROMIUM_SETUP.md](./docs/CHROMIUM_SETUP.md)** - Installation Chromium/Chrome multi-plateforme
+- **[SETUP_MACOS.md](./docs/SETUP_MACOS.md)** - Guide setup développeur macOS
+- **[SETUP_LINUX.md](./docs/SETUP_LINUX.md)** - Guide setup développeur Linux
+- **[DEPLOYMENT_BADGES.md](./docs/DEPLOYMENT_BADGES.md)** - Déploiement système de badges
+
+### 📖 Documentation Technique
 - 📊 [Schéma Base de Données](./docs/DATABASE_SCHEMA.md) - Tables et relations Prisma
 - 🛡️ [Guide RBAC Backend](./docs/RBAC_GUIDE.md) - Implémentation CASL NestJS
 
