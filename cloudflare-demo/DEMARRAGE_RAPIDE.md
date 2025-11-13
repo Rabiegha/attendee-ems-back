@@ -32,8 +32,10 @@ node reverse-proxy.js
 **Ouvrir un NOUVEAU terminal PowerShell** et exécuter :
 ```powershell
 cd C:\Users\Corentin\Documents\EMS\attendee-ems-front
-npm run dev
+npm run dev:demo
 ```
+⚠️ **Important** : Utilise `dev:demo` (pas `dev`) pour le mode démo Cloudflare !
+
 ✅ Laisser ce terminal ouvert
 
 ---
@@ -89,8 +91,9 @@ cd C:\Users\Corentin\Documents\EMS\attendee-ems-back\cloudflare-demo
 ⚠️ Note : Tu devras quand même lancer le **frontend manuellement** dans un terminal séparé :
 ```powershell
 cd C:\Users\Corentin\Documents\EMS\attendee-ems-front
-npm run dev
+npm run dev:demo
 ```
+⚠️ **Important** : Utilise `dev:demo` (pas `dev`) pour le mode démo !
 
 ---
 
@@ -192,7 +195,25 @@ Plus d'infos : `CLOUDFLARE_TUNNEL_GUIDE.md`
 
 ---
 
-## 📝 Notes importantes
+## � Modes de développement
+
+### Mode Local (développement normal)
+```powershell
+cd C:\Users\Corentin\Documents\EMS\attendee-ems-front
+npm run dev
+```
+→ Appelle le backend sur `http://localhost:3000`
+
+### Mode Démo (Cloudflare Tunnel)
+```powershell
+cd C:\Users\Corentin\Documents\EMS\attendee-ems-front
+npm run dev:demo
+```
+→ Utilise des URLs relatives (passe par le reverse proxy)
+
+---
+
+## �📝 Notes importantes
 
 - ✅ **CORS** : Le backend accepte automatiquement tous les domaines `.trycloudflare.com`
 - ✅ **URLs relatives** : Le frontend utilise des URLs relatives (pas de `localhost:3000`)
