@@ -38,6 +38,12 @@ async function bootstrap() {
       // Allow requests with no origin (like mobile apps or Postman)
       if (!origin) return callback(null, true);
       
+      // Auto-accept Cloudflare Tunnel domains
+      if (origin && origin.includes('.trycloudflare.com')) {
+        console.log(`[CORS] ✅ Auto-accepting Cloudflare Tunnel: ${origin}`);
+        return callback(null, true);
+      }
+      
       if (allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
