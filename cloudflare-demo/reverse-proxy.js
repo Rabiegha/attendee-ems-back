@@ -19,7 +19,9 @@ const apiRoutes = [
   '/attendees',
   '/badges',
   '/uploads',
-  '/public'  // Routes publiques (formulaires)
+  '/public',  // Routes publiques (formulaires)
+  '/roles',   // Gestion des rôles
+  '/permissions'  // Gestion des permissions
 ];
 
 // Créer le serveur
