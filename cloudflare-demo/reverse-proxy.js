@@ -9,26 +9,61 @@ const proxy = httpProxy.createProxyServer({
   ws: true
 });
 
-// Routes API vers le backend
-const apiRoutes = [
+// Routes API backend (doivent être des routes HTTP précises, pas des routes React)
+const backendApiPaths = [
   '/api',
   '/auth',
-  '/events',
-  '/users',
-  '/organizations',
-  '/attendees',
-  '/badges',
-  '/uploads',
-  '/public',  // Routes publiques (formulaires)
-  '/roles',   // Gestion des rôles
-  '/permissions'  // Gestion des permissions
+  '/public',       // Formulaires publics
+  '/uploads',      // Upload de fichiers
 ];
+
+// Endpoints REST qui doivent aller au backend SEULEMENT s'ils ne contiennent pas d'UUID
+const restEndpoints = [
+  '/users',
+  '/organizations', 
+  '/attendees',
+  '/events',
+  '/badges',
+  '/roles',
+  '/permissions',
+  '/registrations',
+  '/analytics',
+  '/reports'
+];
+
+// Vérifier si c'est une route API backend
+const isApiRoute = (url, headers) => {
+  const urlPath = url.split('?')[0]; // Enlever les query params
+  
+  // Routes API explicites (toujours backend)
+  if (backendApiPaths.some(route => urlPath.startsWith(route))) {
+    return true;
+  }
+  
+  // Pour les endpoints REST, vérifier qu'il n'y a PAS d'UUID dans le path
+  // OU que la requête demande du JSON (header Accept)
+  const hasUUID = /\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.test(urlPath);
+  const acceptsJson = headers && headers.accept && (
+    headers.accept.includes('application/json') ||
+    headers.accept.includes('*/*')
+  );
+  
+  if (hasUUID) {
+    // Si UUID dans l'URL ET que le client accepte JSON, c'est une requête API
+    // Sinon c'est une page frontend (navigation/refresh)
+    if (acceptsJson && !headers.accept.includes('text/html')) {
+      return true; // API call
+    }
+    return false; // Page frontend
+  }
+  
+  // Sinon, vérifier si c'est un endpoint REST
+  return restEndpoints.some(endpoint => urlPath.startsWith(endpoint));
+};
 
 // Créer le serveur
 const server = http.createServer((req, res) => {
-  const isApiRoute = apiRoutes.some(route => req.url.startsWith(route));
-  
-  const target = isApiRoute 
+  const target = isApiRoute(req.url, req.headers)
     ? 'http://localhost:3000'  // Backend NestJS
     : 'http://localhost:5173'; // Frontend Vite
 

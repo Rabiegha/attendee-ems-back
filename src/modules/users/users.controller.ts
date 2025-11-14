@@ -254,7 +254,7 @@ export class UsersController {
     return this.usersService.update(id, updateUserDto, orgId, updaterUserId, updaterRoleLevel);
   }
 
-  @Delete('bulk-delete')
+  @Post('bulk-delete')
   @Permissions('users.delete')
   @ApiOperation({
     summary: 'Supprimer plusieurs utilisateurs',
@@ -284,7 +284,7 @@ export class UsersController {
   })
   async bulkDelete(@Body('ids') ids: string[], @Request() req) {
     const { user } = req;
-    const allowAny = user.permissions?.some(p => p.permission.endsWith(':any'));
+    const allowAny = user.permissions?.some(p => p.code?.endsWith(':any'));
     const orgId = allowAny ? null : user.org_id;
     
     const deletedCount = await this.usersService.bulkDelete(ids, orgId);

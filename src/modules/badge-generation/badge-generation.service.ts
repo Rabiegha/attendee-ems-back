@@ -177,6 +177,7 @@ export class BadgeGenerationService {
       elements.forEach((el: any) => {
         if (el.type === 'text') {
           const content = el.content || '';
+          // Garder le contenu tel quel, white-space: pre-wrap gère les sauts de ligne
           html += `  <div class="element element-${el.id}">${content}</div>\n`;
         } else if (el.type === 'image') {
           html += `  <div class="element element-${el.id}"><img src="{{photo_url}}" alt="Photo" /></div>\n`;
@@ -226,7 +227,9 @@ export class BadgeGenerationService {
   font-weight: ${style.fontWeight || el.fontWeight || 'normal'};
   font-style: ${style.fontStyle || el.fontStyle || 'normal'};
   text-align: ${style.textAlign || el.textAlign || 'left'};
-  color: ${style.color || el.color || '#000000'};`;
+  color: ${style.color || el.color || '#000000'};
+  white-space: pre-wrap;
+  line-height: 1.2;`;
           if (style.fontFamily || el.fontFamily) {
             css += `\n  font-family: ${style.fontFamily || el.fontFamily};`;
           }
