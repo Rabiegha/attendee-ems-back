@@ -86,6 +86,11 @@ export class RegistrationsService {
       };
     }
 
+    // Filter by active/deleted status
+    if (dto.isActive !== undefined) {
+      where.deleted_at = dto.isActive ? null : { not: null };
+    }
+
     // Build orderBy
     const sortBy = dto.sortBy || 'created_at';
     let orderBy: Prisma.RegistrationOrderByWithRelationInput;
@@ -407,7 +412,7 @@ export class RegistrationsService {
   }
 
   /**
-   * Delete a registration
+   * Soft delete a registration
    */
   async remove(id: string, orgId: string | null) {
     // Build where clause avec scope
@@ -427,12 +432,88 @@ export class RegistrationsService {
       throw new NotFoundException('Registration not found');
     }
 
-    // Delete registration
+    // Soft delete registration
+    await this.prisma.registration.update({
+      where: { id },
+      data: { deleted_at: new Date() },
+    });
+
+    return { message: 'Registration deleted successfully' };
+  }
+
+  /**
+   * Restore a soft-deleted registration
+   */
+  async restore(id: string, orgId: string | null) {
+    // Build where clause avec scope
+    const where: Prisma.RegistrationWhereInput = { 
+      id,
+      deleted_at: { not: null },
+    };
+    
+    // Si orgId est fourni (pas de scope :any), limiter à cette org
+    if (orgId !== null) {
+      where.org_id = orgId;
+    }
+
+    // Find registration
+    const registration = await this.prisma.registration.findFirst({
+      where,
+      include: {
+        attendee: true,
+        event: true,
+      },
+    });
+
+    if (!registration) {
+      throw new NotFoundException('Deleted registration not found');
+    }
+
+    // Restore registration
+    const restored = await this.prisma.registration.update({
+      where: { id },
+      data: { deleted_at: null },
+      include: {
+        attendee: true,
+        event: true,
+        eventAttendeeType: true,
+        badgeTemplate: true,
+      },
+    });
+
+    return restored;
+  }
+
+  /**
+   * Permanently delete a registration
+   */
+  async permanentDelete(id: string, orgId: string | null) {
+    // Build where clause avec scope
+    const where: Prisma.RegistrationWhereInput = { 
+      id,
+      deleted_at: { not: null },
+    };
+    
+    // Si orgId est fourni (pas de scope :any), limiter à cette org
+    if (orgId !== null) {
+      where.org_id = orgId;
+    }
+
+    // Find registration
+    const registration = await this.prisma.registration.findFirst({
+      where,
+    });
+
+    if (!registration) {
+      throw new NotFoundException('Deleted registration not found');
+    }
+
+    // Permanently delete registration
     await this.prisma.registration.delete({
       where: { id },
     });
 
-    return { message: 'Registration deleted successfully' };
+    return { message: 'Registration permanently deleted' };
   }
 
   /**

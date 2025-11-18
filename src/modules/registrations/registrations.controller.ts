@@ -138,7 +138,7 @@ export class RegistrationsController {
 
   @Delete(':id')
   @Permissions('registrations.delete')
-  @ApiOperation({ summary: 'Delete a registration' })
+  @ApiOperation({ summary: 'Soft delete a registration' })
   @ApiResponse({ status: 200, description: 'Registration deleted successfully' })
   async remove(
     @Param('id') id: string,
@@ -152,6 +152,40 @@ export class RegistrationsController {
     const orgId = allowAny ? null : req.user.org_id;
 
     return this.registrationsService.remove(id, orgId);
+  }
+
+  @Post(':id/restore')
+  @Permissions('registrations.delete')
+  @ApiOperation({ summary: 'Restore a soft-deleted registration' })
+  @ApiResponse({ status: 200, description: 'Registration restored successfully' })
+  async restore(
+    @Param('id') id: string,
+    @Request() req,
+  ) {
+    const allowAny = req.user.permissions?.some((p: string) =>
+      p.startsWith('events.') && p.endsWith(':any'),
+    );
+    
+    const orgId = allowAny ? null : req.user.org_id;
+
+    return this.registrationsService.restore(id, orgId);
+  }
+
+  @Delete(':id/permanent')
+  @Permissions('registrations.delete')
+  @ApiOperation({ summary: 'Permanently delete a registration' })
+  @ApiResponse({ status: 200, description: 'Registration permanently deleted' })
+  async permanentDelete(
+    @Param('id') id: string,
+    @Request() req,
+  ) {
+    const allowAny = req.user.permissions?.some((p: string) =>
+      p.startsWith('events.') && p.endsWith(':any'),
+    );
+    
+    const orgId = allowAny ? null : req.user.org_id;
+
+    return this.registrationsService.permanentDelete(id, orgId);
   }
 
   @Post('bulk-export')

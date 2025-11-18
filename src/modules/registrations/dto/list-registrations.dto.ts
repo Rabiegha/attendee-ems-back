@@ -1,6 +1,6 @@
-import { IsOptional, IsString, IsEnum, IsUUID, IsInt, Min } from 'class-validator';
+import { IsOptional, IsString, IsEnum, IsUUID, IsInt, Min, IsBoolean } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Type, Transform } from 'class-transformer';
 
 export enum RegistrationStatus {
   AWAITING = 'awaiting',
@@ -64,4 +64,14 @@ export class ListRegistrationsDto {
   @IsOptional()
   @IsEnum(['asc', 'desc'])
   sortOrder?: 'asc' | 'desc';
+
+  @ApiPropertyOptional({ description: 'Filter by active/deleted status', default: true })
+  @IsOptional()
+  @IsBoolean()
+  @Transform(({ value }) => {
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return value;
+  })
+  isActive?: boolean;
 }
