@@ -172,35 +172,61 @@ export class AttendeesController {
     required: true,
     example: 'user@example.com',
   })
+  @ApiQuery({
+    name: 'page',
+    description: 'Page number',
+    required: false,
+    example: 1,
+  })
+  @ApiQuery({
+    name: 'limit',
+    description: 'Items per page',
+    required: false,
+    example: 10,
+  })
   @ApiResponse({
     status: 200,
     description: 'Attendee history retrieved successfully',
     schema: {
-      type: 'array',
-      items: {
-        type: 'object',
-        properties: {
-          id: { type: 'string' },
-          attendeeId: { type: 'string' },
-          eventId: { type: 'string' },
-          status: { type: 'string' },
-          displayName: { type: 'string' },
-          email: { type: 'string' },
-          registrationDate: { type: 'string', format: 'date-time' },
-          checkedInAt: { type: 'string', format: 'date-time', nullable: true },
-          customData: { type: 'object', nullable: true },
-          event: {
+      type: 'object',
+      properties: {
+        data: {
+          type: 'array',
+          items: {
             type: 'object',
             properties: {
               id: { type: 'string' },
-              name: { type: 'string' },
-              description: { type: 'string', nullable: true },
-              startDate: { type: 'string', format: 'date-time' },
-              endDate: { type: 'string', format: 'date-time' },
-              location: { type: 'string', nullable: true },
+              attendeeId: { type: 'string' },
+              eventId: { type: 'string' },
               status: { type: 'string' },
-              organizationId: { type: 'string' },
+              displayName: { type: 'string' },
+              email: { type: 'string' },
+              registrationDate: { type: 'string', format: 'date-time' },
+              checkedInAt: { type: 'string', format: 'date-time', nullable: true },
+              customData: { type: 'object', nullable: true },
+              event: {
+                type: 'object',
+                properties: {
+                  id: { type: 'string' },
+                  name: { type: 'string' },
+                  description: { type: 'string', nullable: true },
+                  startDate: { type: 'string', format: 'date-time' },
+                  endDate: { type: 'string', format: 'date-time' },
+                  location: { type: 'string', nullable: true },
+                  status: { type: 'string' },
+                  organizationId: { type: 'string' },
+                },
+              },
             },
+          },
+        },
+        meta: {
+          type: 'object',
+          properties: {
+            page: { type: 'number' },
+            pageSize: { type: 'number' },
+            total: { type: 'number' },
+            totalPages: { type: 'number' },
           },
         },
       },
@@ -222,8 +248,12 @@ export class AttendeesController {
     @Param('id') id: string,
     @Query('email') email: string,
     @Request() req,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
   ) {
     const scope = resolveAttendeeReadScope(req.user);
+    const pageNum = page ? parseInt(page, 10) : 1;
+    const limitNum = limit ? parseInt(limit, 10) : 10;
     
     return this.attendeesService.findAttendeeHistory(id, email, {
       scope,
@@ -231,7 +261,7 @@ export class AttendeesController {
       isSuperAdmin: req.user.roles && Array.isArray(req.user.roles) 
         ? req.user.roles.some(role => role.code === 'SUPER_ADMIN')
         : req.user.role === 'SUPER_ADMIN' || req.user.roleCode === 'SUPER_ADMIN',
-    });
+    }, pageNum, limitNum);
   }
 
   // IMPORTANT: Routes spécifiques AVANT routes avec paramètres génériques

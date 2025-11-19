@@ -250,6 +250,8 @@ export class AttendeesService {
     id: string,
     email: string,
     ctx: AttendeeQueryContext & { isSuperAdmin: boolean },
+    page: number = 1,
+    limit: number = 10,
   ) {
     // First verify the attendee exists and is accessible
     await this.findOne(id, ctx);
@@ -266,9 +268,20 @@ export class AttendeesService {
       registrationWhere.org_id = ctx.orgId!;
     }
 
+    // Count total items
+    const total = await this.prisma.registration.count({
+      where: registrationWhere,
+    });
+
+    // Calculate pagination
+    const skip = (page - 1) * limit;
+    const totalPages = Math.ceil(total / limit);
+
     // Find all registrations for attendees with the same email
     const history = await this.prisma.registration.findMany({
       where: registrationWhere,
+      skip,
+      take: limit,
       include: {
         attendee: {
           select: {
@@ -307,7 +320,7 @@ export class AttendeesService {
     });
 
     // Transform to match API response format
-    return history.map((registration: any) => ({
+    const data = history.map((registration: any) => ({
       id: registration.id,
       attendeeId: registration.attendee_id,
       eventId: registration.event_id,
@@ -338,6 +351,16 @@ export class AttendeesService {
         organizationName: registration.event.organization?.name || null,
       },
     }));
+
+    return {
+      data,
+      meta: {
+        page,
+        pageSize: limit,
+        total,
+        totalPages,
+      },
+    };
   }
 
   /**
