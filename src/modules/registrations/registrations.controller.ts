@@ -20,6 +20,8 @@ import { ListRegistrationsDto } from './dto/list-registrations.dto';
 import { CreateRegistrationDto } from './dto/create-registration.dto';
 import { UpdateRegistrationStatusDto } from './dto/update-registration-status.dto';
 import { CheckinRegistrationDto } from './dto/checkin-registration.dto';
+import { BulkUpdateStatusDto } from './dto/bulk-update-status.dto';
+import { BulkCheckInDto } from './dto/bulk-checkin.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
@@ -97,6 +99,52 @@ export class RegistrationsController {
     });
 
     return this.registrationsService.create(eventId, orgId, createDto);
+  }
+
+  // CRITICAL: bulk-update-status MUST be BEFORE :id route
+  @Patch('bulk-update-status')
+  @Permissions('registrations.update')
+  @ApiOperation({ summary: 'Bulk update registration status' })
+  @ApiResponse({ status: 200, description: 'Registrations status updated successfully' })
+  @ApiResponse({ status: 403, description: 'HOSTESS role cannot update status' })
+  async bulkUpdateStatus(
+    @Body() dto: BulkUpdateStatusDto,
+    @Request() req,
+  ) {
+    // Check if user is HOSTESS (forbidden to update status)
+    const userRole = req.user.role;
+    if (userRole === 'HOSTESS') {
+      throw new ForbiddenException('HOSTESS role cannot update registration status');
+    }
+
+    const allowAny = req.user.permissions?.some((p: string) =>
+      p.startsWith('events.') && p.endsWith(':any'),
+    );
+    
+    // Pour les SUPER_ADMIN avec scope :any, passer null pour permettre l'accès cross-org
+    const orgId = allowAny ? null : req.user.org_id;
+
+    return this.registrationsService.bulkUpdateStatus(dto.ids, orgId, dto.status);
+  }
+
+  // CRITICAL: bulk-checkin MUST be BEFORE :id route
+  @Post('bulk-checkin')
+  @Permissions('registrations.update')
+  @ApiOperation({ summary: 'Bulk check-in registrations' })
+  @ApiResponse({ status: 200, description: 'Registrations checked-in successfully' })
+  async bulkCheckIn(
+    @Body() dto: BulkCheckInDto,
+    @Request() req,
+  ) {
+    const allowAny = req.user.permissions?.some((p: string) =>
+      p.startsWith('events.') && p.endsWith(':any'),
+    );
+    
+    // Pour les SUPER_ADMIN avec scope :any, passer null pour permettre l'accès cross-org
+    const orgId = allowAny ? null : req.user.org_id;
+    const userId = req.user.id;
+
+    return this.registrationsService.bulkCheckIn(dto.ids, orgId, userId);
   }
 
   @Patch(':id')

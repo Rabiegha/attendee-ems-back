@@ -1570,4 +1570,113 @@ export class RegistrationsService {
     this.logger.log(`Badge marked as printed for registration ${registrationId}`);
     return updatedRegistration;
   }
+
+  /**
+   * Bulk update registration status
+   */
+  async bulkUpdateStatus(
+    ids: string[],
+    orgId: string | null,
+    status: string,
+  ): Promise<{ updatedCount: number }> {
+    const whereClause: any = {
+      id: { in: ids },
+    };
+
+    // Apply org filtering if provided (not for super admins)
+    if (orgId !== null) {
+      whereClause.org_id = orgId;
+    }
+
+    const updateData: any = {
+      status: status as any, // Cast to any to avoid type issues with Prisma enum
+    };
+
+    // Set confirmed_at when approving
+    if (status === 'approved') {
+      updateData.confirmed_at = new Date();
+    }
+
+    const result = await this.prisma.registration.updateMany({
+      where: whereClause,
+      data: updateData,
+    });
+
+    return { updatedCount: result.count };
+  }
+
+  /**
+   * Bulk check-in registrations
+   */
+  async bulkCheckIn(
+    ids: string[],
+    orgId: string | null,
+    userId: string,
+  ): Promise<{ checkedInCount: number; errors: Array<{ id: string; error: string }> }> {
+    const whereClause: any = {
+      id: { in: ids },
+    };
+
+    // Apply org filtering if provided (not for super admins)
+    if (orgId !== null) {
+      whereClause.org_id = orgId;
+    }
+
+    // Fetch registrations to validate
+    const registrations = await this.prisma.registration.findMany({
+      where: whereClause,
+      include: {
+        event: {
+          include: { settings: true },
+        },
+      },
+    });
+
+    const errors: Array<{ id: string; error: string }> = [];
+    const validIds: string[] = [];
+
+    // Validate each registration
+    for (const registration of registrations) {
+      // Validate status
+      if (registration.status === 'refused') {
+        errors.push({ id: registration.id, error: 'Registration was refused' });
+        continue;
+      }
+
+      if (registration.status === 'cancelled') {
+        errors.push({ id: registration.id, error: 'Registration was cancelled' });
+        continue;
+      }
+
+      // Validate event settings
+      if (!registration.event.settings?.allow_checkin_out) {
+        errors.push({ id: registration.id, error: 'Check-in is disabled for this event' });
+        continue;
+      }
+
+      // Validate not already checked-in
+      if (registration.checked_in_at) {
+        errors.push({ id: registration.id, error: 'Already checked-in' });
+        continue;
+      }
+
+      validIds.push(registration.id);
+    }
+
+    // Perform bulk check-in for valid registrations
+    const result = await this.prisma.registration.updateMany({
+      where: {
+        id: { in: validIds },
+      },
+      data: {
+        checked_in_at: new Date(),
+        checked_in_by: userId,
+      },
+    });
+
+    return {
+      checkedInCount: result.count,
+      errors,
+    };
+  }
 }
