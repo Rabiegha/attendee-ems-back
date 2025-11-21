@@ -32,6 +32,34 @@ export class EventsService {
   ) {}
 
   /**
+   * Check if event name is available in the organization
+   */
+  async checkNameAvailability(name: string, orgId: string | null): Promise<boolean> {
+    if (!name || name.trim().length === 0) {
+      return false;
+    }
+
+    // Si orgId est null (super admin avec :any), ne pas chercher
+    // car on ne peut pas vérifier sans contexte d'organisation
+    if (!orgId) {
+      return true;
+    }
+
+    const existing = await this.prisma.event.findFirst({
+      where: {
+        org_id: orgId,
+        name: {
+          equals: name.trim(),
+          mode: 'insensitive',
+        },
+        deleted_at: null,
+      },
+    });
+
+    return !existing;
+  }
+
+  /**
    * Create an event with its settings (1:1 relation)
    * Generates a unique public_token for the event_settings
    */

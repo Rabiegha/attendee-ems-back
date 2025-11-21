@@ -63,6 +63,33 @@ export class EventsController {
     return this.eventsService.create(createEventDto, orgId, req.user.sub);
   }
 
+  @Get('check-name')
+  @Permissions('events.read')
+  @ApiOperation({ summary: 'Check if event name is available' })
+  @ApiResponse({ status: 200, description: 'Name availability checked' })
+  @ApiQuery({ name: 'name', required: true, type: String })
+  async checkNameAvailability(@Query('name') name: string, @Request() req) {
+    if (!name || name.trim().length === 0) {
+      throw new BadRequestException('Name parameter is required');
+    }
+
+    const allowAny = req.user.permissions?.some((p: string) =>
+      p.startsWith('events.') && p.endsWith(':any'),
+    );
+    
+    // Pour les super admins, utiliser leur org_id ou null
+    const orgId = allowAny 
+      ? req.user.org_id || null
+      : resolveEffectiveOrgId({
+          reqUser: req.user,
+          explicitOrgId: undefined,
+          allowAny,
+        });
+
+    const isAvailable = await this.eventsService.checkNameAvailability(name, orgId);
+    return { available: isAvailable, name };
+  }
+
   @Get()
   @Permissions('events.read')
   @ApiOperation({ summary: 'List all events' })
