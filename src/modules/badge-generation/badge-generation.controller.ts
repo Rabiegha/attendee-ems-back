@@ -177,6 +177,8 @@ export class BadgeGenerationController {
     @Param('eventId') eventId: string,
     @Param('id') registrationId: string,
     @Query('quality') quality: string = 'low', // 'low' ou 'high'
+    @Query('templateId') templateId?: string, // Template spécifique à utiliser
+    @Query('force') forceRegenerate?: string, // 'true' pour forcer la régénération
     @Req() req: any,
   ) {
     const allowAny = req.user.role === 'SUPER_ADMIN' || req.user.permissions?.some((p: string) =>
@@ -188,6 +190,8 @@ export class BadgeGenerationController {
       registrationId,
       orgId,
       quality as 'low' | 'high',
+      templateId,
+      forceRegenerate === 'true',
     );
 
     return {
