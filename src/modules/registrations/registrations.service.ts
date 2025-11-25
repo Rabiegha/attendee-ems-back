@@ -335,14 +335,14 @@ export class RegistrationsService {
           // Comment from mobile app
           comment: dto.comment,
           
-          // Snapshot des données de l'attendee au moment de l'inscription
-          snapshot_first_name: attendee.first_name,
-          snapshot_last_name: attendee.last_name,
-          snapshot_email: attendee.email,
-          snapshot_phone: attendee.phone,
-          snapshot_company: attendee.company,
-          snapshot_job_title: attendee.job_title,
-          snapshot_country: attendee.country,
+          // Snapshot des données de l'attendee au moment de l'inscription (uniquement les données fournies)
+          snapshot_first_name: dto.attendee.first_name,
+          snapshot_last_name: dto.attendee.last_name,
+          snapshot_email: dto.attendee.email,
+          snapshot_phone: dto.attendee.phone,
+          snapshot_company: dto.attendee.company,
+          snapshot_job_title: dto.attendee.job_title,
+          snapshot_country: dto.attendee.country,
         },
         include: {
           attendee: true,
@@ -770,14 +770,14 @@ export class RegistrationsService {
               confirmed_at: confirmedAt,
               // Source tracking: mark as import
               source: 'import',
-              // Snapshot attendee data at time of registration
-              snapshot_first_name: attendee.first_name,
-              snapshot_last_name: attendee.last_name,
-              snapshot_email: attendee.email,
-              snapshot_phone: attendee.phone,
-              snapshot_company: attendee.company,
-              snapshot_job_title: attendee.job_title,
-              snapshot_country: attendee.country,
+              // Snapshot attendee data at time of registration (only provided data)
+              snapshot_first_name: attendeeData.first_name,
+              snapshot_last_name: attendeeData.last_name,
+              snapshot_email: attendeeData.email,
+              snapshot_phone: attendeeData.phone,
+              snapshot_company: attendeeData.company,
+              snapshot_job_title: attendeeData.job_title,
+              snapshot_country: attendeeData.country,
             },
             include: {
               attendee: true,
