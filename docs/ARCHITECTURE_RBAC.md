@@ -228,13 +228,16 @@ Objectif : intégrer la notion de plan (offre/abonnement) et limiter l’accès 
 1. **Multi-tenant**
    - Un user tenant ne sort jamais de son organisation dans les données.
    - Pour un user tenant, toute action est limitée à une org présente dans `org_users`.
-   - Un user plateforme (`is_platform = true`) ne peut agir sur une org que si elle figure dans `platform_user_org_access`.
+   - Un user plateforme (is_platform = true) :
+   si son scope = assigned, il ne peut agir que sur les organisations listées dans platform_user_org_access ;
+   si son scope = any, il peut agir sur toutes les organisations (accès cross-tenants complet).
 
 2. **Hiérarchie des rôles**
    - Un utilisateur ne peut pas créer ni assigner un rôle de `rank` ≥ à son propre rôle.
    - Un utilisateur ne peut jamais modifier son propre rôle.
    - Seul un rôle `is_root = true` peut créer/assigner un rôle root.
-   - Les rôles clés (Admin/Manager/Staff standard) sont `is_locked = true`.
+   - Les rôles clés (Admin/Manager/Staff standard) sont `is_locked = true`.impossible à supprimer, modifier ou renommer.
+   
 
 3. **Rôles clés et templates**
    - Chaque organisation possède des rôles clés : Admin, Manager, Staff.
