@@ -191,6 +191,19 @@ export async function seedAttendeesAndRegistrations() {
       else if (random < statusWeights[0] + statusWeights[1] + statusWeights[2]) status = 'refused';
       else status = 'cancelled';
 
+      // Générer des données snapshot avec des variations pour tester l'affichage
+      // Le but est d'avoir des données légèrement différentes pour le même attendee selon l'événement
+      const eventYear = event.start_at ? new Date(event.start_at).getFullYear() : new Date().getFullYear();
+      
+      // Variations simulées
+      const snapshotCompany = Math.random() > 0.5 
+        ? `${attendee.company} (${eventYear})` 
+        : `${attendee.company}`;
+        
+      const snapshotJobTitle = Math.random() > 0.3
+        ? `${attendee.job_title} - ${event.name.substring(0, 10)}...`
+        : attendee.job_title;
+
       await prisma.registration.create({
         data: {
           org_id: acmeOrg.id,
@@ -198,12 +211,20 @@ export async function seedAttendeesAndRegistrations() {
           attendee_id: attendee.id,
           status,
           attendance_type: 'onsite' as const,
+          // Remplissage des données snapshot
+          snapshot_first_name: attendee.first_name,
+          snapshot_last_name: attendee.last_name,
+          snapshot_email: attendee.email,
+          snapshot_phone: attendee.phone,
+          snapshot_company: snapshotCompany,
+          snapshot_job_title: snapshotJobTitle,
           answers: {
             firstName: attendee.first_name,
             lastName: attendee.last_name,
             email: attendee.email,
-            company: attendee.company,
-            jobTitle: attendee.job_title,
+            company: snapshotCompany,
+            jobTitle: snapshotJobTitle,
+            expectations: 'Learning new things',
           },
           confirmed_at: status === 'approved' ? new Date() : null,
         },

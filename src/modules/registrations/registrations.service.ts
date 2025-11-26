@@ -402,6 +402,16 @@ export class RegistrationsService {
         attendance_type: dto.attendance_type,
         event_attendee_type_id: dto.event_attendee_type_id,
         answers: dto.answers ? (dto.answers as Prisma.InputJsonValue) : undefined,
+        // Update snapshots if attendee data is provided
+        ...(dto.attendee ? {
+          snapshot_first_name: dto.attendee.first_name,
+          snapshot_last_name: dto.attendee.last_name,
+          snapshot_email: dto.attendee.email,
+          snapshot_phone: dto.attendee.phone,
+          snapshot_company: dto.attendee.company,
+          snapshot_job_title: dto.attendee.job_title,
+          snapshot_country: dto.attendee.country,
+        } : {}),
       },
       include: {
         attendee: true,
@@ -725,6 +735,40 @@ export class RegistrationsService {
           let wasRegistrationCreated = true;
 
           if (existingRegistration) {
+            // Check if soft deleted
+            if (existingRegistration.deleted_at) {
+              if (replaceExisting) {
+                console.log(`Restoring registration ${existingRegistration.id} for email ${attendeeData.email}`);
+                // Restore and update
+                const restoredRegistration = await tx.registration.update({
+                  where: { id: existingRegistration.id },
+                  data: {
+                    deleted_at: null,
+                    attendance_type: attendanceType,
+                    event_attendee_type_id: eventAttendeeTypeId,
+                    answers: Object.keys(answers).length > 0 ? answers : null,
+                    status: shouldAutoApprove ? 'approved' : 'awaiting', // Reset status on restore
+                    confirmed_at: shouldAutoApprove ? new Date() : null,
+                    // Update snapshots with new data
+                    snapshot_first_name: attendeeData.first_name,
+                    snapshot_last_name: attendeeData.last_name,
+                    snapshot_email: attendeeData.email,
+                    snapshot_phone: attendeeData.phone,
+                    snapshot_company: attendeeData.company,
+                    snapshot_job_title: attendeeData.job_title,
+                    snapshot_country: attendeeData.country,
+                  },
+                  include: {
+                    attendee: true,
+                  },
+                });
+                wasRegistrationCreated = false;
+                return { registration: restoredRegistration, wasRegistrationCreated };
+              } else {
+                throw new ConflictException('This attendee was previously deleted from this event (soft delete)');
+              }
+            }
+
             if (existingRegistration.status === 'refused') {
               throw new ForbiddenException('This attendee was previously declined for this event');
             }
@@ -739,6 +783,14 @@ export class RegistrationsService {
                     answers: Object.keys(answers).length > 0 ? answers : null,
                     status: shouldAutoApprove ? 'approved' : existingRegistration.status,
                     confirmed_at: shouldAutoApprove && !existingRegistration.confirmed_at ? new Date() : existingRegistration.confirmed_at,
+                    // Update snapshots with new data
+                    snapshot_first_name: attendeeData.first_name,
+                    snapshot_last_name: attendeeData.last_name,
+                    snapshot_email: attendeeData.email,
+                    snapshot_phone: attendeeData.phone,
+                    snapshot_company: attendeeData.company,
+                    snapshot_job_title: attendeeData.job_title,
+                    snapshot_country: attendeeData.country,
                   },
                   include: {
                     attendee: true,
@@ -819,7 +871,7 @@ export class RegistrationsService {
   }
 
   /**
-   * Bulk delete registrations
+   * Bulk delete registrations (Soft Delete)
    */
   async bulkDelete(ids: string[], orgId?: string): Promise<{ deletedCount: number }> {
     const whereClause: any = {
@@ -831,8 +883,12 @@ export class RegistrationsService {
       whereClause.org_id = orgId;
     }
 
-    const result = await this.prisma.registration.deleteMany({
+    // Soft delete using updateMany
+    const result = await this.prisma.registration.updateMany({
       where: whereClause,
+      data: {
+        deleted_at: new Date(),
+      },
     });
 
     return { deletedCount: result.count };
@@ -866,7 +922,6 @@ export class RegistrationsService {
 
     // Prepare data
     const data = registrations.map((registration) => ({
-      'ID': registration.id,
       'Prénom': registration.attendee?.first_name || '',
       'Nom': registration.attendee?.last_name || '',
       'Email': registration.attendee?.email || '',

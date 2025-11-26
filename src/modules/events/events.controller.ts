@@ -95,6 +95,7 @@ export class EventsController {
   @ApiOperation({ summary: 'List all events' })
   @ApiResponse({ status: 200, description: 'Events retrieved successfully' })
   async findAll(@Query() listEventsDto: ListEventsDto, @Request() req) {
+    console.log('GET /events called'); // Debug log
     const scope = resolveEventReadScope(req.user);
     
     return this.eventsService.findAll(listEventsDto, {
