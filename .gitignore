@@ -42,7 +42,7 @@ lerna-debug.log*
 .env.production.local
 .env.docker
 .env.test.docker
-.even.prod
+.env.prod
 .env.test
 
 
