@@ -13,10 +13,17 @@ lerna-debug.log*
 
 # OS
 .DS_Store
+*/.DS_Store
+**/.DS_Store
 
 # Tests
 /coverage
 /.nyc_output
+
+# Test files
+*.test.pdf
+badge-test.pdf
+*-test.pdf
 
 # IDEs and editors
 /.idea
@@ -50,4 +57,24 @@ lerna-debug.log*
 /tmp
 /temp
 
+# Prisma
 /generated/prisma
+
+# Database files
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+
+# Dumps & backups
+dump.*
+*.dump
+*.backup
+*.bak
+backup/
+backups/
+
+# Uploaded/generated files (local dev)
+uploads/
+storage/
+public/uploads/
