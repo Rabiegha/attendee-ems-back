@@ -190,6 +190,7 @@ Documentation complète disponible dans `/docs` :
 | Document | Description |
 |----------|-------------|
 | [ARCHITECTURE_RBAC.md](docs/ARCHITECTURE_RBAC.md) | Architecture RBAC multi-tenant détaillée |
+| [CONFIGURATION_SMTP_R2.md](docs/CONFIGURATION_SMTP_R2.md) | **Guide de configuration SMTP & Cloudflare R2** |
 | [QUICK_START.md](docs/QUICK_START.md) | Guide de démarrage étendu |
 | [PHASE1_API.md](docs/PHASE1_API.md) | Documentation API complète |
 | [TESTING_GUIDE.md](docs/TESTING_GUIDE.md) | Guide des tests |
@@ -1007,6 +1008,41 @@ R2_PUBLIC_URL=https://your-bucket.r2.dev
 ```
 
 **⚠️ IMPORTANT** : Ne jamais commiter de vrais secrets dans Git. Utilisez des gestionnaires de secrets en production (AWS Secrets Manager, HashiCorp Vault, etc.).
+
+---
+
+### 📧 Configuration SMTP & Cloudflare R2
+
+Le système nécessite deux services externes :
+- **SMTP** : Pour l'envoi d'emails d'invitation et notifications
+- **Cloudflare R2** : Pour le stockage des badges PDF générés
+
+**📖 Guide de configuration détaillé** : [docs/CONFIGURATION_SMTP_R2.md](docs/CONFIGURATION_SMTP_R2.md)
+
+Ce guide complet vous explique :
+- ✅ Comment configurer **6 fournisseurs SMTP** (Gmail, OVH, SendGrid, Mailgun, AWS SES, Brevo)
+- ✅ Configuration **Cloudflare R2** étape par étape
+- ✅ Tests de validation pour chaque service
+- ✅ Comparatif des fournisseurs et recommandations
+- ✅ Dépannage et résolution de problèmes
+- ✅ Bonnes pratiques de sécurité
+
+**Démarrage rapide SMTP** (Gmail pour développement) :
+```env
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=votre-email@gmail.com
+SMTP_PASSWORD=votre-mot-de-passe-application  # Obtenir sur myaccount.google.com/apppasswords
+```
+
+**Démarrage rapide R2** :
+```env
+R2_ACCOUNT_ID=votre-account-id              # Dashboard Cloudflare
+R2_ACCESS_KEY_ID=votre-access-key           # Manage R2 API Tokens
+R2_SECRET_ACCESS_KEY=votre-secret-key       # Manage R2 API Tokens
+R2_BUCKET_NAME=ems-badges-production        # Nom du bucket créé
+R2_PUBLIC_URL=https://pub-xxx.r2.dev        # URL publique du bucket
+```
 
 ---
 
