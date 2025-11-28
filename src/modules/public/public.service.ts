@@ -194,13 +194,18 @@ export class PublicService {
         console.log(`[PublicService] No existing registration found for attendee ${attendee.id}`);
       }
 
-      // Check capacity
-      if (event.capacity) {
+      // Determine status based on auto-approve setting
+      const status = eventSettings.registration_auto_approve ? 'approved' : 'awaiting';
+      const confirmedAt = status === 'approved' ? new Date() : null;
+
+      // Check capacity only if we are trying to approve the registration
+      if (event.capacity && status === 'approved') {
         const currentCount = await tx.registration.count({
           where: {
             event_id: event.id,
             org_id: orgId,
-            status: { in: ['awaiting', 'approved'] },
+            status: 'approved',
+            deleted_at: null,
           },
         });
         console.log(`[PublicService] Capacity check: ${currentCount}/${event.capacity}`);
@@ -209,10 +214,6 @@ export class PublicService {
           throw new ConflictException('Event is full');
         }
       }
-
-      // Determine status based on auto-approve setting
-      const status = eventSettings.registration_auto_approve ? 'approved' : 'awaiting';
-      const confirmedAt = status === 'approved' ? new Date() : null;
 
       // Create registration with snapshot
       const registration = await tx.registration.create({

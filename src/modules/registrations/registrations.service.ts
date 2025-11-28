@@ -199,10 +199,32 @@ export class RegistrationsService {
 
     const registration = await this.prisma.registration.findFirst({
       where,
+      include: {
+        event: true,
+      },
     });
 
     if (!registration) {
       throw new NotFoundException('Registration not found');
+    }
+
+    // Check capacity if approving
+    if (dto.status === 'approved' && registration.status !== 'approved') {
+      const event = registration.event;
+      if (event && event.capacity) {
+        const currentCount = await this.prisma.registration.count({
+          where: {
+            event_id: event.id,
+            org_id: event.org_id,
+            status: 'approved',
+            deleted_at: null,
+          },
+        });
+
+        if (currentCount >= event.capacity) {
+          throw new ConflictException('Event is full');
+        }
+      }
     }
 
     const updateData: Prisma.RegistrationUpdateInput = {
@@ -248,13 +270,20 @@ export class RegistrationsService {
         throw new NotFoundException('Event not found');
       }
 
-      // Check capacity
-      if (event.capacity) {
+      // Determine status based on auto-approve setting or source
+      // Mobile registrations are always auto-approved
+      const isMobileRegistration = dto.source === 'mobile_app';
+      const status = (event.settings?.registration_auto_approve || isMobileRegistration) ? 'approved' : 'awaiting';
+      const confirmedAt = status === 'approved' ? new Date() : null;
+
+      // Check capacity only if we are trying to approve the registration
+      if (event.capacity && status === 'approved') {
         const currentCount = await tx.registration.count({
           where: {
             event_id: eventId,
             org_id: orgId,
-            status: { in: ['awaiting', 'approved'] },
+            status: 'approved',
+            deleted_at: null,
           },
         });
 
@@ -309,12 +338,6 @@ export class RegistrationsService {
           throw new ConflictException('This attendee is already registered for this event');
         }
       }
-
-      // Determine status based on auto-approve setting or source
-      // Mobile registrations are always auto-approved
-      const isMobileRegistration = dto.source === 'mobile_app';
-      const status = (event.settings?.registration_auto_approve || isMobileRegistration) ? 'approved' : 'awaiting';
-      const confirmedAt = status === 'approved' ? new Date() : null;
 
       // Create registration with snapshot of attendee data
       const registration = await tx.registration.create({
@@ -479,6 +502,25 @@ export class RegistrationsService {
       throw new NotFoundException('Deleted registration not found');
     }
 
+    // Check capacity if restoring an approved registration
+    if (registration.status === 'approved') {
+      const event = registration.event;
+      if (event && event.capacity) {
+        const currentCount = await this.prisma.registration.count({
+          where: {
+            event_id: event.id,
+            org_id: event.org_id,
+            status: 'approved',
+            deleted_at: null,
+          },
+        });
+
+        if (currentCount >= event.capacity) {
+          throw new ConflictException('Event is full, cannot restore approved registration');
+        }
+      }
+    }
+
     // Restore registration
     const restored = await this.prisma.registration.update({
       where: { id },
@@ -536,6 +578,7 @@ export class RegistrationsService {
     fileBuffer: Buffer,
     autoApprove?: boolean,
     replaceExisting?: boolean,
+    dryRun?: boolean, // ← Nouveau paramètre pour simulation
   ) {
     // Parse Excel file
     const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
@@ -571,13 +614,26 @@ export class RegistrationsService {
       ? autoApprove 
       : event.settings?.registration_auto_approve || false;
 
+    // Get initial count of approved registrations
+    let currentApprovedCount = await this.prisma.registration.count({
+      where: {
+        event_id: eventId,
+        org_id: orgId,
+        status: 'approved',
+        deleted_at: null,
+      },
+    });
+
     const results = {
       total_rows: rows.length,
       created: 0,
       updated: 0,
+      restored: 0, // ← Track restorations separately
       skipped: 0,
       errors: [] as Array<{ row: number; email: string; error: string }>,
     };
+
+    console.log(`Starting bulk import for event ${eventId} with ${rows.length} rows. Initial approved count: ${currentApprovedCount}`);
 
     // Process each row
     for (let i = 0; i < rows.length; i++) {
@@ -668,22 +724,7 @@ export class RegistrationsService {
         }
 
         // Use same logic as create() method
-        const registration = await this.prisma.$transaction(async (tx) => {
-          // Check capacity
-          if (event.capacity) {
-            const currentCount = await tx.registration.count({
-              where: {
-                event_id: eventId,
-                org_id: orgId,
-                status: { in: ['awaiting', 'approved'] },
-              },
-            });
-
-            if (currentCount >= event.capacity) {
-              throw new ConflictException('Event is full');
-            }
-          }
-
+        const { registration, wasRegistrationCreated, wasRestored, incrementCount } = await this.prisma.$transaction(async (tx) => {
           // Upsert attendee
           const existingAttendee = await tx.attendee.findUnique({
             where: {
@@ -731,8 +772,44 @@ export class RegistrationsService {
             },
           });
 
-          // Track if this is a registration creation or update
+          // Determine if we need to check capacity
+          let checkCapacity = false;
+          let willIncrement = false;
+
+          if (!existingRegistration) {
+            // New registration: check capacity if auto-approve is on
+            if (event.capacity && shouldAutoApprove) {
+              checkCapacity = true;
+              willIncrement = true;
+            }
+          } else {
+            // Existing registration
+            if (existingRegistration.deleted_at) {
+              // Restoring: do NOT check capacity (they previously had a spot)
+              // Restoring a deleted registration should always be allowed
+              if (replaceExisting && shouldAutoApprove) {
+                willIncrement = true; // Still increment counter for future checks
+              }
+            } else if (['awaiting', 'refused'].includes(existingRegistration.status)) {
+              // Updating status to approved?
+              if (replaceExisting && shouldAutoApprove) {
+                checkCapacity = true;
+                willIncrement = true;
+              }
+            }
+            // If already approved, no need to check capacity even if replaceExisting is true
+          }
+
+          if (checkCapacity) {
+            // Use local counter instead of DB query for consistency within the loop
+            if (currentApprovedCount >= event.capacity) {
+              throw new ConflictException('Event is full');
+            }
+          }
+
+          // Track if this is a registration creation, update, or restoration
           let wasRegistrationCreated = true;
+          let wasRestored = false;
 
           if (existingRegistration) {
             // Check if soft deleted
@@ -763,7 +840,8 @@ export class RegistrationsService {
                   },
                 });
                 wasRegistrationCreated = false;
-                return { registration: restoredRegistration, wasRegistrationCreated };
+                wasRestored = true;
+                return { registration: restoredRegistration, wasRegistrationCreated, wasRestored, incrementCount: willIncrement };
               } else {
                 throw new ConflictException('This attendee was previously deleted from this event (soft delete)');
               }
@@ -797,7 +875,7 @@ export class RegistrationsService {
                   },
                 });
                 wasRegistrationCreated = false;
-                return { registration: updatedRegistration, wasRegistrationCreated };
+                return { registration: updatedRegistration, wasRegistrationCreated, wasRestored: false, incrementCount: willIncrement };
               } else {
                 throw new ConflictException('This attendee is already registered for this event');
               }
@@ -836,12 +914,19 @@ export class RegistrationsService {
             },
           });
 
-          return { registration: newRegistration, wasRegistrationCreated };
+          return { registration: newRegistration, wasRegistrationCreated, wasRestored: false, incrementCount: willIncrement };
         });
 
-        // Count based on whether the REGISTRATION was created or updated
-        if (registration.wasRegistrationCreated) {
+        // Update local count if needed
+        if (incrementCount) {
+          currentApprovedCount++;
+        }
+
+        // Count based on whether the REGISTRATION was created, updated, or restored
+        if (wasRegistrationCreated) {
           results.created++;
+        } else if (wasRestored) {
+          results.restored++;
         } else {
           results.updated++;
         }
@@ -857,6 +942,8 @@ export class RegistrationsService {
         } else if (error instanceof Error) {
           errorMessage = error.message;
         }
+
+        console.log(`Import error at row ${rowNumber} for ${email}: ${errorMessage}`);
 
         results.errors.push({
           row: rowNumber,
@@ -1641,6 +1728,47 @@ export class RegistrationsService {
     // Apply org filtering if provided (not for super admins)
     if (orgId !== null) {
       whereClause.org_id = orgId;
+    }
+
+    // Check capacity if approving
+    if (status === 'approved') {
+      // Fetch registrations to group by event
+      const registrations = await this.prisma.registration.findMany({
+        where: whereClause,
+        select: { id: true, event_id: true, status: true },
+      });
+
+      // Group by event to count how many NEW approvals per event
+      const eventCounts: Record<string, number> = {};
+      for (const reg of registrations) {
+        if (reg.status !== 'approved') {
+          eventCounts[reg.event_id] = (eventCounts[reg.event_id] || 0) + 1;
+        }
+      }
+
+      // Check capacity for each event
+      for (const [eventId, countToAdd] of Object.entries(eventCounts)) {
+        if (countToAdd === 0) continue;
+
+        const event = await this.prisma.event.findUnique({
+          where: { id: eventId },
+        });
+
+        if (event && event.capacity) {
+          const currentCount = await this.prisma.registration.count({
+            where: {
+              event_id: eventId,
+              org_id: event.org_id,
+              status: 'approved',
+              deleted_at: null,
+            },
+          });
+
+          if (currentCount + countToAdd > event.capacity) {
+            throw new ConflictException(`Event "${event.name}" is full. Capacity: ${event.capacity}, Current: ${currentCount}, Trying to approve: ${countToAdd}`);
+          }
+        }
+      }
     }
 
     const updateData: any = {
