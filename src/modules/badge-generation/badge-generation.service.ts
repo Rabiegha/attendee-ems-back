@@ -234,6 +234,10 @@ export class BadgeGenerationService {
             css += `\n  font-family: ${style.fontFamily || el.fontFamily};`;
           }
           if (style.textTransform) css += `\n  text-transform: ${style.textTransform};`;
+          // Apply text-decoration (underline, line-through, etc.)
+          if (style.textDecoration && style.textDecoration !== 'none') {
+            css += `\n  text-decoration: ${style.textDecoration};`;
+          }
         }
         
         if (el.borderRadius) css += `\n  border-radius: ${el.borderRadius};`;
