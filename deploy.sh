@@ -125,11 +125,9 @@ echo -e "${GREEN}✓ Backend .env.production created with secure secrets${NC}"
 echo -e "\n${YELLOW}[6/8] Building frontend for production...${NC}"
 cd "$DEPLOY_DIR/frontend"
 
-# Check if node_modules exists
-if [ ! -d "node_modules" ]; then
-    echo "Installing frontend dependencies..."
-    npm install
-fi
+# Always install dependencies to ensure they are up to date
+echo "Installing frontend dependencies..."
+npm install
 
 # Build frontend
 echo "Building frontend..."
