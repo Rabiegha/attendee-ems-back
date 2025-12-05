@@ -78,3 +78,10 @@ backups/
 uploads/
 storage/
 public/uploads/
+
+# Production secrets - DO NOT COMMIT
+.env.production
+frontend/
+
+# SSL Certificates
+certbot/
