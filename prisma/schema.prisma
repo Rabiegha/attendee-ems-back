@@ -603,6 +603,8 @@ model Registration {
   // Badge URLs (générés par le backend)
   badge_pdf_url           String?  @map("badge_pdf_url")
   badge_image_url         String?  @map("badge_image_url")
+  comment                 String?
+  checked_in_by           String?  @db.Uuid
 
   // Relations
   event                   Event @relation(fields: [event_id, org_id], references: [id, org_id], onDelete: Cascade, onUpdate: NoAction)
