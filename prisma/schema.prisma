@@ -155,8 +155,8 @@ model Role {
   name            String
   description     String?
   
-  // RBAC avancé
-  rank            Int      @default(99)  // Hiérarchie: plus grand = plus puissant
+  /rank/ RBAC avancé
+              Int      @default(99)  // Hiérarchie: plus grand = plus puissant
   is_platform     Boolean  @default(false)  // true = rôle plateforme (support, root, etc.)
   is_root         Boolean  @default(false)  // true = God role (bypass total)
   role_type       RoleType @default(custom)  // Type logique du rôle
