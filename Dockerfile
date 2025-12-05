@@ -8,6 +8,7 @@ COPY . .
 # Generate Prisma client
 RUN npx prisma generate
 RUN npm run build
+RUN echo "Build content:" && ls -R dist
 
 # Runtime
 FROM node:20-alpine AS runner
