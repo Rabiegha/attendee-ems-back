@@ -17,16 +17,12 @@ model Organization {
   name       String
   slug       String   @unique @db.Citext
   timezone   String?
-  plan_id    String?  @db.Uuid  // Plan de l'organisation
   created_at DateTime @default(now()) @map("created_at")
   updated_at DateTime @updatedAt @map("updated_at")
 
   // Relations
-  plan                  Plan?          @relation(fields: [plan_id], references: [id], onDelete: SetNull)
-  orgUsers              OrgUser[]      // Utilisateurs de cette organisation
-  userRoles             UserRole[]     // Rôles assignés dans cette organisation
-  platformUserAccess    PlatformUserOrgAccess[]  // Accès plateforme à cette org
-  roles                 Role[]         // Rôles personnalisés de l'organisation
+  users                 User[]
+  roles                 Role[]       // Rôles personnalisés de l'organisation
   invitations           Invitation[]
   attendees             Attendee[]
   orgActivitySectors    OrgActivitySector[]
@@ -37,18 +33,16 @@ model Organization {
   events                Event[]
   tags                  Tag[]
   badges                Badge[]
-  orgModuleOverrides    OrgModuleOverride[]  // Overrides de modules
-  usersLegacy           User[]               @relation("UserLegacyOrg")
 
-  @@index([plan_id])
   @@map("organizations")
 }
 
-// ===== Users (global account) =====
 model User {
   id            String   @id @default(uuid()) @db.Uuid
-  email         String   @unique @db.Citext  // Email global unique
+  org_id        String   @db.Uuid
+  email         String   @db.Citext
   password_hash String
+  role_id       String   @db.Uuid
   first_name    String?
   last_name     String?
   phone         String?
@@ -57,206 +51,86 @@ model User {
   country       String?
   metadata      Json?
   is_active     Boolean  @default(true)
-  
-  // Platform user marker
-  is_platform   Boolean  @default(false)  // true = utilisateur plateforme (support, ops, etc.)
-  
-  // Reset password
-  reset_token String?   @unique
+  reset_token String?
   reset_token_expires_at DateTime?
-
-  // Legacy fields for compatibility
-  org_id        String?  @db.Uuid
-  role_id       String?  @db.Uuid
-  
   created_at    DateTime @default(now()) @map("created_at")
   updated_at    DateTime @updatedAt @map("updated_at")
 
   // Relations
-  orgUsers               OrgUser[]           // Appartenance aux organisations
-  userRoles              UserRole[]          // Rôles de l'utilisateur
-  platformOrgAccess      PlatformUserOrgAccess[]  // Pour utilisateurs plateforme
-  refreshTokens          RefreshToken[]
-  sentInvitations        Invitation[]
-  generatedBadges        Badge[]
-  checkedInRegistrations Registration[] @relation("CheckedInBy")
+  // Cascade: Si l'organisation est supprimée, tous ses utilisateurs sont supprimés
+  organization Organization @relation(fields: [org_id], references: [id], onDelete: Cascade)
+  // Restrict: Empêche la suppression d'un rôle s'il a des utilisateurs assignés
+  role         Role         @relation(fields: [role_id], references: [id], onDelete: Restrict)
+  refreshTokens RefreshToken[]
+  // Relations inverses pour les invitations envoyées
+  sent_invitations Invitation[]
+  generatedBadges  Badge[]  // Badges générés par cet utilisateur
 
-  // Legacy relations
-  organizationLegacy Organization? @relation("UserLegacyOrg", fields: [org_id], references: [id])
-  role               Role?         @relation("UserLegacyRole", fields: [role_id], references: [id])
-
-  @@index([email])
-  @@index([is_platform])
+  @@unique([email, org_id])
+  @@unique([id, org_id])
+  @@unique([reset_token])
+  @@index([org_id])
+  @@index([role_id])
   @@map("users")
 }
 
-// ===== Org Users (user membership in organizations) =====
-model OrgUser {
-  id         String   @id @default(uuid()) @db.Uuid
-  org_id     String   @db.Uuid
-  user_id    String   @db.Uuid
-  status     OrgUserStatus @default(active)  // active | invited | suspended
-  is_default Boolean  @default(false)  // Organisation par défaut pour cet utilisateur
-  created_at DateTime @default(now()) @map("created_at")
-  updated_at DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  organization Organization @relation(fields: [org_id], references: [id], onDelete: Cascade)
-  user         User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
-
-  @@unique([user_id, org_id])
-  @@index([org_id])
-  @@index([user_id])
-  @@index([status])
-  @@map("org_users")
-}
-
-enum OrgUserStatus {
-  active
-  invited
-  suspended
-}
-
-// ===== User Roles (assignment of roles to users) =====
-model UserRole {
-  id         String   @id @default(uuid()) @db.Uuid
-  user_id    String   @db.Uuid
-  org_id     String?  @db.Uuid  // NULL pour les rôles plateforme
-  role_id    String   @db.Uuid
-  created_at DateTime @default(now()) @map("created_at")
-  updated_at DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  user         User          @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  organization Organization? @relation(fields: [org_id], references: [id], onDelete: Cascade)
-  role         Role          @relation(fields: [role_id], references: [id], onDelete: Cascade)
-
-  @@unique([user_id, org_id, role_id])
-  @@index([user_id])
-  @@index([org_id])
-  @@index([role_id])
-  @@map("user_roles")
-}
-
-// ===== Platform User Org Access (platform users access to orgs) =====
-model PlatformUserOrgAccess {
-  id         String   @id @default(uuid()) @db.Uuid
-  user_id    String   @db.Uuid  // User with is_platform = true
-  org_id     String   @db.Uuid
-  created_at DateTime @default(now()) @map("created_at")
-  updated_at DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  user         User         @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  organization Organization @relation(fields: [org_id], references: [id], onDelete: Cascade)
-
-  @@unique([user_id, org_id])
-  @@index([user_id])
-  @@index([org_id])
-  @@map("platform_user_org_access")
-}
-
-// ===== Roles =====
 model Role {
-  id              String   @id @default(uuid()) @db.Uuid
-  org_id          String?  @db.Uuid  // NULL = rôle plateforme, non-NULL = rôle organisation
+  id              String        @id @default(uuid()) @db.Uuid
+  org_id          String?       @db.Uuid  // NULL = rôle système (template), non-NULL = rôle organisation
   code            String
   name            String
   description     String?
-  
-  // RBAC avancé
-  level           Int      @default(99) @map("rank") // Hiérarchie: plus grand = plus puissant
-  is_platform     Boolean  @default(false)  // true = rôle plateforme (support, root, etc.)
-  is_root         Boolean  @default(false)  // true = God role (bypass total)
-  role_type       RoleType @default(custom)  // Type logique du rôle
-  is_locked       Boolean  @default(false)  // true = rôle clé non modifiable/supprimable
-  managed_by_template Boolean @default(false)  // true = suit le PermissionRegistry
-  
-  // Plafond de scope pour ce rôle
-  permission_ceiling_scope PermissionScope @default(any)  // Plafond: accès max autorisé pour ce rôle
-  
-  created_at      DateTime @default(now()) @map("created_at")
-  updated_at      DateTime @updatedAt @map("updated_at")
+  level           Int           @default(99)  // Hiérarchie: 0=SUPER_ADMIN, 1=ADMIN, 2=MANAGER, 3=PARTNER, 4=VIEWER, 5=HOSTESS
+  is_system_role  Boolean       @default(false)  // true = template non modifiable
+  created_at      DateTime      @default(now()) @map("created_at")
+  updated_at      DateTime      @updatedAt @map("updated_at")
 
   // Relations
   organization    Organization? @relation(fields: [org_id], references: [id], onDelete: Cascade)
-  userRoles       UserRole[]
+  users           User[]
   invitations     Invitation[]
   rolePermissions RolePermission[]
-  usersLegacy     User[]           @relation("UserLegacyRole")
 
-  @@unique([org_id, code])  // Code unique par organisation (ou NULL pour plateforme)
+  @@unique([org_id, code])  // Code unique par organisation
   @@index([org_id])
-  @@index([is_platform])
-  @@index([is_root])
-  @@index([role_type])
-  @@index([managed_by_template])
+  @@index([is_system_role])
   @@map("roles")
 }
 
-enum RoleType {
-  tenant_admin      // Admin de l'organisation
-  tenant_manager    // Manager de l'organisation
-  tenant_staff      // Staff de l'organisation
-  support_L1        // Support niveau 1
-  support_L2        // Support niveau 2
-  custom            // Rôle personnalisé
-}
-
 enum PermissionScope {
-  any       // Accès total (all org for tenant, all tenants for platform)
-  team      // Accès à l'équipe (tenant uniquement)
-  assigned  // Accès aux ressources assignées
-  own       // Accès uniquement à ses propres ressources
-  none      // Pas d'accès
+  any
+  org
+  assigned
+  own
+  none
 }
 
-// ===== Permissions =====
 model Permission {
-  id          String   @id @default(uuid()) @db.Uuid
-  code        String   @unique // ex: "event.read" (clé unique)
+  id          String          @id @default(uuid()) @db.Uuid
+  code        String          // ex: "events.read" (sans scope)
+  scope       PermissionScope @default(none)
+  name        String
   description String?
-  resource    String   // ex: "event"
-  action      String   // ex: "read", "create", "update", "delete"
-  
-  // Module et scopes
-  module_key  String   // ex: "events", "attendees", "badges", "analytics"
-  
-  // Définit quels scopes sont autorisés pour cette permission
-  // Le scope RÉEL est défini dans RolePermission.scope_limit
-  allowed_scopes String[]  // ex: ["own", "team", "any"] - scopes autorisés
-  
-  // Scope maximal par défaut (utilisé lors de la création d'un rôle)
-  default_scope_ceiling PermissionScope @default(any)  // Par défaut: accès à toute l'org (tenant) ou tous les tenants (platform)
-  
-  created_at  DateTime @default(now()) @map("created_at")
-  updated_at  DateTime @updatedAt @map("updated_at")
+  created_at  DateTime        @default(now()) @map("created_at")
+  updated_at  DateTime        @updatedAt @map("updated_at")
 
   // Relations
   rolePermissions RolePermission[]
 
-  @@index([module_key])
-  @@index([resource])
+  @@unique([code, scope], name: "code_scope")
   @@map("permissions")
 }
 
-// ===== Role Permissions =====
 model RolePermission {
-  role_id          String   @db.Uuid
-  permission_id    String   @db.Uuid
-  
-  // Scope effectif accordé pour cette permission dans ce rôle
-  scope            PermissionScope @default(own)
-  
-  // Conditions avancées (optionnel, pour logiques complexes)
-  conditions       Json?
-  
-  created_at       DateTime @default(now()) @map("created_at")
-  updated_at       DateTime @updatedAt @map("updated_at")
+  role_id       String   @db.Uuid
+  permission_id String   @db.Uuid
+  created_at    DateTime @default(now()) @map("created_at")
+  updated_at    DateTime @updatedAt @map("updated_at")
 
   // Relations
-  role         Role       @relation(fields: [role_id], references: [id], onDelete: Cascade)
-  permission   Permission @relation(fields: [permission_id], references: [id], onDelete: Cascade)
+  // Cascade: Si le rôle ou la permission est supprimé, les associations sont supprimées
+  role         Role         @relation(fields: [role_id], references: [id], onDelete: Cascade)
+  permission   Permission   @relation(fields: [permission_id], references: [id], onDelete: Cascade)
 
   @@id([role_id, permission_id])
   @@index([role_id])
@@ -292,20 +166,23 @@ model Invitation {
   expires_at       DateTime
   org_id           String            @db.Uuid
   role_id          String            @db.Uuid
-  invited_by       String            @db.Uuid  // user_id de l'inviteur
+  invited_by_user_id String          @db.Uuid
   status           InvitationStatus  @default(PENDING)
   created_at       DateTime          @default(now()) @map("created_at")
   updated_at       DateTime          @updatedAt @map("updated_at")
 
   // Relations
+  // Cascade: Si l'organisation est supprimée, ses invitations sont supprimées
   organization     Organization      @relation(fields: [org_id], references: [id], onDelete: Cascade)
+  // Restrict: Empêche la suppression d'un rôle s'il a des invitations en cours
   role             Role              @relation(fields: [role_id], references: [id], onDelete: Restrict)
-  invitedByUser    User              @relation(fields: [invited_by], references: [id], onDelete: Restrict)
+  // Restrict: Empêche la suppression d'un utilisateur s'il a envoyé des invitations
+  invited_by       User              @relation(fields: [invited_by_user_id], references: [id], onDelete: Restrict)
 
-  @@unique([email, org_id])
+  @@unique([email, org_id]) // Un email ne peut avoir qu'une invitation active par organisation
   @@index([org_id])
   @@index([role_id])
-  @@index([invited_by])
+  @@index([invited_by_user_id])
   @@index([token])
   @@index([status])
   @@index([expires_at])
@@ -608,7 +485,7 @@ model EventSetting {
 
   // Relations
   event                           Event @relation(fields: [event_id, org_id], references: [id, org_id], onDelete: Cascade, onUpdate: NoAction)
-  badgeTemplate                   BadgeTemplate? @relation(fields: [badge_template_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  badgeTemplate                   BadgeTemplate? @relation(fields: [badge_template_id, org_id], references: [id, org_id], onDelete: SetNull, onUpdate: NoAction)
 
   @@unique([event_id, org_id])
   @@index([org_id, event_id])
@@ -708,7 +585,6 @@ model Registration {
   confirmed_at            DateTime?
   created_at              DateTime @default(now()) @map("created_at")
   updated_at              DateTime @updatedAt @map("updated_at")
-  deleted_at              DateTime? @map("deleted_at")
   
   // Source de l'inscription (pour distinguer test/réel)
   source                  RegistrationSource @default(public_form) @map("source")
@@ -726,17 +602,8 @@ model Registration {
   badge_pdf_url           String?  @map("badge_pdf_url")
   badge_image_url         String?  @map("badge_image_url")
 
-  // Check-in tracking
-  checked_in_at           DateTime? @map("checked_in_at")
-  checked_in_by           String?   @db.Uuid @map("checked_in_by")
-  checkin_location        Json?     @map("checkin_location") // { lat, lng }
-  
-  // Comment from mobile app during registration
-  comment                 String?   @db.Text @map("comment")
-
   // Relations
   event                   Event @relation(fields: [event_id, org_id], references: [id, org_id], onDelete: Cascade, onUpdate: NoAction)
-  checkedInByUser         User? @relation("CheckedInBy", fields: [checked_in_by], references: [id], onDelete: SetNull)
   attendee                Attendee @relation(fields: [attendee_id, org_id], references: [id, org_id], onDelete: Cascade, onUpdate: NoAction)
   eventAttendeeType       EventAttendeeType? @relation(fields: [event_attendee_type_id], references: [id], onDelete: SetNull)
   badgeTemplate           BadgeTemplate? @relation(fields: [badge_template_id, org_id], references: [id, org_id], onDelete: SetNull, onUpdate: NoAction)
@@ -748,7 +615,6 @@ model Registration {
   @@index([org_id, event_id, status])
   @@index([org_id, attendee_id])
   @@index([org_id, event_id, event_attendee_type_id])
-  @@index([deleted_at])
   @@map("registrations")
 }
 
@@ -764,7 +630,6 @@ enum RegistrationSource {
   test_form    // Inscription via formulaire de test (fake)
   manual       // Créée manuellement par un admin
   import       // Importée via Excel
-  mobile_app   // Créée depuis l'app mobile
 }
 
 // ===== Badges =====
@@ -812,7 +677,7 @@ model Badge {
 
   // Relations
   registration      Registration  @relation(fields: [registration_id], references: [id], onDelete: Cascade)
-  badgeTemplate     BadgeTemplate @relation(fields: [badge_template_id], references: [id], onDelete: Restrict, onUpdate: NoAction)
+  badgeTemplate     BadgeTemplate @relation(fields: [badge_template_id, org_id], references: [id, org_id], onDelete: Restrict, onUpdate: NoAction)
   organization      Organization  @relation(fields: [org_id], references: [id], onDelete: Cascade)
   event             Event         @relation(fields: [event_id, org_id], references: [id, org_id], onDelete: Cascade, onUpdate: NoAction)
   generatedByUser   User?         @relation(fields: [generated_by], references: [id], onDelete: SetNull)
@@ -955,81 +820,4 @@ model EventTag {
   @@index([org_id, event_id])
   @@index([tag_id])
   @@map("event_tags")
-}
-
-// ===== Plans & Modules =====
-
-model Plan {
-  id              String   @id @default(uuid()) @db.Uuid
-  code            String   @unique  // ex: "FREE", "PRO", "ENTERPRISE"
-  name            String
-  description     String?  @db.Text
-  billing_period  String?  // ex: "monthly", "yearly"
-  is_active       Boolean  @default(true)
-  created_at      DateTime @default(now()) @map("created_at")
-  updated_at      DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  planModules     PlanModule[]
-  organizations   Organization[]  // Orgs utilisant ce plan
-
-  @@index([is_active])
-  @@map("plans")
-}
-
-model Module {
-  key         String   @id  // ex: "events", "attendees", "badges", "analytics"
-  name        String
-  description String?  @db.Text
-  category    String?  // ex: "core", "premium", "advanced"
-  created_at  DateTime @default(now()) @map("created_at")
-  updated_at  DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  planModules     PlanModule[]
-  orgModuleOverrides OrgModuleOverride[]
-
-  @@index([category])
-  @@map("modules")
-}
-
-model PlanModule {
-  id                      String   @id @default(uuid()) @db.Uuid
-  plan_id                 String   @db.Uuid
-  module_key              String   // modules.key
-  is_included_by_default  Boolean  @default(true)
-  created_at              DateTime @default(now()) @map("created_at")
-  updated_at              DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  plan    Plan   @relation(fields: [plan_id], references: [id], onDelete: Cascade)
-  module  Module @relation(fields: [module_key], references: [key], onDelete: Cascade)
-
-  @@unique([plan_id, module_key])
-  @@index([plan_id])
-  @@index([module_key])
-  @@map("plan_modules")
-}
-
-model OrgModuleOverride {
-  id             String   @id @default(uuid()) @db.Uuid
-  org_id         String   @db.Uuid
-  module_key     String   // modules.key
-  forced_status  ModuleOverrideStatus  // enabled | disabled
-  created_at     DateTime @default(now()) @map("created_at")
-  updated_at     DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  organization Organization @relation(fields: [org_id], references: [id], onDelete: Cascade)
-  module       Module       @relation(fields: [module_key], references: [key], onDelete: Cascade)
-
-  @@unique([org_id, module_key])
-  @@index([org_id])
-  @@index([module_key])
-  @@map("org_module_overrides")
-}
-
-enum ModuleOverrideStatus {
-  enabled
-  disabled
 }
