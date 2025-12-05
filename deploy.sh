@@ -56,12 +56,24 @@ else
     git clone -b "$BRANCH" "$FRONTEND_REPO" frontend
 fi
 
-# Step 4: Generate production secrets
-echo -e "\n${YELLOW}[4/8] Generating production secrets...${NC}"
-JWT_ACCESS_SECRET=$(openssl rand -base64 64 | tr -d '\n')
-JWT_REFRESH_SECRET=$(openssl rand -base64 64 | tr -d '\n')
-JWT_SECRET=$(openssl rand -base64 64 | tr -d '\n')
-POSTGRES_PASSWORD=$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9')
+# Step 4: Generate or retrieve production secrets
+echo -e "\n${YELLOW}[4/8] Managing production secrets...${NC}"
+
+# Check if secrets already exist to avoid rotating passwords and breaking DB connection
+if [ -f "$DEPLOY_DIR/backend/.env.production" ]; then
+    echo "Existing configuration found. Preserving secrets..."
+    # Extract secrets from existing file
+    JWT_ACCESS_SECRET=$(grep "^JWT_ACCESS_SECRET=" "$DEPLOY_DIR/backend/.env.production" | cut -d'=' -f2-)
+    JWT_REFRESH_SECRET=$(grep "^JWT_REFRESH_SECRET=" "$DEPLOY_DIR/backend/.env.production" | cut -d'=' -f2-)
+    JWT_SECRET=$(grep "^JWT_SECRET=" "$DEPLOY_DIR/backend/.env.production" | cut -d'=' -f2-)
+    POSTGRES_PASSWORD=$(grep "^POSTGRES_PASSWORD=" "$DEPLOY_DIR/backend/.env.production" | cut -d'=' -f2-)
+else
+    echo "No existing configuration. Generating new secrets..."
+    JWT_ACCESS_SECRET=$(openssl rand -base64 64 | tr -d '\n')
+    JWT_REFRESH_SECRET=$(openssl rand -base64 64 | tr -d '\n')
+    JWT_SECRET=$(openssl rand -base64 64 | tr -d '\n')
+    POSTGRES_PASSWORD=$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9')
+fi
 
 # Step 5: Create .env.production for backend
 echo -e "\n${YELLOW}[5/8] Creating backend .env.production...${NC}"
@@ -119,7 +131,15 @@ API_URL=https://api.attendee.fr
 FRONTEND_URL=https://attendee.fr
 EOF
 
-echo -e "${GREEN}✓ Backend .env.production created with secure secrets${NC}"
+# Create .env file for Docker Compose interpolation (Postgres service needs this)
+echo "Creating .env for Docker Compose..."
+cat > "$DEPLOY_DIR/backend/.env" <<EOF
+POSTGRES_USER=ems_prod
+POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+POSTGRES_DB=ems_production
+EOF
+
+echo -e "${GREEN}✓ Backend .env.production and .env created with secure secrets${NC}"
 
 # Step 6: Build frontend
 echo -e "\n${YELLOW}[6/8] Building frontend for production...${NC}"
