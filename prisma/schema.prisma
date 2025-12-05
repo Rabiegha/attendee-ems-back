@@ -38,6 +38,7 @@ model Organization {
   tags                  Tag[]
   badges                Badge[]
   orgModuleOverrides    OrgModuleOverride[]  // Overrides de modules
+  usersLegacy           User[]               @relation("UserLegacyOrg")
 
   @@index([plan_id])
   @@map("organizations")
@@ -63,6 +64,10 @@ model User {
   // Reset password
   reset_token String?   @unique
   reset_token_expires_at DateTime?
+
+  // Legacy fields for compatibility
+  org_id        String?  @db.Uuid
+  role_id       String?  @db.Uuid
   
   created_at    DateTime @default(now()) @map("created_at")
   updated_at    DateTime @updatedAt @map("updated_at")
@@ -75,6 +80,10 @@ model User {
   sentInvitations        Invitation[]
   generatedBadges        Badge[]
   checkedInRegistrations Registration[] @relation("CheckedInBy")
+
+  // Legacy relations
+  organizationLegacy Organization? @relation("UserLegacyOrg", fields: [org_id], references: [id])
+  role               Role?         @relation("UserLegacyRole", fields: [role_id], references: [id])
 
   @@index([email])
   @@index([is_platform])
@@ -156,7 +165,7 @@ model Role {
   description     String?
   
   // RBAC avancé
-  rank            Int      @default(99)  // Hiérarchie: plus grand = plus puissant
+  level           Int      @default(99) @map("rank") // Hiérarchie: plus grand = plus puissant
   is_platform     Boolean  @default(false)  // true = rôle plateforme (support, root, etc.)
   is_root         Boolean  @default(false)  // true = God role (bypass total)
   role_type       RoleType @default(custom)  // Type logique du rôle
@@ -174,6 +183,7 @@ model Role {
   userRoles       UserRole[]
   invitations     Invitation[]
   rolePermissions RolePermission[]
+  usersLegacy     User[]           @relation("UserLegacyRole")
 
   @@unique([org_id, code])  // Code unique par organisation (ou NULL pour plateforme)
   @@index([org_id])
@@ -203,7 +213,8 @@ enum PermissionScope {
 
 // ===== Permissions =====
 model Permission {
-  code        String   @id  // ex: "event.read" (clé unique)
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique // ex: "event.read" (clé unique)
   description String?
   resource    String   // ex: "event"
   action      String   // ex: "read", "create", "update", "delete"
@@ -232,7 +243,7 @@ model Permission {
 // ===== Role Permissions =====
 model RolePermission {
   role_id          String   @db.Uuid
-  permission_code  String   // permissions.code (au lieu de permission_id)
+  permission_id    String   @db.Uuid
   
   // Scope effectif accordé pour cette permission dans ce rôle
   scope            PermissionScope @default(own)
@@ -245,11 +256,11 @@ model RolePermission {
 
   // Relations
   role         Role       @relation(fields: [role_id], references: [id], onDelete: Cascade)
-  permission   Permission @relation(fields: [permission_code], references: [code], onDelete: Cascade)
+  permission   Permission @relation(fields: [permission_id], references: [id], onDelete: Cascade)
 
-  @@id([role_id, permission_code])
+  @@id([role_id, permission_id])
   @@index([role_id])
-  @@index([permission_code])
+  @@index([permission_id])
   @@map("role_permissions")
 }
 
