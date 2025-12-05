@@ -24,7 +24,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      target: production
+      target: runner
     container_name: ems-api
     restart: unless-stopped
     env_file:
