@@ -583,6 +583,8 @@ model Registration {
   badge_template_id       String?  @db.Uuid
   invited_at              DateTime?
   confirmed_at            DateTime?
+  checked_in_at           DateTime? @map("checked_in_at")
+  deleted_at              DateTime? @map("deleted_at")
   created_at              DateTime @default(now()) @map("created_at")
   updated_at              DateTime @updatedAt @map("updated_at")
   
@@ -630,6 +632,7 @@ enum RegistrationSource {
   test_form    // Inscription via formulaire de test (fake)
   manual       // Créée manuellement par un admin
   import       // Importée via Excel
+  mobile_app   // Inscription via l'application mobile
 }
 
 // ===== Badges =====
