@@ -8,6 +8,7 @@ COPY . .
 # Generate Prisma client
 RUN npx prisma generate
 RUN npm run build
+RUN echo "Build content:" && ls -R dist
 
 # Runtime
 FROM node:20-alpine AS runner
@@ -41,4 +42,4 @@ RUN chmod +x ./scripts/entrypoint.sh
 
 EXPOSE 3000
 ENTRYPOINT ["./scripts/entrypoint.sh"]
-CMD ["node", "dist/main.js"]
+CMD ["node", "dist/src/main.js"]
