@@ -1,6 +1,6 @@
 # 🚀 Quick Start - Phase 1 Core
 
-## ⚡ Démarrage en 3 Minutes
+## ⚡ Démarrage en 3 Minutes (Local)
 
 ### 1. Démarrer l'environnement
 ```bash
@@ -9,6 +9,23 @@ npm run docker:up
 npm run docker:migrate
 npm run docker:seed
 ```
+
+## 🌐 Déploiement Production (VPS)
+
+### Déploiement Frontend Rapide
+```bash
+ssh root@51.75.252.74
+/opt/ems-attendee/deploy-front.sh
+```
+
+Ce script effectue automatiquement :
+- Pull des dernières modifications Git
+- Installation des dépendances (npm install)
+- Build du projet (npm run build)
+- Redémarrage de Nginx
+
+**Frontend accessible sur :** https://attendee.fr  
+**API accessible sur :** https://api.attendee.fr
 
 ### 2. Tester l'API
 ```bash
