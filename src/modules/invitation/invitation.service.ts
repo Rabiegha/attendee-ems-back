@@ -447,8 +447,10 @@ export class InvitationService {
       };
 
       await this.transporter.sendMail(mailOptions);
+      console.log(`✅ [INVITATION] Email sent successfully to ${email}`);
       return true;
     } catch (error) {
+      console.error(`❌ [INVITATION] Failed to send email to ${email}:`, error);
       return false;
     }
   }
