@@ -75,61 +75,35 @@ else
     POSTGRES_PASSWORD=$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9')
 fi
 
-# Step 5: Create .env.production for backend
-echo -e "\n${YELLOW}[5/8] Creating backend .env.production...${NC}"
-cat > "$DEPLOY_DIR/backend/.env.production" <<EOF
-NODE_ENV=production
-PORT=3000
-DATABASE_URL=postgresql://ems_prod:${POSTGRES_PASSWORD}@postgres:5432/ems_production
+# Step 5: Use .env.vps for backend configuration
+echo -e "\n${YELLOW}[5/8] Loading backend configuration from .env.vps...${NC}"
 
-# JWT Configuration - PRODUCTION SECRETS
-JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET}
-JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
-JWT_ACCESS_TTL=15m
-JWT_REFRESH_TTL=30d
+# Check if .env.vps exists
+if [ ! -f "$DEPLOY_DIR/backend/.env.vps" ]; then
+    echo -e "${RED}ERROR: .env.vps not found in $DEPLOY_DIR/backend/${NC}"
+    echo "Please create .env.vps with all required configuration"
+    exit 1
+fi
 
-# Legacy (keep for backward compatibility)
-JWT_SECRET=${JWT_SECRET}
-JWT_EXPIRES_IN=900s
+# Copy .env.vps to .env.production
+cp "$DEPLOY_DIR/backend/.env.vps" "$DEPLOY_DIR/backend/.env.production"
 
-# Auth Cookie Configuration
-AUTH_COOKIE_NAME=refresh_token
-AUTH_COOKIE_DOMAIN=.attendee.fr
-AUTH_COOKIE_SECURE=true
-AUTH_COOKIE_SAMESITE=strict
+# Override secrets with preserved values (if they exist)
+if [ ! -z "$JWT_ACCESS_SECRET" ]; then
+    sed -i "s|^JWT_ACCESS_SECRET=.*|JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET}|" "$DEPLOY_DIR/backend/.env.production"
+fi
+if [ ! -z "$JWT_REFRESH_SECRET" ]; then
+    sed -i "s|^JWT_REFRESH_SECRET=.*|JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}|" "$DEPLOY_DIR/backend/.env.production"
+fi
+if [ ! -z "$JWT_SECRET" ]; then
+    sed -i "s|^JWT_SECRET=.*|JWT_SECRET=${JWT_SECRET}|" "$DEPLOY_DIR/backend/.env.production"
+fi
+if [ ! -z "$POSTGRES_PASSWORD" ]; then
+    sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${POSTGRES_PASSWORD}|" "$DEPLOY_DIR/backend/.env.production"
+    sed -i "s|^DATABASE_URL=.*|DATABASE_URL=postgresql://ems_prod:${POSTGRES_PASSWORD}@postgres:5432/ems_production|" "$DEPLOY_DIR/backend/.env.production"
+fi
 
-# CORS Configuration
-API_CORS_ORIGIN=https://attendee.fr
-
-RUN_MIGRATIONS=true
-RUN_SEEDERS=false
-
-POSTGRES_USER=ems_prod
-POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
-POSTGRES_DB=ems_production
-
-# Configuration Email (OVH SMTP)
-EMAIL_PROVIDER=smtp
-EMAIL_ENABLED=true
-SMTP_HOST=ssl0.ovh.net
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_USER=attendee@choyou.fr
-SMTP_PASSWORD=CK&b!nsnJLM\$fZdbAa0lnNA@2Kar?fbe
-SMTP_FROM=attendee@choyou.fr
-SMTP_FROM_NAME=EMS Attendee System
-
-# Cloudflare R2 Configuration
-R2_ACCOUNT_ID=903ebe643d8b33f2884eb7ee633ed42b
-R2_ACCESS_KEY_ID=a8744bb675979c64c2fc47d0be52f1af
-R2_SECRET_ACCESS_KEY=28d3cd680b6ec588aa0907974e585e650e9acec0eea6816668badd68d5d00bd8
-R2_BUCKET_NAME=ems-badges
-R2_PUBLIC_URL=https://pub-c032093f80904689bbbd94229f3e15e8.r2.dev
-
-# Production URLs
-API_URL=https://api.attendee.fr
-FRONTEND_URL=https://attendee.fr
-EOF
+echo -e "${GREEN}✓ Configuration loaded from .env.vps${NC}"
 
 # Create .env file for Docker Compose interpolation (Postgres service needs this)
 echo "Creating .env for Docker Compose..."
