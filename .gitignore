@@ -41,13 +41,12 @@ badge-test.pdf
 !.vscode/launch.json
 !.vscode/extensions.json
 
-# dotenv environment variables file
+# Environment variables
+# Only .env.example and .env.README.md files are committed
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
-.env.production
+.env.*
+!.env.example
+!.env.README.md
 .env.docker
 .env.test.docker
 .env.prod
