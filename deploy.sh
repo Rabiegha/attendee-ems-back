@@ -22,7 +22,7 @@ echo -e "${GREEN}========================================${NC}"
 DEPLOY_DIR="/opt/ems-attendee"
 BACKEND_REPO="https://github.com/Rabiegha/attendee-ems-back.git"
 FRONTEND_REPO="https://github.com/Rabiegha/attendee-ems-front.git"
-BRANCH="vps"
+BRANCH="main"
 
 # Step 1: Create deployment directory
 echo -e "\n${YELLOW}[1/8] Creating deployment directory...${NC}"

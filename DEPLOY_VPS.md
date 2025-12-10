@@ -41,7 +41,7 @@ ssh debian@51.75.252.74
 ```bash
 # Depuis le VPS
 cd ~
-wget https://raw.githubusercontent.com/Rabiegha/attendee-ems-back/vps/deploy.sh
+wget https://raw.githubusercontent.com/Rabiegha/attendee-ems-back/main/deploy.sh
 chmod +x deploy.sh
 ```
 
@@ -52,7 +52,7 @@ chmod +x deploy.sh
 ```
 
 Le script va automatiquement :
-- ✅ Cloner les repos (branche `vps`)
+- ✅ Cloner les repos (branche `main`)
 - ✅ Générer des secrets JWT sécurisés
 - ✅ Créer le fichier `.env.production`
 - ✅ Builder le frontend
@@ -121,9 +121,12 @@ Pour déployer des nouvelles versions :
 
 ```bash
 cd /opt/ems-attendee/backend
-git pull origin vps
+git pull origin main
 docker compose -f docker-compose.prod.yml down
 docker compose -f docker-compose.prod.yml up -d --build
+
+# Vérifier les logs après le déploiement
+docker logs ems-api -f
 ```
 
 ## 🛠️ Commandes utiles
