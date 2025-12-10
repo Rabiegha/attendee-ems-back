@@ -272,8 +272,19 @@ export class RegistrationsService {
 
       // Determine status based on auto-approve setting or source
       // Mobile registrations are always auto-approved
+      // Admin can override status with admin_status field
       const isMobileRegistration = dto.source === 'mobile_app';
-      const status = (event.settings?.registration_auto_approve || isMobileRegistration) ? 'approved' : 'awaiting';
+      const defaultStatus = (event.settings?.registration_auto_approve || isMobileRegistration) ? 'approved' : 'awaiting';
+      const status = dto.admin_status || defaultStatus;
+      
+      // DEBUG: Log admin dates
+      if (dto.admin_registered_at || dto.admin_checked_in_at) {
+        console.log('🔍 Admin dates received:', {
+          admin_registered_at: dto.admin_registered_at,
+          admin_checked_in_at: dto.admin_checked_in_at,
+          admin_is_checked_in: dto.admin_is_checked_in,
+        });
+      }
       const confirmedAt = status === 'approved' ? new Date() : null;
 
       // Check capacity only if we are trying to approve the registration
@@ -349,8 +360,15 @@ export class RegistrationsService {
           attendance_type: dto.attendance_type,
           event_attendee_type_id: dto.event_attendee_type_id,
           answers: dto.answers ? (dto.answers as Prisma.InputJsonValue) : null,
-          invited_at: new Date(),
+          invited_at: dto.admin_registered_at ? new Date(dto.admin_registered_at) : new Date(),
           confirmed_at: confirmedAt,
+          
+          // Check-in admin (si fourni)
+          checked_in_at: dto.admin_is_checked_in && dto.admin_checked_in_at 
+            ? new Date(dto.admin_checked_in_at)
+            : dto.admin_is_checked_in
+            ? new Date()
+            : null,
           
           // Source de l'inscription
           source: dto.source || 'public_form',
