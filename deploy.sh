@@ -69,20 +69,28 @@ fi
 # Copy .env.vps to .env.production
 cp "$DEPLOY_DIR/backend/.env.vps" "$DEPLOY_DIR/backend/.env.production"
 
-# Step 5: Generate or preserve JWT secrets
-echo -e "\n${YELLOW}[5/8] Managing JWT secrets...${NC}"
+# Step 5: Generate or preserve secrets
+echo -e "\n${YELLOW}[5/8] Managing secrets...${NC}"
 
-# Read POSTGRES_PASSWORD from .env.vps (this is the source of truth)
+# Read POSTGRES_PASSWORD from .env.vps
 POSTGRES_PASSWORD=$(grep "^POSTGRES_PASSWORD=" "$DEPLOY_DIR/backend/.env.vps" | cut -d'=' -f2-)
 
-# Check if JWT secrets already exist to avoid rotating them
+# Generate new password if it's a placeholder
+if [ -z "$POSTGRES_PASSWORD" ] || [ "$POSTGRES_PASSWORD" = "WILL_BE_SET_BY_DEPLOY" ]; then
+    echo "Generating new PostgreSQL password..."
+    POSTGRES_PASSWORD=$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9')
+else
+    echo "Using PostgreSQL password from .env.vps"
+fi
+
+# Check if JWT secrets already exist in .env.production to avoid rotating them
 if [ -f "$DEPLOY_DIR/backend/.env.production" ]; then
     EXISTING_JWT_ACCESS=$(grep "^JWT_ACCESS_SECRET=" "$DEPLOY_DIR/backend/.env.production" | cut -d'=' -f2-)
     EXISTING_JWT_REFRESH=$(grep "^JWT_REFRESH_SECRET=" "$DEPLOY_DIR/backend/.env.production" | cut -d'=' -f2-)
     EXISTING_JWT=$(grep "^JWT_SECRET=" "$DEPLOY_DIR/backend/.env.production" | cut -d'=' -f2-)
     
     # Only generate new secrets if they don't exist or are placeholders
-    if [ -z "$EXISTING_JWT_ACCESS" ] || [ "$EXISTING_JWT_ACCESS" = "placeholder" ]; then
+    if [ -z "$EXISTING_JWT_ACCESS" ] || [ "$EXISTING_JWT_ACCESS" = "WILL_BE_SET_BY_DEPLOY" ] || [ "$EXISTING_JWT_ACCESS" = "placeholder" ]; then
         echo "Generating new JWT secrets..."
         JWT_ACCESS_SECRET=$(openssl rand -base64 64 | tr -d '\n')
         JWT_REFRESH_SECRET=$(openssl rand -base64 64 | tr -d '\n')
@@ -100,15 +108,16 @@ else
     JWT_SECRET=$(openssl rand -base64 64 | tr -d '\n')
 fi
 
-# Update .env.production with JWT secrets (keep POSTGRES_PASSWORD from .env.vps)
+# Update .env.production with generated secrets
 sed -i "s|^JWT_ACCESS_SECRET=.*|JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET}|" "$DEPLOY_DIR/backend/.env.production"
 sed -i "s|^JWT_REFRESH_SECRET=.*|JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}|" "$DEPLOY_DIR/backend/.env.production"
 sed -i "s|^JWT_SECRET=.*|JWT_SECRET=${JWT_SECRET}|" "$DEPLOY_DIR/backend/.env.production"
+sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${POSTGRES_PASSWORD}|" "$DEPLOY_DIR/backend/.env.production"
 
-# Ensure DATABASE_URL uses the password from .env.vps
-sed -i "s|^DATABASE_URL=.*|DATABASE_URL=postgresql://ems_prod:${POSTGRES_PASSWORD}@postgres:5432/ems_production|" "$DEPLOY_DIR/backend/.env.production"
+# Ensure DATABASE_URL uses the correct password
+sed -i "s|DATABASE_URL=postgresql://ems_prod:.*@postgres:5432/ems_production|DATABASE_URL=postgresql://ems_prod:${POSTGRES_PASSWORD}@postgres:5432/ems_production|" "$DEPLOY_DIR/backend/.env.production"
 
-echo -e "${GREEN}✓ Configuration loaded from .env.vps${NC}"
+echo -e "${GREEN}✓ All secrets generated and configured${NC}"
 
 # Create .env file for Docker Compose interpolation (Postgres service needs this)
 echo "Creating .env for Docker Compose..."
