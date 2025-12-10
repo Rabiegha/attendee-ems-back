@@ -56,27 +56,8 @@ else
     git clone -b "$BRANCH" "$FRONTEND_REPO" frontend
 fi
 
-# Step 4: Generate or retrieve production secrets
-echo -e "\n${YELLOW}[4/8] Managing production secrets...${NC}"
-
-# Check if secrets already exist to avoid rotating passwords and breaking DB connection
-if [ -f "$DEPLOY_DIR/backend/.env.production" ]; then
-    echo "Existing configuration found. Preserving secrets..."
-    # Extract secrets from existing file
-    JWT_ACCESS_SECRET=$(grep "^JWT_ACCESS_SECRET=" "$DEPLOY_DIR/backend/.env.production" | cut -d'=' -f2-)
-    JWT_REFRESH_SECRET=$(grep "^JWT_REFRESH_SECRET=" "$DEPLOY_DIR/backend/.env.production" | cut -d'=' -f2-)
-    JWT_SECRET=$(grep "^JWT_SECRET=" "$DEPLOY_DIR/backend/.env.production" | cut -d'=' -f2-)
-    POSTGRES_PASSWORD=$(grep "^POSTGRES_PASSWORD=" "$DEPLOY_DIR/backend/.env.production" | cut -d'=' -f2-)
-else
-    echo "No existing configuration. Generating new secrets..."
-    JWT_ACCESS_SECRET=$(openssl rand -base64 64 | tr -d '\n')
-    JWT_REFRESH_SECRET=$(openssl rand -base64 64 | tr -d '\n')
-    JWT_SECRET=$(openssl rand -base64 64 | tr -d '\n')
-    POSTGRES_PASSWORD=$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9')
-fi
-
-# Step 5: Use .env.vps for backend configuration
-echo -e "\n${YELLOW}[5/8] Loading backend configuration from .env.vps...${NC}"
+# Step 4: Load .env.vps configuration first
+echo -e "\n${YELLOW}[4/8] Loading backend configuration from .env.vps...${NC}"
 
 # Check if .env.vps exists
 if [ ! -f "$DEPLOY_DIR/backend/.env.vps" ]; then
@@ -88,20 +69,44 @@ fi
 # Copy .env.vps to .env.production
 cp "$DEPLOY_DIR/backend/.env.vps" "$DEPLOY_DIR/backend/.env.production"
 
-# Override secrets with preserved values (if they exist)
-if [ ! -z "$JWT_ACCESS_SECRET" ]; then
-    sed -i "s|^JWT_ACCESS_SECRET=.*|JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET}|" "$DEPLOY_DIR/backend/.env.production"
+# Step 5: Generate or preserve JWT secrets
+echo -e "\n${YELLOW}[5/8] Managing JWT secrets...${NC}"
+
+# Read POSTGRES_PASSWORD from .env.vps (this is the source of truth)
+POSTGRES_PASSWORD=$(grep "^POSTGRES_PASSWORD=" "$DEPLOY_DIR/backend/.env.vps" | cut -d'=' -f2-)
+
+# Check if JWT secrets already exist to avoid rotating them
+if [ -f "$DEPLOY_DIR/backend/.env.production" ]; then
+    EXISTING_JWT_ACCESS=$(grep "^JWT_ACCESS_SECRET=" "$DEPLOY_DIR/backend/.env.production" | cut -d'=' -f2-)
+    EXISTING_JWT_REFRESH=$(grep "^JWT_REFRESH_SECRET=" "$DEPLOY_DIR/backend/.env.production" | cut -d'=' -f2-)
+    EXISTING_JWT=$(grep "^JWT_SECRET=" "$DEPLOY_DIR/backend/.env.production" | cut -d'=' -f2-)
+    
+    # Only generate new secrets if they don't exist or are placeholders
+    if [ -z "$EXISTING_JWT_ACCESS" ] || [ "$EXISTING_JWT_ACCESS" = "placeholder" ]; then
+        echo "Generating new JWT secrets..."
+        JWT_ACCESS_SECRET=$(openssl rand -base64 64 | tr -d '\n')
+        JWT_REFRESH_SECRET=$(openssl rand -base64 64 | tr -d '\n')
+        JWT_SECRET=$(openssl rand -base64 64 | tr -d '\n')
+    else
+        echo "Preserving existing JWT secrets..."
+        JWT_ACCESS_SECRET=$EXISTING_JWT_ACCESS
+        JWT_REFRESH_SECRET=$EXISTING_JWT_REFRESH
+        JWT_SECRET=$EXISTING_JWT
+    fi
+else
+    echo "Generating new JWT secrets..."
+    JWT_ACCESS_SECRET=$(openssl rand -base64 64 | tr -d '\n')
+    JWT_REFRESH_SECRET=$(openssl rand -base64 64 | tr -d '\n')
+    JWT_SECRET=$(openssl rand -base64 64 | tr -d '\n')
 fi
-if [ ! -z "$JWT_REFRESH_SECRET" ]; then
-    sed -i "s|^JWT_REFRESH_SECRET=.*|JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}|" "$DEPLOY_DIR/backend/.env.production"
-fi
-if [ ! -z "$JWT_SECRET" ]; then
-    sed -i "s|^JWT_SECRET=.*|JWT_SECRET=${JWT_SECRET}|" "$DEPLOY_DIR/backend/.env.production"
-fi
-if [ ! -z "$POSTGRES_PASSWORD" ]; then
-    sed -i "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=${POSTGRES_PASSWORD}|" "$DEPLOY_DIR/backend/.env.production"
-    sed -i "s|^DATABASE_URL=.*|DATABASE_URL=postgresql://ems_prod:${POSTGRES_PASSWORD}@postgres:5432/ems_production|" "$DEPLOY_DIR/backend/.env.production"
-fi
+
+# Update .env.production with JWT secrets (keep POSTGRES_PASSWORD from .env.vps)
+sed -i "s|^JWT_ACCESS_SECRET=.*|JWT_ACCESS_SECRET=${JWT_ACCESS_SECRET}|" "$DEPLOY_DIR/backend/.env.production"
+sed -i "s|^JWT_REFRESH_SECRET=.*|JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}|" "$DEPLOY_DIR/backend/.env.production"
+sed -i "s|^JWT_SECRET=.*|JWT_SECRET=${JWT_SECRET}|" "$DEPLOY_DIR/backend/.env.production"
+
+# Ensure DATABASE_URL uses the password from .env.vps
+sed -i "s|^DATABASE_URL=.*|DATABASE_URL=postgresql://ems_prod:${POSTGRES_PASSWORD}@postgres:5432/ems_production|" "$DEPLOY_DIR/backend/.env.production"
 
 echo -e "${GREEN}✓ Configuration loaded from .env.vps${NC}"
 
