@@ -11,15 +11,17 @@ import { HttpExceptionFilter } from './common/exceptions/http-exception.filter';
 import { ConfigService } from './config/config.service';
 
 async function bootstrap() {
-  // Configure body parser limits via NestJS options (prevents Sentry double-parsing issue)
+  // Disable NestJS default body parser to prevent Sentry double-parsing
   const app = await NestFactory.create(AppModule, {
-    bodyParser: {
-      json: { limit: '50mb' },
-      urlencoded: { limit: '50mb', extended: true },
-    },
+    bodyParser: false,
   });
 
   const configService = app.get(ConfigService);
+
+  // Apply body parser AFTER app creation with custom limits
+  // This prevents Sentry's OpenTelemetry instrumentation from consuming the stream first
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
   // Global validation pipe
   app.useGlobalPipes(
