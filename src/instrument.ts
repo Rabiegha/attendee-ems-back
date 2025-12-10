@@ -19,6 +19,9 @@ if (process.env.SENTRY_DSN) {
     
     // Disable default integrations that interfere with body parsing
     skipOpenTelemetrySetup: true,
+    
+    // CRITICAL: Prevent Sentry from reading request bodies (causes "stream is not readable")
+    sendDefaultPii: false,
   });
 
   console.log('✅ Sentry initialized for backend');

@@ -11,13 +11,15 @@ import { HttpExceptionFilter } from './common/exceptions/http-exception.filter';
 import { ConfigService } from './config/config.service';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // Configure body parser limits via NestJS options (prevents Sentry double-parsing issue)
+  const app = await NestFactory.create(AppModule, {
+    bodyParser: {
+      json: { limit: '50mb' },
+      urlencoded: { limit: '50mb', extended: true },
+    },
+  });
 
   const configService = app.get(ConfigService);
-
-  // Configure larger payload limits for all endpoints (needed for badge templates with HTML/CSS content)
-  app.use(express.json({ limit: '50mb' }));
-  app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
   // Global validation pipe
   app.useGlobalPipes(
