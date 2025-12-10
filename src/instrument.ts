@@ -10,10 +10,6 @@ if (process.env.SENTRY_DSN) {
     environment: process.env.SENTRY_ENVIRONMENT || process.env.NODE_ENV || 'development',
     integrations: [
       nodeProfilingIntegration(),
-      // Disable Express auto-instrumentation to avoid body stream conflicts
-      Sentry.expressIntegration({
-        shouldTraceIncomingRequest: () => false,
-      }),
     ],
     // Performance Monitoring
     tracesSampleRate: 0.1, // 10% of requests
