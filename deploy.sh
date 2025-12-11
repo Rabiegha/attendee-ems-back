@@ -69,8 +69,8 @@ fi
 # Copy .env.vps to .env.production
 cp "$DEPLOY_DIR/backend/.env.vps" "$DEPLOY_DIR/backend/.env.production"
 
-# Step 5: Generate secrets
-echo -e "\n${YELLOW}[5/8] Generating secrets...${NC}"
+# Step 5: Generate fresh secrets every time
+echo -e "\n${YELLOW}[5/8] Generating fresh secrets...${NC}"
 
 # Generate new secrets
 echo "Generating PostgreSQL password..."
@@ -119,15 +119,49 @@ mkdir -p "$DEPLOY_DIR/backend/frontend"
 cp -r "$DEPLOY_DIR/frontend/dist/"* "$DEPLOY_DIR/backend/frontend/"
 echo -e "${GREEN}✓ Frontend files copied${NC}"
 
-# Step 8: Start Docker services
+# Step 8: Start Docker services with fresh secrets
 echo -e "\n${YELLOW}[8/8] Starting Docker services...${NC}"
 cd "$DEPLOY_DIR/backend"
 
-# Stop existing containers if any
+# Check if postgres volume exists
+POSTGRES_VOLUME=$(docker volume ls -q -f name=postgres_data 2>/dev/null || echo "")
+
+if [ -n "$POSTGRES_VOLUME" ]; then
+    echo "Existing PostgreSQL volume found, attempting to preserve data..."
+    
+    # Check if postgres container exists and is running
+    POSTGRES_RUNNING=$(docker ps -q -f name=ems-postgres 2>/dev/null || echo "")
+    
+    if [ -n "$POSTGRES_RUNNING" ]; then
+        echo "Running PostgreSQL container found, updating password..."
+        
+        # Update password in running PostgreSQL instance
+        docker exec -i ems-postgres psql -U ems_prod -d ems_production <<EOF
+ALTER USER ems_prod WITH PASSWORD '${POSTGRES_PASSWORD}';
+EOF
+        
+        echo -e "${GREEN}✓ PostgreSQL password updated in existing database${NC}"
+    else
+        echo -e "${YELLOW}⚠️  PostgreSQL container not running but volume exists${NC}"
+        echo -e "${YELLOW}⚠️  Will attempt to start with new password (data preserved if password matches)${NC}"
+    fi
+fi
+
+# Stop existing containers (keep volumes to preserve data)
+echo "Stopping existing containers..."
 docker compose -f docker-compose.prod.yml down 2>/dev/null || true
 
-# Start services
-docker compose -f docker-compose.prod.yml up -d --build
+# Start services with fresh build and force recreate containers with new secrets
+echo "Starting services with new configuration..."
+docker compose -f docker-compose.prod.yml up -d --build --force-recreate
+
+# Wait for database to be ready
+echo "Waiting for PostgreSQL to be ready..."
+sleep 10
+
+# Check if services are running
+echo -e "\n${GREEN}Checking service status:${NC}"
+docker ps --filter "name=ems" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
 echo -e "\n${GREEN}========================================${NC}"
 echo -e "${GREEN}   Deployment completed successfully!${NC}"

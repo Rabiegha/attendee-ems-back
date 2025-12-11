@@ -10,6 +10,13 @@ export class InvitationService {
 
   constructor(private prisma: PrismaService) {
     // Configuration SMTP depuis les variables d'environnement
+    console.log('🔍 [SMTP CONFIG DEBUG]', {
+      host: process.env.SMTP_HOST,
+      port: process.env.SMTP_PORT,
+      user: process.env.SMTP_USER,
+      enabled: process.env.EMAIL_ENABLED,
+    });
+    
     this.transporter = nodemailer.createTransport({
       host: process.env.SMTP_HOST,
       port: parseInt(process.env.SMTP_PORT || '587'),
