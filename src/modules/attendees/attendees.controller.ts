@@ -32,7 +32,7 @@ import {
   AttendeeListResponseDto,
 } from './dto/attendee-response.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { OrgScopeGuard } from '../../common/guards/org-scope.guard';
+import { OrgScopeGuard } from '../../common/guards/tenant-context.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { ParseBooleanPipe } from './pipes/parse-boolean.pipe';
