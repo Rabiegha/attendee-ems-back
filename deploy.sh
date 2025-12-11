@@ -123,15 +123,18 @@ echo -e "${GREEN}✓ Frontend files copied${NC}"
 echo -e "\n${YELLOW}[8/8] Starting Docker services...${NC}"
 cd "$DEPLOY_DIR/backend"
 
-# Check if postgres container exists (running or stopped)
-POSTGRES_EXISTS=$(docker ps -aq -f name=ems-postgres 2>/dev/null || echo "")
+# Check if postgres volume exists (indicates previous deployment)
+POSTGRES_VOLUME_EXISTS=$(docker volume ls -q -f name=ems_postgres_data 2>/dev/null || echo "")
 
-if [ -n "$POSTGRES_EXISTS" ]; then
-    echo "Existing PostgreSQL container found, updating password before recreating..."
+if [ -n "$POSTGRES_VOLUME_EXISTS" ]; then
+    echo "Existing PostgreSQL volume found, updating password before recreating..."
     
-    # Start postgres if not running
+    # Start postgres to update password
     docker compose -f docker-compose.prod.yml up -d postgres 2>/dev/null || true
-    sleep 5
+    
+    # Wait for postgres to be ready
+    echo "Waiting for PostgreSQL to start..."
+    sleep 10
     
     # Update password in running PostgreSQL instance
     echo "Updating PostgreSQL password to match new configuration..."
