@@ -142,22 +142,8 @@ export class PublicService {
         throw new ForbiddenException('Event is not open for registration');
       }
 
-      // Check capacity
-      if (event.capacity) {
-        const currentCount = await tx.registration.count({
-          where: {
-            event_id: event.id,
-            org_id: orgId,
-            status: { in: ['awaiting', 'approved'] },
-          },
-        });
-
-        if (currentCount >= event.capacity) {
-          throw new ConflictException('Event is full');
-        }
-      }
-
       // Upsert attendee
+      console.log(`[PublicService] Registering email: ${dto.attendee.email} for event: ${event.id}`);
       const attendee = await tx.attendee.upsert({
         where: {
           org_id_email: {
@@ -184,6 +170,7 @@ export class PublicService {
           country: dto.attendee.country,
         },
       });
+      console.log(`[PublicService] Attendee ID: ${attendee.id}`);
 
       // Check for duplicate registration
       const existingRegistration = await tx.registration.findUnique({
@@ -196,17 +183,37 @@ export class PublicService {
       });
 
       if (existingRegistration) {
+        console.log(`[PublicService] Found existing registration: ${existingRegistration.id} with status: ${existingRegistration.status}`);
         if (existingRegistration.status === 'refused') {
           throw new ForbiddenException('Your registration was previously declined');
         }
         if (['awaiting', 'approved'].includes(existingRegistration.status)) {
           throw new ConflictException('You are already registered for this event');
         }
+      } else {
+        console.log(`[PublicService] No existing registration found for attendee ${attendee.id}`);
       }
 
       // Determine status based on auto-approve setting
       const status = eventSettings.registration_auto_approve ? 'approved' : 'awaiting';
       const confirmedAt = status === 'approved' ? new Date() : null;
+
+      // Check capacity only if we are trying to approve the registration
+      if (event.capacity && status === 'approved') {
+        const currentCount = await tx.registration.count({
+          where: {
+            event_id: event.id,
+            org_id: orgId,
+            status: 'approved',
+            deleted_at: null,
+          },
+        });
+        console.log(`[PublicService] Capacity check: ${currentCount}/${event.capacity}`);
+
+        if (currentCount >= event.capacity) {
+          throw new ConflictException('Event is full');
+        }
+      }
 
       // Create registration with snapshot
       const registration = await tx.registration.create({
@@ -223,13 +230,13 @@ export class PublicService {
           
           // Source et snapshot
           source: dto.source || 'public_form',
-          snapshot_first_name: attendee.first_name,
-          snapshot_last_name: attendee.last_name,
-          snapshot_email: attendee.email,
-          snapshot_phone: attendee.phone,
-          snapshot_company: attendee.company,
-          snapshot_job_title: attendee.job_title,
-          snapshot_country: attendee.country,
+          snapshot_first_name: dto.attendee.first_name,
+          snapshot_last_name: dto.attendee.last_name,
+          snapshot_email: dto.attendee.email,
+          snapshot_phone: dto.attendee.phone,
+          snapshot_company: dto.attendee.company,
+          snapshot_job_title: dto.attendee.job_title,
+          snapshot_country: dto.attendee.country,
         },
         include: {
           attendee: true,

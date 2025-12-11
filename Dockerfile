@@ -8,6 +8,7 @@ COPY . .
 # Generate Prisma client
 RUN npx prisma generate
 RUN npm run build
+RUN echo "Build content:" && ls -R dist
 
 # Runtime
 FROM node:20-alpine AS runner
@@ -36,9 +37,10 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 # Copy Prisma files for migrations/seeding in production
 COPY --from=builder /app/prisma ./prisma
-COPY scripts/entrypoint.sh ./scripts/entrypoint.sh
+# Copy all scripts for admin tasks and entrypoint
+COPY --from=builder /app/scripts ./scripts
 RUN chmod +x ./scripts/entrypoint.sh
 
 EXPOSE 3000
 ENTRYPOINT ["./scripts/entrypoint.sh"]
-CMD ["node", "dist/main.js"]
+CMD ["node", "dist/src/main.js"]

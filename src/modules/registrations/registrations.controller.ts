@@ -257,7 +257,11 @@ export class RegistrationsController {
       body.format || 'csv'
     );
 
-    res.setHeader('Content-Type', 'text/csv');
+    const contentType = (body.format === 'excel' || body.format === 'xlsx')
+      ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      : 'text/csv';
+
+    res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(buffer);
   }

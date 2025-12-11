@@ -330,6 +330,7 @@ export class EventsService {
               registrations: {
                 where: {
                   status: { in: ['awaiting', 'approved'] }, // Compter uniquement les inscriptions valides
+                  deleted_at: null, // Exclure les supprimés
                 },
               },
             },

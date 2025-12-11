@@ -1,3 +1,6 @@
+// Initialize Sentry before any other imports
+import './instrument';
+
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -8,11 +11,15 @@ import { HttpExceptionFilter } from './common/exceptions/http-exception.filter';
 import { ConfigService } from './config/config.service';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // Disable NestJS default body parser to prevent Sentry double-parsing
+  const app = await NestFactory.create(AppModule, {
+    bodyParser: false,
+  });
 
   const configService = app.get(ConfigService);
 
-  // Configure larger payload limits for all endpoints (needed for badge templates with HTML/CSS content)
+  // Apply body parser AFTER app creation with custom limits
+  // This prevents Sentry's OpenTelemetry instrumentation from consuming the stream first
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
@@ -52,7 +59,13 @@ async function bootstrap() {
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'Accept',
+      'sentry-trace',
+      'baggage',
+    ],
   });
 
   // Swagger configuration
@@ -71,4 +84,5 @@ async function bootstrap() {
   console.log(`Application is running on: http://localhost:${port}`);
   console.log(`Swagger documentation available at: http://localhost:${port}/api/docs`);
 }
+
 bootstrap();

@@ -275,14 +275,21 @@ export class BadgeTemplatesService {
   async generateTestBadge(id: string, orgId: string, testData: Record<string, any>) {
     const template = await this.findOne(id, orgId);
 
-    if (!template.html) {
-      throw new BadRequestException('Ce template n\'a pas de contenu HTML');
+    let renderedHtml = template.html || '';
+    let renderedCss = template.css || '';
+
+    // Si html/css sont vides, générer depuis template_data
+    if (!renderedHtml || !renderedCss) {
+      const generated = this.generateHTMLFromTemplateData(template);
+      if (!renderedHtml) renderedHtml = generated.html;
+      if (!renderedCss) renderedCss = generated.css;
+    }
+
+    if (!renderedHtml) {
+      throw new BadRequestException('Ce template n\'a pas de contenu HTML et ne peut pas être généré');
     }
 
     // Remplacer les variables dans le HTML et CSS
-    let renderedHtml = template.html;
-    let renderedCss = template.css || '';
-
     Object.entries(testData).forEach(([key, value]) => {
       const regex = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
       renderedHtml = renderedHtml.replace(regex, String(value));
@@ -318,6 +325,105 @@ export class BadgeTemplatesService {
       width: template.width,
       height: template.height
     };
+  }
+
+  /**
+   * Génère le HTML et CSS depuis template_data si html/css sont vides
+   * (Dupliqué depuis BadgeGenerationService pour éviter dépendance circulaire)
+   */
+  private generateHTMLFromTemplateData(badgeTemplate: any): { html: string; css: string } {
+    try {
+      const templateData = badgeTemplate.template_data as any;
+      
+      if (!templateData || !templateData.elements) {
+        return { html: '', css: '' };
+      }
+
+      const elements = templateData.elements;
+      const background = templateData.background;
+      
+      // Generate HTML
+      let html = '<div class="badge-container">\n';
+      
+      elements.forEach((el: any) => {
+        if (el.type === 'text') {
+          const content = el.content || '';
+          html += `  <div class="element element-${el.id}">${content}</div>\n`;
+        } else if (el.type === 'image') {
+          html += `  <div class="element element-${el.id}"><img src="{{photo_url}}" alt="Photo" /></div>\n`;
+        } else if (el.type === 'qrcode' || el.type === 'qr') {
+          html += `  <div class="element element-${el.id}"><img src="{{qr_code_url}}" alt="QR Code" style="width: 100%; height: 100%; object-fit: contain;" /></div>\n`;
+        }
+      });
+      
+      html += '</div>';
+      
+      // Generate CSS
+      const badgeWidth = badgeTemplate.width;
+      const badgeHeight = badgeTemplate.height;
+      
+      let css = `.badge-container {
+  position: relative;
+  width: ${badgeWidth}px;
+  height: ${badgeHeight}px;
+  ${background ? `background: ${background.startsWith('http') || background.startsWith('data:') ? `url(${background})` : background};` : 'background: #ffffff;'}
+  background-size: cover;
+  background-position: center;
+  overflow: hidden;
+}\n\n`;
+
+      css += `.element {
+  position: absolute;
+  box-sizing: border-box;
+}\n\n`;
+
+      css += `.element img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}\n\n`;
+
+      elements.forEach((el: any) => {
+        const style = el.style || {};
+        
+        css += `.element-${el.id} {
+  left: ${el.x}px;
+  top: ${el.y}px;
+  width: ${el.width || 'auto'}px;
+  height: ${el.height || 'auto'}px;`;
+        
+        if (el.type === 'text') {
+          css += `\n  font-size: ${style.fontSize || el.fontSize || 16}px;
+  font-weight: ${style.fontWeight || el.fontWeight || 'normal'};
+  font-style: ${style.fontStyle || el.fontStyle || 'normal'};
+  text-align: ${style.textAlign || el.textAlign || 'left'};
+  color: ${style.color || el.color || '#000000'};
+  white-space: pre-wrap;
+  line-height: 1.2;`;
+          
+          if (style.fontFamily || el.fontFamily) {
+            css += `\n  font-family: ${style.fontFamily || el.fontFamily};`;
+          }
+          if (style.textTransform) css += `\n  text-transform: ${style.textTransform};`;
+          
+          // Robust check for text-decoration with !important to ensure it applies
+          const textDecoration = style.textDecoration || style.text_decoration || el.textDecoration || el.text_decoration || 'none';
+          css += `\n  text-decoration: ${textDecoration} !important;`;
+        }
+        
+        if (el.borderRadius) css += `\n  border-radius: ${el.borderRadius};`;
+        if (style.rotation) css += `\n  transform: rotate(${style.rotation}deg);`;
+        if (style.opacity !== undefined) css += `\n  opacity: ${style.opacity};`;
+        if (style.zIndex !== undefined) css += `\n  z-index: ${style.zIndex};`;
+        
+        css += '\n}\n\n';
+      });
+      
+      return { html, css };
+    } catch (error) {
+      this.logger.error('Error generating HTML/CSS from template_data:', error);
+      return { html: '', css: '' };
+    }
   }
 
   /**

@@ -640,6 +640,10 @@ export async function seedRegistrationsForEvent() {
     // Mode de participation aléatoire
     const attendanceMode = attendanceModes[Math.floor(Math.random() * attendanceModes.length)];
 
+    // Générer des données snapshot avec des variations
+    const snapshotCompany = `${attendee.company} (Event ${event.code.split('-')[1] || 'Specific'})`;
+    const snapshotJobTitle = `${attendee.job_title} @ ${event.name.substring(0, 10)}`;
+
     const registration = await prisma.registration.create({
       data: {
         org_id: event.org_id,
@@ -648,12 +652,19 @@ export async function seedRegistrationsForEvent() {
         status,
         attendance_type: attendanceMode,
         event_attendee_type_id: eventAttendeeType.id,
+        // Snapshot data
+        snapshot_first_name: attendee.first_name,
+        snapshot_last_name: attendee.last_name,
+        snapshot_email: attendee.email,
+        snapshot_phone: attendee.phone,
+        snapshot_company: snapshotCompany,
+        snapshot_job_title: snapshotJobTitle,
         answers: {
           firstName: attendee.first_name,
           lastName: attendee.last_name,
           email: attendee.email,
-          company: attendee.company,
-          jobTitle: attendee.job_title,
+          company: snapshotCompany,
+          jobTitle: snapshotJobTitle,
         },
         confirmed_at: status === 'approved' ? new Date() : null,
         // URLs de badge génériques pour test

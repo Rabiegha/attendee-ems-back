@@ -10,6 +10,7 @@ export interface BadgeElementStyle {
   transform: string;
   rotation: number;
   textTransform?: 'uppercase' | 'none';
+  textDecoration?: 'none' | 'underline' | 'line-through';
   opacity: number;
   zIndex: number;
 }

@@ -13,10 +13,17 @@ lerna-debug.log*
 
 # OS
 .DS_Store
+*/.DS_Store
+**/.DS_Store
 
 # Tests
 /coverage
 /.nyc_output
+
+# Test files
+*.test.pdf
+badge-test.pdf
+*-test.pdf
 
 # IDEs and editors
 /.idea
@@ -34,12 +41,12 @@ lerna-debug.log*
 !.vscode/launch.json
 !.vscode/extensions.json
 
-# dotenv environment variables file
+# Environment variables
+# Only .env.example and .env.README.md files are committed
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
+!.env.example
+!.env.README.md
 .env.docker
 .env.test.docker
 .env.prod
@@ -50,4 +57,31 @@ lerna-debug.log*
 /tmp
 /temp
 
+# Prisma
 /generated/prisma
+
+# Database files
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+
+# Dumps & backups
+dump.*
+*.dump
+*.backup
+*.bak
+backup/
+backups/
+
+# Uploaded/generated files (local dev)
+uploads/
+storage/
+public/uploads/
+
+# Production secrets - DO NOT COMMIT
+.env.production
+frontend/
+
+# SSL Certificates
+certbot/

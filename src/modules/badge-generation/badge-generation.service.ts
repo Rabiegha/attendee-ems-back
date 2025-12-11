@@ -234,6 +234,10 @@ export class BadgeGenerationService {
             css += `\n  font-family: ${style.fontFamily || el.fontFamily};`;
           }
           if (style.textTransform) css += `\n  text-transform: ${style.textTransform};`;
+          // Apply text-decoration (underline, line-through, etc.)
+          if (style.textDecoration && style.textDecoration !== 'none') {
+            css += `\n  text-decoration: ${style.textDecoration};`;
+          }
         }
         
         if (el.borderRadius) css += `\n  border-radius: ${el.borderRadius};`;
@@ -324,7 +328,9 @@ export class BadgeGenerationService {
       }
 
       if (!badgeTemplate) {
-        throw new BadRequestException('No badge template found for this registration');
+        throw new BadRequestException(
+          'No badge template found for this registration. Please create a badge template first in the Badges section.'
+        );
       }
 
       // 3. Préparer les données du badge (utilise les snapshots ou les données actuelles de l'attendee)
@@ -871,6 +877,8 @@ export class BadgeGenerationService {
     registrationId: string,
     orgId: string | null,
     quality: 'low' | 'high' = 'low',
+    templateIdOverride?: string,
+    forceRegenerate: boolean = false,
   ): Promise<string> {
     // 1. Récupérer l'inscription avec ses relations
     const whereClause: any = { id: registrationId };
@@ -899,7 +907,13 @@ export class BadgeGenerationService {
     // 2. Récupérer le template de badge approprié
     let badgeTemplate = null;
     
-    if (registration.badge_template_id) {
+    // Si un template est spécifié en override (changement de template), l'utiliser
+    if (templateIdOverride) {
+      badgeTemplate = await this.badgeTemplatesService.findOne(
+        templateIdOverride,
+        orgId || registration.org_id,
+      );
+    } else if (registration.badge_template_id) {
       badgeTemplate = await this.badgeTemplatesService.findOne(
         registration.badge_template_id,
         orgId || registration.org_id,
@@ -912,7 +926,16 @@ export class BadgeGenerationService {
     }
 
     if (!badgeTemplate) {
-      throw new BadRequestException('No badge template found for this registration');
+      throw new BadRequestException('No badge template found for this registration. Please create a badge template first in the Badges section.');
+    }
+
+    // 3. Si force regenerate OU template override, supprimer le badge existant pour forcer la régénération
+    if (forceRegenerate || templateIdOverride) {
+      await this.prisma.badge.deleteMany({
+        where: {
+          registration_id: registrationId,
+        },
+      });
     }
 
     // 3. Générer HTML/CSS depuis template_data si nécessaire
