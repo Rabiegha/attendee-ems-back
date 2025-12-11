@@ -18,7 +18,7 @@ if [ "${RUN_MIGRATIONS}" = "true" ]; then
   npx prisma migrate deploy
   if [ "${RUN_SEEDERS}" = "true" ]; then
     echo "Running seeders..."
-    npx prisma db seed
+    npx prisma db seed || echo "Seeders failed (non-critical), continuing..."
   fi
 fi
 
