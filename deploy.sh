@@ -123,28 +123,23 @@ echo -e "${GREEN}✓ Frontend files copied${NC}"
 echo -e "\n${YELLOW}[8/8] Starting Docker services...${NC}"
 cd "$DEPLOY_DIR/backend"
 
-# Check if postgres volume exists
-POSTGRES_VOLUME=$(docker volume ls -q -f name=postgres_data 2>/dev/null || echo "")
+# Check if postgres container exists (running or stopped)
+POSTGRES_EXISTS=$(docker ps -aq -f name=ems-postgres 2>/dev/null || echo "")
 
-if [ -n "$POSTGRES_VOLUME" ]; then
-    echo "Existing PostgreSQL volume found, attempting to preserve data..."
+if [ -n "$POSTGRES_EXISTS" ]; then
+    echo "Existing PostgreSQL container found, updating password before recreating..."
     
-    # Check if postgres container exists and is running
-    POSTGRES_RUNNING=$(docker ps -q -f name=ems-postgres 2>/dev/null || echo "")
+    # Start postgres if not running
+    docker compose -f docker-compose.prod.yml up -d postgres 2>/dev/null || true
+    sleep 5
     
-    if [ -n "$POSTGRES_RUNNING" ]; then
-        echo "Running PostgreSQL container found, updating password..."
-        
-        # Update password in running PostgreSQL instance
-        docker exec -i ems-postgres psql -U ems_prod -d ems_production <<EOF
+    # Update password in running PostgreSQL instance
+    echo "Updating PostgreSQL password to match new configuration..."
+    docker exec -i ems-postgres psql -U ems_prod -d ems_production <<EOF 2>/dev/null || true
 ALTER USER ems_prod WITH PASSWORD '${POSTGRES_PASSWORD}';
 EOF
-        
-        echo -e "${GREEN}✓ PostgreSQL password updated in existing database${NC}"
-    else
-        echo -e "${YELLOW}⚠️  PostgreSQL container not running but volume exists${NC}"
-        echo -e "${YELLOW}⚠️  Will attempt to start with new password (data preserved if password matches)${NC}"
-    fi
+    
+    echo -e "${GREEN}✓ PostgreSQL password updated${NC}"
 fi
 
 # Stop existing containers (keep volumes to preserve data)

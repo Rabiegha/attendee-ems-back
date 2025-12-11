@@ -37,7 +37,8 @@ COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 # Copy Prisma files for migrations/seeding in production
 COPY --from=builder /app/prisma ./prisma
-COPY scripts/entrypoint.sh ./scripts/entrypoint.sh
+# Copy all scripts for admin tasks and entrypoint
+COPY --from=builder /app/scripts ./scripts
 RUN chmod +x ./scripts/entrypoint.sh
 
 EXPOSE 3000
