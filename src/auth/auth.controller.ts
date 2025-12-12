@@ -60,72 +60,75 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const user = await this.authService.validateUser(
-      loginDto.email,
-      loginDto.password,
-    );
+    try {
+      const user = await this.authService.validateUser(
+        loginDto.email,
+        loginDto.password,
+      );
 
-    if (!user) {
+      // Note: validateUser throws UnauthorizedException('Account deactivated') if user is inactive
+      // It returns null if user not found or password invalid
+      if (!user) {
+        throw new UnauthorizedException('Invalid credentials');
+      }
+
+      const ctx = {
+        ip: req.ip || req.connection.remoteAddress,
+        userAgent: req.get('User-Agent'),
+      };
+
+      const result = await this.authService.loginWithRefreshToken(user, ctx);
+
+      // Set refresh token as HttpOnly cookie
+      const cookieOptions = {
+        httpOnly: true,
+        secure: this.configService.authCookieSecure,
+        sameSite: this.configService.authCookieSameSite as 'strict' | 'lax' | 'none',
+        path: '/',
+        maxAge: this.secondsFromTtl(this.configService.jwtRefreshTtl) * 1000,
+      };
+
+      if (this.configService.authCookieDomain) {
+        (cookieOptions as any).domain = this.configService.authCookieDomain;
+      }
+
+      // Detect if request is from mobile app (via custom header)
+      const isMobileApp = req.headers['x-client-type'] === 'mobile';
+
+      if (!isMobileApp) {
+        // Web: Set refresh token as HttpOnly cookie
+        res.cookie(this.configService.authCookieName, result.refresh_token, cookieOptions);
+      }
+
+      // Return access token, user info, and organization
+      const response: any = {
+        access_token: result.access_token,
+        expires_in: result.expires_in,
+        user: result.user,
+      };
+
+      // Include organization if present
+      if (result.organization) {
+        response.organization = result.organization;
+      }
+
+      // Mobile: Include refresh token in response body
+      if (isMobileApp) {
+        response.refresh_token = result.refresh_token;
+      }
+
+      return response;
+    } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        // Si le message est "Account deactivated", on le laisse passer tel quel
+        if (error.message === 'Account deactivated') {
+          throw error;
+        }
+      }
+      // Pour toute autre erreur (y compris UnauthorizedException générique), on renvoie "Invalid credentials"
+      // pour ne pas fuiter d'infos sur l'existence du compte
       throw new UnauthorizedException('Invalid credentials');
     }
-
-    const ctx = {
-      ip: req.ip || req.connection.remoteAddress,
-      userAgent: req.get('User-Agent'),
-    };
-
-    const result = await this.authService.loginWithRefreshToken(user, ctx);
-
-    // Set refresh token as HttpOnly cookie
-    const cookieOptions = {
-      httpOnly: true,
-      secure: this.configService.authCookieSecure,
-      sameSite: this.configService.authCookieSameSite as 'strict' | 'lax' | 'none',
-      path: '/',
-      maxAge: this.secondsFromTtl(this.configService.jwtRefreshTtl) * 1000,
-    };
-
-    if (this.configService.authCookieDomain) {
-      (cookieOptions as any).domain = this.configService.authCookieDomain;
-    }
-
-    // Detect if request is from mobile app (via custom header)
-    const isMobileApp = req.headers['x-client-type'] === 'mobile';
-    
-    console.log('[AuthController.login] Client type:', {
-      isMobileApp,
-      header: req.headers['x-client-type'],
-      userAgent: req.get('User-Agent'),
-    });
-
-    if (!isMobileApp) {
-      // Web: Set refresh token as HttpOnly cookie
-      res.cookie(this.configService.authCookieName, result.refresh_token, cookieOptions);
-    }
-
-    // Return access token, user info, and organization
-    const response: any = {
-      access_token: result.access_token,
-      expires_in: result.expires_in,
-      user: result.user,
-    };
-
-    // Include organization if present
-    if (result.organization) {
-      response.organization = result.organization;
-    }
-
-    // Mobile: Include refresh token in response body
-    if (isMobileApp) {
-      response.refresh_token = result.refresh_token;
-      console.log('[AuthController.login] Mobile response includes refresh_token:', {
-        hasRefreshToken: !!response.refresh_token,
-        refreshTokenType: typeof response.refresh_token,
-        refreshTokenLength: response.refresh_token?.length,
-      });
-    }
-
-    return response;
   }
 
   @Post('refresh')

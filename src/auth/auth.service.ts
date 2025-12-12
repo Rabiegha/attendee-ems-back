@@ -18,7 +18,6 @@ export class AuthService {
     const user = await this.prisma.user.findFirst({
       where: { 
         email, 
-        is_active: true 
       },
       include: {
         role: {
@@ -42,6 +41,10 @@ export class AuthService {
       return null;
     }
 
+    if (!user.is_active) {
+      throw new UnauthorizedException('Account deactivated');
+    }
+
     return user;
   }
 
@@ -49,7 +52,6 @@ export class AuthService {
     const user = await this.prisma.user.findFirst({
       where: { 
         id: userId, 
-        is_active: true 
       },
       include: {
         role: {
@@ -63,6 +65,10 @@ export class AuthService {
         },
       },
     });
+
+    if (user && !user.is_active) {
+      throw new UnauthorizedException('Account deactivated');
+    }
 
     return user;
   }
@@ -235,8 +241,12 @@ export class AuthService {
 
       // Get user data
       const user = refreshTokenRecord.user;
-      if (!user || !user.is_active) {
-        throw new UnauthorizedException('User not found or inactive');
+      if (!user) {
+        throw new UnauthorizedException('User not found');
+      }
+
+      if (!user.is_active) {
+        throw new UnauthorizedException('Account deactivated');
       }
 
       // Issue new tokens
@@ -367,8 +377,12 @@ export class AuthService {
       },
     });
 
-    if (!currentUser || !currentUser.is_active) {
-      throw new UnauthorizedException('User not found or inactive');
+    if (!currentUser) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    if (!currentUser.is_active) {
+      throw new UnauthorizedException('Account deactivated');
     }
 
     console.log('[Auth] Found user with role:', currentUser.role?.code);
