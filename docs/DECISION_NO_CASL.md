@@ -26,9 +26,9 @@ CASL est actuellement utilisé dans `PermissionsGuard` pour faire du gating bina
 ### Système 100% custom
 
 ```typescript
-// AuthorizationService (nouveau moteur unique)
+// RbacService (nouveau moteur unique)
 @Injectable()
-export class AuthorizationService {
+export class RbacService {
   constructor(
     private prisma: PrismaService,
     private modulesService: ModulesService,
@@ -38,7 +38,7 @@ export class AuthorizationService {
   async can(
     user: UserPayload,
     permissionKey: string,
-    context: ScopeContext,
+    context: RbacContext,
   ): Promise<boolean> {
     // 1. Bypass is_root
     if (user.is_root) return true;
@@ -87,7 +87,7 @@ export class AuthorizationService {
 ### Logique de scopes (custom)
 
 ```typescript
-scopeCovers(scopeLimit: Scope, context: ScopeContext): boolean {
+scopeCovers(scopeLimit: Scope, context: RbacContext): boolean {
   switch (scopeLimit) {
     case 'any':
       return true; // Accès total
@@ -138,7 +138,7 @@ async findAll() {
   }
 }
 
-// APRÈS (Guards séparés + AuthorizationService)
+// APRÈS (Guards séparés + RbacService)
 @UseGuards(
   JwtAuthGuard,
   TenantContextGuard,
@@ -153,7 +153,7 @@ async findAll() {
 
 ### Plan de migration
 
-1. **Phase 1** : Créer AuthorizationService sans CASL
+1. **Phase 1** : Créer RbacService sans CASL
 2. **Phase 2** : Migrer module pilote (Events)
 3. **Phase 3** : Migrer tous les autres modules
 4. **Phase 4** : Supprimer complètement CASL du projet

@@ -28,7 +28,7 @@ Ce document décrit le plan d'implémentation du système RBAC avancé avec l'ap
 // Décorateurs
 @RequirePermission(key, options?)  // Principal
 @RequireModule(moduleKey)          // Gating explicite
-@ScopeContext(builder)             // Context custom
+@RbacContext(builder)             // Context custom
 ```
 
 ---
@@ -42,9 +42,9 @@ Documenter l'architecture complète avec Guards séparés.
 
 1. ✅ **Mettre à jour `ARCHITECTURE_RBAC.md`**
    - Documenter le pipeline de Guards
-   - Documenter les décorateurs (`@RequirePermission`, `@RequireModule`, `@ScopeContext`)
+   - Documenter les décorateurs (`@RequirePermission`, `@RequireModule`, `@RbacContext`)
    - Exemples concrets d'utilisation
-   - Algorithmes des services (AuthorizationService, ModulesService)
+   - Algorithmes des services (RbacService, ModulesService)
 
 2. ✅ **Créer `PLAN_IMPLEMENTATION_RBAC_AVANCE.md`** (ce document)
    - Plan détaillé phase par phase
@@ -155,7 +155,7 @@ Créer la source de vérité TypeScript pour toutes les permissions.
      | 'support_L2' 
      | 'custom';
    
-   export interface ScopeContext {
+   export interface RbacContext {
      resourceTenantId?: string;   // Org de la ressource
      actorTenantId: string;       // Org de l'acteur
      resourceOwnerId?: string;    // Propriétaire de la ressource
@@ -256,7 +256,7 @@ Créer la source de vérité TypeScript pour toutes les permissions.
 
 ---
 
-## Phase 3 – AuthorizationService + ModulesService (7-10 jours)
+## Phase 3 – RbacService + ModulesService (7-10 jours)
 
 ### Objectif
 Créer les services centraux d'autorisation.
@@ -303,11 +303,11 @@ Créer les services centraux d'autorisation.
    }
    ```
 
-2. **Créer `src/rbac/authorization.service.ts`**
+2. **Créer `src/rbac/rbac.service.ts`**
 
    ```typescript
    @Injectable()
-   export class AuthorizationService {
+   export class RbacService {
      constructor(
        private prisma: PrismaService,
        private modulesService: ModulesService,
@@ -319,7 +319,7 @@ Créer les services centraux d'autorisation.
    async can(
      user: UserPayload,
      permissionKey: string,
-     context: ScopeContext,
+     context: RbacContext,
    ): Promise<boolean> {
      // 1. Bypass is_root
      if (user.is_root) return true;
@@ -421,7 +421,7 @@ Créer les services centraux d'autorisation.
      /**
       * Vérifie si un scope couvre un contexte donné
       */
-     scopeCovers(scopeLimit: Scope, context: ScopeContext): boolean {
+     scopeCovers(scopeLimit: Scope, context: RbacContext): boolean {
        switch (scopeLimit) {
          case 'any':
            return true;
@@ -479,7 +479,7 @@ Créer les services centraux d'autorisation.
    }
    ```
 
-3. **Tests unitaires pour `AuthorizationService`**
+3. **Tests unitaires pour `RbacService`**
    - Test : `is_root` bypass toutes les vérifications
    - Test : User tenant ne peut pas accéder hors de son org
    - Test : Module désactivé refuse l'accès
@@ -490,7 +490,7 @@ Créer les services centraux d'autorisation.
 ### Done quand
 
 - ✅ `ModulesService.isModuleEnabledForTenant()` implémenté
-- ✅ `AuthorizationService.can()` implémenté
+- ✅ `RbacService.can()` implémenté
 - ✅ Tests unitaires passent
 - ✅ Script de test manuel fonctionne
 
@@ -597,7 +597,7 @@ Créer les Guards séparés pour implémenter le pipeline d'autorisation.
    export class RequirePermissionGuard implements CanActivate {
      constructor(
        private reflector: Reflector,
-       private authorizationService: AuthorizationService,
+       private rbacService: RbacService,
      ) {}
    
      async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -614,18 +614,18 @@ Créer les Guards séparés pour implémenter le pipeline d'autorisation.
        const user: UserPayload = request.user;
        const { key: permissionKey, options } = metadata;
    
-       // Construire le ScopeContext
-       const scopeContext = await this.buildScopeContext(
+       // Construire le RbacContext
+       const rbacContext = await this.buildRbacContext(
          request,
          user,
          options,
        );
    
        // Vérifier l'autorisation
-       const allowed = await this.authorizationService.can(
+       const allowed = await this.rbacService.can(
          user,
          permissionKey,
-         scopeContext,
+         rbacContext,
        );
    
        if (!allowed) {
@@ -637,12 +637,12 @@ Créer les Guards séparés pour implémenter le pipeline d'autorisation.
        return true;
      }
    
-     private async buildScopeContext(
+     private async buildRbacContext(
        request: any,
        user: UserPayload,
        options?: RequirePermissionOptions,
-     ): Promise<ScopeContext> {
-       const context: ScopeContext = {
+     ): Promise<RbacContext> {
+       const context: RbacContext = {
          actorTenantId: user.currentOrgId,
          actorUserId: user.id,
          actorTeamIds: user.teams || [],
@@ -683,8 +683,8 @@ Créer les Guards séparés pour implémenter le pipeline d'autorisation.
    // scope-context.decorator.ts
    export const SCOPE_CONTEXT_KEY = 'scope_context';
    
-   export const ScopeContext = (
-     builder: (req: any, params: any) => ScopeContext,
+   export const RbacContext = (
+     builder: (req: any, params: any) => RbacContext,
    ) => SetMetadata(SCOPE_CONTEXT_KEY, builder);
    ```
 
@@ -973,7 +973,7 @@ Implémenter le gating complet par plan/modules.
    async overrideModuleForOrg() { }
    ```
 
-3. **Brancher `isModuleEnabledForTenant` dans `AuthorizationService.can()`**
+3. **Brancher `isModuleEnabledForTenant` dans `RbacService.can()`**
    - Déjà fait en Phase 3 ✅
 
 ### Done quand
@@ -1006,7 +1006,7 @@ Adapter le frontend pour utiliser le nouveau système d'autorisation.
        this.modules = data.modules;
      }
    
-     can(permissionKey: string, ctx?: ScopeContext): boolean {
+     can(permissionKey: string, ctx?: RbacContext): boolean {
        const perm = this.permissions.find((p) => p.key === permissionKey);
        if (!perm) return false;
        
@@ -1028,7 +1028,7 @@ Adapter le frontend pour utiliser le nouveau système d'autorisation.
      const user = req.user;
      
      // Récupérer toutes les permissions effectives
-     const permissions = await this.authorizationService
+     const permissions = await this.rbacService
        .getEffectivePermissions(user.id, user.currentOrgId);
      
      // Récupérer les modules activés
@@ -1091,7 +1091,7 @@ Adapter le frontend pour utiliser le nouveau système d'autorisation.
 - [ ] Script sync fonctionnel
 
 ### Phase 3 ✅
-- [ ] `AuthorizationService` implémenté
+- [ ] `RbacService` implémenté
 - [ ] `ModulesService` implémenté
 - [ ] Tests unitaires passent
 

@@ -9,20 +9,26 @@ Ce document décrit l’architecture du système d’autorisation de la platefor
 
 
 
-# Brain strorming
+# Brainstorming
 
-Ce qu’il faut mettre en place :
+Ce qu'il faut mettre en place :
 
-1. Nouveau moteur d’autorisation centralisé (RBAC + scopes)
-* Introduire un moteur d’autorisations unique et centralisé basé sur :
+1. Nouveau moteur d'autorisation centralisé (RBAC + scopes)
+* Introduire un moteur d'autorisations unique et centralisé basé sur :
     * les rôles (tenant / plateforme / root),
     * les permissions,
     * les scopes (own, team, org, any).
 * Respecter les deux axes :
     * type de rôle : is_platform, is_root, role_type,
     * portée : scope_limit (own, team, org, any).
-* Fournir une API/middleware générique (can(), requirePermission(), hasPermissionWithScope()).
-
+* Architecture NestJS avec Guards séparés :
+    * `RbacService` : Service central avec méthode `can(user, permissionKey, context)`
+    * `ModulesService` : Service de gating modules avec `isModuleEnabledForTenant(tenantId, moduleKey)`
+    * Pipeline Guards : JwtAuthGuard → TenantContextGuard → ModuleGatingGuard → RequirePermissionGuard
+    * Décorateur `@RequirePermission(key, options?)` pour les routes (avec scope, resourceIdParam, checkOwnership)
+    * Décorateur `@RequireModule(moduleKey)` optionnel pour gating explicite
+    * Décorateur `@RbacContext(builder)` pour contextes custom complexes
+ 
 2. Modèle multi-tenant : user dans plusieurs orgs, plusieurs rôles
 * User global (compte unique) + appartenance aux orgs via une table org_users :
     * un user peut appartenir à plusieurs organisations.
@@ -517,14 +523,14 @@ Décorateur optionnel pour gating explicite de module :
 async createBadge(@Param('eventId') eventId: string) { }
 ```
 
-#### `@ScopeContext(builder)`
+#### `@RbacContext(builder)`
 
-Décorateur pour construire un ScopeContext custom dans les cas complexes :
+Décorateur pour construire un RbacContext custom dans les cas complexes :
 
 ```typescript
 @Post(':eventId/sessions')
 @RequirePermission('session.create', { scope: 'team' })
-@ScopeContext((req, params) => ({
+@RbacContext((req, params) => ({
   resourceTenantId: params.eventId,
   actorTenantId: req.user.currentOrgId,
   actorUserId: req.user.id,
@@ -535,13 +541,13 @@ async createSession(@Param('eventId') eventId: string) { }
 
 ### 5.3 Services d'autorisation
 
-#### `AuthorizationService`
+#### `RbacService`
 
 Service central qui orchestre toute la logique d'autorisation :
 
 ```typescript
 @Injectable()
-export class AuthorizationService {
+export class RbacService {
   constructor(
     private prisma: PrismaService,
     private modulesService: ModulesService,
@@ -551,7 +557,7 @@ export class AuthorizationService {
   async can(
     user: UserPayload, 
     permissionKey: string, 
-    context: ScopeContext
+    context: RbacContext
   ): Promise<boolean>
 
   // Méthodes auxiliaires
@@ -561,7 +567,7 @@ export class AuthorizationService {
     orgId: string
   ): Promise<Scope | null>
 
-  scopeCovers(scopeLimit: Scope, context: ScopeContext): boolean
+  scopeCovers(scopeLimit: Scope, context: RbacContext): boolean
 
   private async isTenantMember(userId: string, orgId: string): Promise<boolean>
   
@@ -608,7 +614,7 @@ Service d'autorisation côté front :
 ```typescript
 // ability.service.ts
 export class AbilityService {
-  can(permissionKey: string, ctx?: ScopeContext): boolean
+  can(permissionKey: string, ctx?: RbacContext): boolean
   canUse(moduleKey: string): boolean
   canSee(componentKey: string): boolean
 }

@@ -30,7 +30,7 @@ Request → JwtAuthGuard → TenantContextGuard → ModuleGatingGuard → Requir
 ```
 
 **Services clés :**
-- `AuthorizationService` : Logique d'autorisation centrale
+- `RbacService` : Logique d'autorisation centrale
 - `ModulesService` : Gating par plan/modules
 - `PermissionRegistry` : Source de vérité TypeScript
 
@@ -283,7 +283,7 @@ export type RoleType =
   | 'support_L2'
   | 'custom';
 
-export interface ScopeContext {
+export interface RbacContext {
   resourceTenantId?: string;
   actorTenantId: string;
   resourceOwnerId?: string;
@@ -576,9 +576,9 @@ export class ModulesService {
 }
 ```
 
-### Étape 2 : Créer AuthorizationService
+### Étape 2 : Créer RbacService
 
-Créer `src/rbac/authorization.service.ts` - Voir le code complet dans `PLAN_IMPLEMENTATION_RBAC_AVANCE.md` Phase 3, section "Créer AuthorizationService".
+Créer `src/rbac/rbac.service.ts` - Voir le code complet dans `PLAN_IMPLEMENTATION_RBAC_AVANCE.md` Phase 3, section "Créer RbacService".
 
 **Points clés :**
 - ✅ Pas de dépendance à CASL - 100% custom
@@ -593,14 +593,14 @@ Créer `src/rbac/rbac.module.ts` :
 
 ```typescript
 import { Module } from '@nestjs/common';
-import { AuthorizationService } from './authorization.service';
+import { RbacService } from './rbac.service';
 import { ModulesService } from './modules.service';
 import { PrismaModule } from '../prisma/prisma.module';
 
 @Module({
   imports: [PrismaModule],
-  providers: [AuthorizationService, ModulesService],
-  exports: [AuthorizationService, ModulesService],
+  providers: [RbacService, ModulesService],
+  exports: [RbacService, ModulesService],
 })
 export class RbacModule {}
 ```
@@ -624,11 +624,11 @@ Créer `scripts/test-authorization.ts` :
 ```typescript
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../src/app.module';
-import { AuthorizationService } from '../src/rbac/authorization.service';
+import { RbacService } from '../src/rbac/rbac.service';
 
 async function main() {
   const app = await NestFactory.createApplicationContext(AppModule);
-  const authService = app.get(AuthorizationService);
+  const rbacService = app.get(RbacService);
 
   // Test 1: User root
   console.log('Test 1: User root');
@@ -638,7 +638,7 @@ async function main() {
     currentOrgId: 'org-1',
     is_root: true,
   };
-  const canRoot = await authService.can(rootUser, 'event.delete', {
+  const canRoot = await rbacService.can(rootUser, 'event.delete', {
     actorTenantId: 'org-1',
     actorUserId: 'user-1',
   });
@@ -651,7 +651,7 @@ async function main() {
     email: 'admin@example.com',
     currentOrgId: 'org-1',
   };
-  const canAdmin = await authService.can(adminUser, 'event.read', {
+  const canAdmin = await rbacService.can(adminUser, 'event.read', {
     actorTenantId: 'org-1',
     actorUserId: 'user-2',
     resourceTenantId: 'org-1',
@@ -670,7 +670,7 @@ ts-node scripts/test-authorization.ts
 
 **✅ Checklist Phase 3 :**
 - [ ] `ModulesService` créé
-- [ ] `AuthorizationService` créé
+- [ ] `RbacService` créé
 - [ ] Module RBAC créé et importé
 - [ ] Tests manuels passent
 
