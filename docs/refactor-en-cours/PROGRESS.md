@@ -1,7 +1,10 @@
-# RBAC Refactoring Progress
+# RBAC Refactoring Progress - Approche Hybride
 
 **Date de début :** 12 décembre 2025  
-**Objectif :** Implémenter RBAC multi-tenant avec Guards séparés, scopes granulaires, et gating modules
+**Objectif :** Implémenter RBAC multi-tenant avec Guards séparés, scopes granulaires, et gating modules  
+**Approche :** Hybride (80% NestJS classique + 20% DDD léger)  
+**Timeline :** 1 semaine pour MVP fonctionnel  
+**Stratégie :** Code fonctionnel d'abord, architecture propre et extensible, migration DDD complète reportée en v2
 
 ---
 
@@ -12,14 +15,82 @@
 - [x] `docs/GETTING_STARTED_RBAC_AVANCE.md` créé (guide step-by-step)
 - [x] `docs/DECISION_NO_CASL.md` créé (rationale décision 100% custom)
 - [x] `docs/INDEX_RBAC_AVANCE.md` créé (navigation)
+- [x] Documentation adaptée pour approche hybride (DDD léger)
 
 **Statut :** ✅ Terminé - Documentation complète et cohérente
 
 ---
 
-## Phase 1 - Modèle de données RBAC (3-5 jours)
+## 🎯 Approche Hybride : Architecture
 
-**Objectif :** Mettre les tables et colonnes en place sans casser l'existant
+### Principes
+
+1. **80% NestJS Classique** (rapide à implémenter)
+   - Services avec Prisma direct
+   - Controllers classiques
+   - Pas d'Aggregates, pas de CQRS complet
+   - Pas de Repositories pattern (pour l'instant)
+
+2. **20% DDD Léger** (logique métier isolée)
+   - Domain Services pour logique complexe
+   - Value Objects pour concepts métier
+   - Structure facilitant migration DDD future
+
+### Structure Cible
+
+```
+src/
+├── modules/                    # NestJS classique
+│   ├── rbac/
+│   │   ├── rbac.module.ts
+│   │   ├── services/
+│   │   │   ├── rbac.service.ts           # Service principal (Prisma)
+│   │   │   ├── roles.service.ts
+│   │   │   └── permissions.service.ts
+│   │   ├── controllers/
+│   │   │   └── rbac.controller.ts
+│   │   └── dto/
+│   │
+│   └── organizations/
+│       ├── organizations.module.ts
+│       ├── organizations.service.ts
+│       └── organizations.controller.ts
+│
+├── domain/                     # DDD léger (logique métier)
+│   └── rbac/
+│       ├── services/           # Domain Services
+│       │   ├── authorization.domain-service.ts
+│       │   └── role-hierarchy.domain-service.ts
+│       │
+│       └── value-objects/      # Value Objects
+│           ├── scope.vo.ts
+│           ├── role-type.vo.ts
+│           └── permission-key.vo.ts
+│
+└── common/
+    ├── guards/                 # Pipeline Guards
+    │   ├── jwt-auth.guard.ts
+    │   ├── tenant-context.guard.ts
+    │   └── require-permission.guard.ts
+    │
+    └── decorators/
+        ├── require-permission.decorator.ts
+        └── require-module.decorator.ts
+```
+
+### Avantages
+
+- ✅ Code fonctionnel rapidement (1 semaine)
+- ✅ Logique métier isolée (testable)
+- ✅ Migration DDD future facilitée
+- ✅ Pas de over-engineering
+- ✅ Équipe productive immédiatement
+
+---
+
+## Phase 1 - Modèle de données RBAC (JOUR 1 : 6-8h)
+
+**Objectif :** Mettre les tables et colonnes en place sans casser l'existant + Structure DDD légère
 
 ### 1.1 Migrations Prisma
 
@@ -62,21 +133,35 @@
   - [ ] Ajouter `allowed_scopes` par permission
   - [ ] Ajouter `default_scope_ceiling` par permission
 
-### 1.4 Validation
+### 1.4 Créer structure DDD légère
+
+- [ ] Créer `src/domain/rbac/value-objects/scope.vo.ts`
+- [ ] Créer `src/domain/rbac/value-objects/role-type.vo.ts`
+- [ ] Créer `src/domain/rbac/value-objects/permission-key.vo.ts`
+- [ ] Créer `src/domain/rbac/services/` (vide pour l'instant)
+
+### 1.5 Validation
 
 - [ ] `npm run prisma:migrate:dev` passe sans erreur
 - [ ] `npm run seed` remplit tous les nouveaux champs
 - [ ] `npm run dev` démarre sans erreur (ancien système fonctionne toujours)
 - [ ] Vérifier en BDD : Roles ont bien rank, role_type, is_locked
 - [ ] Vérifier en BDD : Permissions ont bien module_key, allowed_scopes
+- [ ] Structure `src/domain/rbac/` créée
 
-**Statut :** ⬜ Pas commencé
+**Statut :** ⬜ Pas commencé  
+**Temps estimé :** 6-8h
 
 ---
 
-## Phase 2 - Nouveau cœur d'auth (5-7 jours)
+## Phase 2 - Nouveau cœur d'auth (JOUR 2-3 : 12-14h)
 
-**Objectif :** RbacService + ModulesService + PermissionRegistry (100% custom, NO CASL)
+**Objectif :** RbacService (NestJS classique) + Domain Services (DDD léger) + PermissionRegistry (100% custom, NO CASL)
+
+**Architecture :** Hybride
+- Services NestJS utilisent Prisma directement
+- Logique métier complexe déléguée aux Domain Services
+- Facile à migrer vers full DDD plus tard
 
 ### 2.1 Types partagés
 
@@ -87,7 +172,21 @@
   - [ ] Interface `RbacContext` (resourceTenantId, actorTenantId, resourceOwnerId, actorUserId, resourceTeamId, actorTeamIds)
   - [ ] Interface `PermissionDefinition` (module, allowedScopes, defaultScopeCeiling, defaultScopesByRoleType)
 
-### 2.2 PermissionRegistry
+### 2.2 Domain Services (DDD léger)
+
+- [ ] Créer `src/domain/rbac/services/authorization.domain-service.ts`
+  - [ ] `can(user, permissionKey, context: RbacContext): boolean`
+  - [ ] `scopeCovers(scopeLimit: Scope, context: RbacContext): boolean`
+  - [ ] Logique pure, 0 dépendances Prisma
+  - [ ] Tests unitaires faciles
+
+- [ ] Créer `src/domain/rbac/services/role-hierarchy.domain-service.ts`
+  - [ ] `canAssign(actorRole, targetRole): boolean`
+  - [ ] `canModifyRole(actor, targetRole): boolean`
+  - [ ] Anti-escalade (rank hierarchy)
+  - [ ] Tests unitaires
+
+### 2.3 PermissionRegistry
 
 - [ ] Créer `src/rbac/permission-registry.ts`
   - [ ] Définir structure `PERMISSION_REGISTRY: Record<string, PermissionDefinition>`
@@ -108,34 +207,41 @@
     - [ ] Vérifier `OrgModuleOverride` (force_enabled/force_disabled)
     - [ ] Retourner boolean
 
-### 2.4 RbacService
+### 2.5 RbacService (NestJS classique + Domain Services)
 
-- [ ] Créer `src/rbac/rbac.service.ts`
-  - [ ] Injecter `PrismaService` + `ModulesService` (NO CaslAbilityFactory)
-  - [ ] `private scopeCovers(scopeLimit: Scope, context: RbacContext): boolean`
-    - [ ] Logique : own (actorUserId === resourceOwnerId)
-    - [ ] Logique : team (actorTeamIds.includes(resourceTeamId))
-    - [ ] Logique : org (actorTenantId === resourceTenantId)
-    - [ ] Logique : any (toujours true si scope >= org)
+- [ ] Créer `src/modules/rbac/services/rbac.service.ts`
+  - [ ] Injecter `PrismaService` + `ModulesService` + `AuthorizationDomainService` + `RoleHierarchyDomainService`
   - [ ] `async getBestScopeForPermission(user, permissionKey, orgId): Promise<Scope | null>`
     - [ ] Lire `UserRole` pour cet user + org
     - [ ] Lire `Role` pour chaque role
     - [ ] Lire `RolePermission` pour chaque role + permission
     - [ ] Retourner le scope le plus large (any > org > team > own)
   - [ ] `async can(user, permissionKey, context: RbacContext): Promise<boolean>`
-    - [ ] Si `user.is_root === true` → return true
+    - [ ] Si `user.is_root === true` → return true (bypass)
+    - [ ] Récupérer données utilisateur depuis Prisma (roles, permissions)
     - [ ] Extraire `moduleKey` de la permission (via PermissionRegistry)
-    - [ ] Appeler `isModuleEnabledForTenant(context.resourceTenantId, moduleKey)`
+    - [ ] Appeler `modulesService.isModuleEnabledForTenant(context.resourceTenantId, moduleKey)`
     - [ ] Si module désactivé → throw ForbiddenException
     - [ ] Appeler `getBestScopeForPermission(user, permissionKey, context.actorTenantId)`
     - [ ] Si aucun scope → throw ForbiddenException
-    - [ ] Appeler `scopeCovers(bestScope, context)`
-    - [ ] Si scope insuffisant → throw ForbiddenException
-    - [ ] Return true
+    - [ ] **Déléguer la logique d'autorisation au Domain Service** : `authorizationDomainService.can(user, bestScope, context)`
+    - [ ] Return résultat
 
-### 2.5 Tests unitaires
+### 2.6 Tests unitaires
 
-- [ ] Créer `src/rbac/rbac.service.spec.ts`
+- [ ] Créer `src/domain/rbac/services/authorization.domain-service.spec.ts`
+  - [ ] Test : scope 'own' + resourceOwnerId === actorUserId → true
+  - [ ] Test : scope 'team' + resourceTeamId in actorTeamIds → true
+  - [ ] Test : scope 'org' + resourceTenantId === actorTenantId → true
+  - [ ] Test : scope 'any' → true
+  - [ ] Test : scope insuffisant → false
+
+- [ ] Créer `src/domain/rbac/services/role-hierarchy.domain-service.spec.ts`
+  - [ ] Test : rank inférieur ne peut pas assigner rank supérieur
+  - [ ] Test : is_root peut tout assigner
+  - [ ] Test : is_locked ne peut pas être modifié
+
+- [ ] Créer `src/modules/rbac/services/rbac.service.spec.ts` (tests d'intégration)
   - [ ] Test : `is_root` user → can() retourne true pour tout
   - [ ] Test : Admin (scope any) → peut lire/modifier tout dans son org
   - [ ] Test : Manager (scope org) → peut lire/modifier dans son org, pas d'autre org
@@ -143,13 +249,14 @@
   - [ ] Test : User custom (scope own) → peut lire/modifier que ses propres ressources
   - [ ] Test : Module désactivé → can() refuse même avec permission
 
-**Statut :** ⬜ Pas commencé
+**Statut :** ⬜ Pas commencé  
+**Temps estimé :** 12-14h (Jour 2-3)
 
 ---
 
-## Phase 3 - Module pilote : Events (3-4 jours)
+## Phase 3 - Guards + Décorateurs (JOUR 4 : 6-8h)
 
-**Objectif :** Migrer `EventsController` pour utiliser le nouveau système (proof of concept)
+**Objectif :** Créer Guards et Décorateurs pour protéger les routes
 
 ### 3.1 Créer les Guards
 
@@ -179,153 +286,169 @@
 - [ ] Créer `src/common/decorators/scope-context.decorator.ts`
   - [ ] `@RbacContext(builder: (req, params) => RbacContext)`
 
-### 3.3 Migrer EventsController
+### 3.3 Tests Guards
 
-- [ ] `src/modules/events/events.controller.ts`
-  - [ ] Remplacer `@UseGuards(JwtAuthGuard, OrgScopeGuard, PermissionsGuard)` par `@UseGuards(JwtAuthGuard, TenantContextGuard, ModuleGatingGuard)`
-  - [ ] Remplacer `@Permissions('events.read')` par `@RequirePermission('event.read')`
-  - [ ] Remplacer `@Permissions('events.create')` par `@RequirePermission('event.create')`
-  - [ ] Remplacer `@Permissions('events.update')` par `@RequirePermission('event.update', { resourceIdParam: 'id', checkOwnership: true })`
-  - [ ] Remplacer `@Permissions('events.delete')` par `@RequirePermission('event.delete', { scope: 'any' })`
-  - [ ] Supprimer tous les checks manuels `if (user.role === 'SUPER_ADMIN')`, `const allowAny = ...`
+- [ ] Créer `src/common/guards/require-permission.guard.spec.ts`
+  - [ ] Test : Permission accordée → accès autorisé
+  - [ ] Test : Permission refusée → 403
+  - [ ] Test : Module désactivé → 403
+  - [ ] Test : Scope insuffisant → 403
 
-### 3.4 Tests fonctionnels
-
-- [ ] Tester avec user Admin (scope any) → peut tout lire/modifier
-- [ ] Tester avec user Manager (scope org) → peut lire/modifier events de son org
-- [ ] Tester avec user Staff (scope team) → peut lire/modifier events de sa team
-- [ ] Tester avec user custom (scope own) → peut lire/modifier que ses events
-- [ ] Tester avec module désactivé → 403 Forbidden
-
-**Statut :** ⬜ Pas commencé
+**Statut :** ⬜ Pas commencé  
+**Temps estimé :** 6-8h (Jour 4)
 
 ---
 
-## Phase 4 - Rôles clés + Propagation (4-5 jours)
+## Phase 4 - Controllers RBAC + Organizations (JOUR 5 : 6-8h)
 
-**Objectif :** Script sync permissions + seeder auto pour nouvelle org
+**Objectif :** Créer les controllers pour gérer les rôles et les organisations
 
-### 4.1 Script sync permissions
+### 4.1 RbacController
 
-- [ ] Créer `scripts/sync-permissions.ts`
-  - [ ] Lire `PERMISSION_REGISTRY`
-  - [ ] Upsert permissions dans table `Permission`
-  - [ ] Pour chaque org existante :
-    - [ ] Créer rôles clés si absents (Admin, Manager, Staff)
-    - [ ] Assigner `role_permissions` selon `defaultScopesByRoleType`
-  - [ ] Commande : `npm run permissions:sync`
+- [ ] Créer `src/modules/rbac/controllers/rbac.controller.ts`
+  - [ ] `POST /api/rbac/roles` - Créer un rôle
+  - [ ] `GET /api/rbac/roles` - Lister les rôles
+  - [ ] `POST /api/rbac/roles/:roleId/permissions` - Assigner une permission à un rôle
+  - [ ] `POST /api/rbac/users/:userId/roles` - Assigner un rôle à un utilisateur
+  - [ ] `GET /api/rbac/users/:userId/permissions` - Lister les permissions d'un utilisateur
+  - [ ] Utiliser `@RequirePermission()` pour protéger les routes
 
-### 4.2 Hook nouvelle org
+### 4.2 OrganizationsController
 
-- [ ] Modifier `src/modules/organizations/organizations.service.ts`
-  - [ ] Après création org → appeler `syncPermissionsForOrg(orgId)`
-  - [ ] Créer Admin/Manager/Staff avec permissions correctes
+- [ ] Créer `src/modules/organizations/controllers/organizations.controller.ts`
+  - [ ] `POST /api/organizations` - Créer une organisation
+  - [ ] `GET /api/organizations` - Lister les organisations
+  - [ ] `POST /api/organizations/:orgId/members` - Ajouter un membre à une org
+  - [ ] `GET /api/users/me/organizations` - Lister les orgs de l'utilisateur connecté
+  - [ ] Utiliser `@RequirePermission()` pour protéger les routes
 
-### 4.3 Validation
+### 4.3 Services correspondants
 
-- [ ] Créer une nouvelle org → vérifier rôles clés créés auto
-- [ ] Lancer `npm run permissions:sync` → vérifier aucune régression
-- [ ] Vérifier rôles clés marqués `is_locked = true`
+- [ ] Créer `src/modules/rbac/services/roles.service.ts`
+  - [ ] Logique création/lecture rôles
+  - [ ] Utiliser `RoleHierarchyDomainService` pour validation anti-escalade
 
-**Statut :** ⬜ Pas commencé
+- [ ] Créer `src/modules/organizations/services/organizations.service.ts`
+  - [ ] Logique création org
+  - [ ] Logique ajout membres
 
----
+### 4.4 Tests
 
-## Phase 5 - Multi-org réel (10-15 jours) ⚠️ BREAKING
+- [ ] Tests E2E : Créer org → créer rôle → assigner rôle → vérifier permissions
 
-**Objectif :** User global dans plusieurs orgs avec rôles différents
-
-### 5.1 Migration User model
-
-- [ ] Créer migration Prisma : Supprimer `User.org_id` et `User.role_id`
-- [ ] Créer getter temporaire `User.org_id` → retourne `orgUsers[0].org_id` (compatibilité)
-- [ ] Créer getter temporaire `User.role_id` → retourne `userRoles[0].role_id` (compatibilité)
-
-### 5.2 AuthService
-
-- [ ] Modifier `src/modules/auth/auth.service.ts`
-  - [ ] Au login : lister orgs via `OrgUser`
-  - [ ] Stocker `currentOrgId` dans JWT
-  - [ ] Créer endpoint `POST /auth/switch-org` pour changer d'org active
-
-### 5.3 Adapter tous les services
-
-- [ ] `src/modules/users/users.service.ts` : Remplacer `user.org_id` par `user.currentOrgId`
-- [ ] `src/modules/events/events.service.ts` : Remplacer `user.org_id` par `user.currentOrgId`
-- [ ] `src/modules/attendees/attendees.service.ts` : Remplacer `user.org_id` par `user.currentOrgId`
-- [ ] Tous les autres services (scan exhaustif)
-
-### 5.4 API multi-org
-
-- [ ] `GET /api/me/orgs` - Liste des orgs du user
-- [ ] `POST /admin/users/:id/orgs/:orgId` - Donner accès org (plateforme)
-- [ ] `DELETE /admin/users/:id/orgs/:orgId` - Retirer accès
-
-### 5.5 Tests
-
-- [ ] User dans 2 orgs → switch org → vérifier permissions différentes
-- [ ] User plateforme → accès seulement aux orgs autorisées
-
-**Statut :** ⬜ Pas commencé
+**Statut :** ⬜ Pas commencé  
+**Temps estimé :** 6-8h (Jour 5)
 
 ---
 
-## Phase 6 - Gating modules (4-6 jours)
+## Phase 5 - Multi-tenant basique (JOUR 6 : 6-8h)
 
-**Objectif :** Plans / modules activés par org
+**Objectif :** User global dans plusieurs orgs avec rôles différents (version simplifiée, sans breaking changes)
 
-### 6.1 Seeders plans
+### 5.1 Système Context Switching
 
-- [ ] Créer `prisma/seeders/plans.seeder.ts`
-  - [ ] Plan "Free" : events, attendees
-  - [ ] Plan "Pro" : + badges, reports
-  - [ ] Plan "Enterprise" : tous modules
+- [ ] Ajouter `currentOrgId` dans le JWT payload
+- [ ] Créer endpoint `POST /api/auth/switch-org` pour changer d'org active
+- [ ] Modifier `JwtAuthGuard` pour extraire `currentOrgId`
+- [ ] **Garder `User.org_id` pour compatibilité** (pas de breaking change)
+- [ ] Migration complète reportée en v2
 
-### 6.2 API back-office
+### 5.2 TenantContextGuard amélioré
 
-- [ ] `GET /admin/plans` - Liste plans
-- [ ] `POST /admin/plans` - Créer plan
-- [ ] `GET /admin/plans/:id/modules` - Modules du plan
-- [ ] `POST /admin/plans/:id/modules/:key` - Activer module
-- [ ] `DELETE /admin/plans/:id/modules/:key` - Désactiver module
-- [ ] `PUT /admin/orgs/:id/modules/:key` - Override org
+- [ ] Améliorer `src/common/guards/tenant-context.guard.ts`
+  - [ ] Extraire `currentOrgId` du JWT
+  - [ ] Vérifier appartenance via `OrgUser`
+  - [ ] Set `req.user.currentOrgId`
+  - [ ] Refuser si user n'appartient pas à l'org
 
-### 6.3 Tests
+### 5.3 API multi-org basique
 
-- [ ] Désactiver module badges → 403 sur routes badges
-- [ ] Activer module via override → routes accessibles
+- [ ] `GET /api/users/me/organizations` - Lister les orgs de l'utilisateur
+- [ ] `POST /api/auth/switch-org` - Changer d'org active (génère nouveau JWT)
 
-**Statut :** ⬜ Pas commencé
+### 5.4 Tests
+
+- [ ] User dans 2 orgs → switch org → vérifier `currentOrgId` change
+- [ ] Vérifier isolation : user ne peut pas accéder aux ressources d'autres orgs
+
+**Statut :** ⬜ Pas commencé  
+**Temps estimé :** 6-8h (Jour 6)
 
 ---
 
-## Phase 7 - Refactor UI (10-12 jours)
+## Phase 6 - Seed Data + Tests E2E (JOUR 7 : 6-8h)
 
-**Objectif :** Front respecte les mêmes règles que backend
+**Objectif :** Créer données de test et valider le système complet
 
-### 7.1 Service ability front
+### 6.1 Script Seed complet
 
-- [ ] Créer `src/services/ability.service.ts` (front)
-  - [ ] `can(permissionKey, ctx?): boolean`
-  - [ ] `canUse(moduleKey): boolean`
-  - [ ] `canSee(componentKey): boolean`
+- [ ] Créer `prisma/seeds/rbac-complete-seed.ts`
+  - [ ] Créer 2 organisations de test
+  - [ ] Créer rôles standards (Admin, Manager, Staff) pour chaque org
+  - [ ] Créer users de test avec rôles différents
+  - [ ] Assigner permissions selon `PermissionRegistry`
+  - [ ] Créer données de test (events, attendees)
 
-### 7.2 Endpoint backend
+### 6.2 Tests E2E
 
-- [ ] `GET /api/me/permissions` - Permissions effectives
-- [ ] `GET /api/me/modules` - Modules activés
+- [ ] Flow complet : Login → Créer event → Vérifier RBAC
+- [ ] Test Admin : peut tout faire
+- [ ] Test Manager : limité à son org
+- [ ] Test Staff : limité à sa team
+- [ ] Test multi-org : switch org → vérifier permissions changent
 
-### 7.3 Migrer UI Events
+### 6.3 Documentation
 
-- [ ] Bouton "Créer event" → `v-if="can('event.create')"`
-- [ ] Bouton "Modifier" → `v-if="can('event.update')"`
-- [ ] Bouton "Supprimer" → `v-if="can('event.delete')"`
+- [ ] Créer `docs/rbac/QUICK_START.md`
+  - [ ] Comment lancer l'app
+  - [ ] Comment tester RBAC
+  - [ ] Exemples de requêtes
 
-### 7.4 Gestion 403
+**Statut :** ⬜ Pas commencé  
+**Temps estimé :** 6-8h (Jour 7)
 
-- [ ] Interceptor HTTP → détecter 403 → message clair
+---
 
-**Statut :** ⬜ Pas commencé
+## Phase 7+ - Améliorations futures (v2)
+
+**Reporté après la semaine 1. Ces features seront implémentées progressivement.**
+
+### 7.1 Migration DDD complète
+
+- [ ] Créer Aggregates (Role, UserAuthorization, Organization)
+- [ ] Créer Repositories pattern
+- [ ] Implémenter CQRS (Commands/Queries/Handlers)
+- [ ] Domain Events
+- [ ] Migration progressive module par module
+
+### 7.2 Plans & Modules (Gating avancé)
+
+- [ ] Créer Plans (Free, Pro, Enterprise)
+- [ ] Créer Modules (events, attendees, badges, analytics)
+- [ ] ModuleGatingGuard fonctionnel
+- [ ] API back-office pour gérer plans/modules
+
+### 7.3 Propagation permissions
+
+- [ ] Script sync permissions automatique
+- [ ] Hook création org → créer rôles clés auto
+- [ ] Gestion `managed_by_template`
+
+### 7.4 UI Frontend
+
+- [ ] Service ability front
+- [ ] Endpoint `GET /api/me/permissions`
+- [ ] Migrer UI Events pour utiliser `can()`
+- [ ] Gestion 403
+
+### 7.5 Migration controllers existants
+
+- [ ] Migrer EventsController vers `@RequirePermission()`
+- [ ] Migrer AttendeesController
+- [ ] Migrer RegistrationsController
+- [ ] Supprimer ancien `PermissionsGuard`
+
+**Statut :** ⬜ Reporté en v2
 
 ---
 
