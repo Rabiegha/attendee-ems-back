@@ -485,4 +485,89 @@ export class AuthService {
 
     return rules;
   }
+
+  /**
+   * Génère un token de réinitialisation de mot de passe
+   */
+  async requestPasswordReset(email: string, orgId?: string): Promise<{ resetToken: string; user: any }> {
+    // Chercher par email uniquement (un utilisateur peut avoir plusieurs organisations)
+    const user = await this.prisma.user.findFirst({
+      where: { 
+        email,
+        is_active: true 
+      },
+    });
+
+    if (!user) {
+      // Pour des raisons de sécurité, on ne révèle pas si l'email existe ou non
+      // On génère quand même un token fictif pour éviter le timing attack
+      const fakeToken = crypto.randomBytes(32).toString('hex');
+      return { resetToken: fakeToken, user: null };
+    }
+
+    // Générer un token sécurisé
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 1); // Expire dans 1 heure
+
+    // Stocker le token hashé dans la base de données
+    const hashedToken = this.hashToken(resetToken);
+    
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        reset_token: hashedToken,
+        reset_token_expires_at: expiresAt,
+      },
+    });
+
+    return { resetToken, user };
+  }
+
+  /**
+   * Valide un token de réinitialisation
+   */
+  async validatePasswordResetToken(token: string): Promise<any> {
+    const hashedToken = this.hashToken(token);
+    
+    const user = await this.prisma.user.findFirst({
+      where: {
+        reset_token: hashedToken,
+        reset_token_expires_at: {
+          gt: new Date(), // Token non expiré
+        },
+        is_active: true,
+      },
+    });
+
+    if (!user) {
+      throw new UnauthorizedException('Token de réinitialisation invalide ou expiré');
+    }
+
+    return user;
+  }
+
+  /**
+   * Réinitialise le mot de passe avec un token valide
+   */
+  async resetPassword(token: string, newPassword: string): Promise<void> {
+    const user = await this.validatePasswordResetToken(token);
+
+    const hashedPassword = await this.hashPassword(newPassword);
+
+    // Mettre à jour le mot de passe et supprimer le token
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password_hash: hashedPassword,
+        reset_token: null,
+        reset_token_expires_at: null,
+      },
+    });
+
+    // Optionnel : Révoquer tous les refresh tokens existants pour forcer la reconnexion
+    await this.prisma.refreshToken.deleteMany({
+      where: { userId: user.id },
+    });
+  }
 }

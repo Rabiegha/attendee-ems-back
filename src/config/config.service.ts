@@ -64,6 +64,10 @@ export class ConfigService {
     return this.config.API_CORS_ORIGIN;
   }
 
+  get frontendUrl(): string {
+    return this.config.FRONTEND_URL;
+  }
+
   get nodeEnv(): string {
     return this.config.NODE_ENV;
   }

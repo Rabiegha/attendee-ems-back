@@ -20,13 +20,20 @@ export class HttpExceptionFilter implements ExceptionFilter {
     let status: number;
     let message: string;
     let title: string;
+    let extraData: Record<string, any> = {};
 
     if (exception instanceof HttpException) {
       status = exception.getStatus();
       const exceptionResponse = exception.getResponse();
-      message = typeof exceptionResponse === 'string' 
-        ? exceptionResponse 
-        : (exceptionResponse as any).message || exception.message;
+      
+      if (typeof exceptionResponse === 'object' && exceptionResponse !== null) {
+        const { message: msg, statusCode, ...rest } = exceptionResponse as any;
+        message = msg || exception.message;
+        extraData = rest;
+      } else {
+        message = exceptionResponse as string;
+      }
+
       title = this.getHttpStatusText(status);
     } else {
       status = HttpStatus.INTERNAL_SERVER_ERROR;
@@ -40,6 +47,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
       status,
       detail: message,
       instance: request.url,
+      ...extraData,
     };
 
     this.logger.error(

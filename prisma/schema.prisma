@@ -179,10 +179,12 @@ model Invitation {
   // Restrict: Empêche la suppression d'un utilisateur s'il a envoyé des invitations
   invited_by       User              @relation(fields: [invited_by_user_id], references: [id], onDelete: Restrict)
 
-  @@unique([email, org_id]) // Un email ne peut avoir qu'une invitation active par organisation
+  // Pas de contrainte unique pour permettre l'historique et le multi-org futur
+  // La logique "une seule PENDING par org" est gérée en code
   @@index([org_id])
   @@index([role_id])
   @@index([invited_by_user_id])
+  @@index([email, org_id, status]) // Index composite pour les requêtes fréquentes
   @@index([token])
   @@index([status])
   @@index([expires_at])

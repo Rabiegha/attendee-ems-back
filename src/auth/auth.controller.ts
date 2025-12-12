@@ -3,8 +3,10 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiCookieAuth, ApiBearerAu
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
+import { RequestPasswordResetDto } from './dto/password-reset.dto';
 import { ConfigService } from '../config/config.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { EmailService } from '../modules/email/email.service';
 
 @ApiTags('auth')
 @Controller()
@@ -12,6 +14,7 @@ export class AuthController {
   constructor(
     private authService: AuthService,
     private configService: ConfigService,
+    private emailService: EmailService,
   ) {}
 
   @Post('login')
@@ -274,6 +277,106 @@ export class AuthController {
   })
   async getPolicy(@Req() req: any) {
     return await this.authService.getPolicyRules(req.user);
+  }
+
+  @Post('password/request-reset')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Demander la réinitialisation du mot de passe',
+    description: 'Envoie un email avec un lien de réinitialisation. Retourne toujours 200 pour éviter l\'énumération d\'emails.'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Si l\'email existe, un lien de réinitialisation a été envoyé',
+    schema: {
+      type: 'object',
+      properties: {
+        message: { type: 'string', example: 'Si un compte existe avec cet email, un lien de réinitialisation a été envoyé.' }
+      }
+    }
+  })
+  async requestPasswordReset(@Body() requestDto: RequestPasswordResetDto) {
+    const { resetToken, user } = await this.authService.requestPasswordReset(
+      requestDto.email,
+      requestDto.org_id
+    );
+
+    // Seulement envoyer l'email si l'utilisateur existe
+    if (user) {
+      const resetUrl = `${this.configService.frontendUrl}/auth/reset-password/${resetToken}`;
+      
+      // Envoyer l'email via le service email centralisé
+      await this.emailService.sendPasswordResetEmail({
+        email: user.email,
+        resetUrl,
+        userName: user.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : undefined,
+      });
+      
+      console.log(`[Password Reset] Email sent to ${user.email}`);
+    }
+
+    // Toujours retourner le même message pour éviter l'énumération d'emails
+    return {
+      message: 'Si un compte existe avec cet email, un lien de réinitialisation a été envoyé.',
+    };
+  }
+
+  @Post('password/validate-token')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Valider un token de réinitialisation',
+    description: 'Vérifie qu\'un token de réinitialisation est valide et non expiré'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Token valide',
+    schema: {
+      type: 'object',
+      properties: {
+        valid: { type: 'boolean', example: true },
+        email: { type: 'string', example: 'user@example.com' }
+      }
+    }
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Token invalide ou expiré'
+  })
+  async validateResetToken(@Body() validateDto: any) {
+    const user = await this.authService.validatePasswordResetToken(validateDto.token);
+    
+    return {
+      valid: true,
+      email: user.email,
+    };
+  }
+
+  @Post('password/reset')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Réinitialiser le mot de passe',
+    description: 'Définit un nouveau mot de passe avec un token valide'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Mot de passe réinitialisé avec succès',
+    schema: {
+      type: 'object',
+      properties: {
+        message: { type: 'string', example: 'Mot de passe réinitialisé avec succès' }
+      }
+    }
+  })
+  @ApiResponse({
+    status: 401,
+    description: 'Token invalide ou expiré'
+  })
+  async resetPassword(@Body() resetDto: any) {
+    await this.authService.resetPassword(resetDto.token, resetDto.newPassword);
+    
+    return {
+      message: 'Mot de passe réinitialisé avec succès',
+    };
   }
 
   private secondsFromTtl(ttl: string): number {

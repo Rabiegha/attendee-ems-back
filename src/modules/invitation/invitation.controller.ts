@@ -57,13 +57,12 @@ export class InvitationController {
   @Post(':id/resend')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
-  @ApiOperation({ summary: 'Renvoyer une invitation' })
+  @ApiOperation({ summary: 'Renvoyer une invitation (force le remplacement)' })
   @ApiResponse({ status: 201, description: 'Invitation renvoyée avec succès' })
   @ApiResponse({ status: 404, description: 'Invitation non trouvée' })
   async resendInvitation(@Param('id') invitationId: string, @Request() req: any) {
-    const orgId = req.user.org_id;
     const invitedByUserId = req.user.id;
-    return this.invitationService.resendInvitation(invitationId, orgId, invitedByUserId);
+    return this.invitationService.resendInvitation(invitationId, invitedByUserId);
   }
 
   @Post('complete/:token')

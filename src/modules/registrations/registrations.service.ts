@@ -276,15 +276,6 @@ export class RegistrationsService {
       const isMobileRegistration = dto.source === 'mobile_app';
       const defaultStatus = (event.settings?.registration_auto_approve || isMobileRegistration) ? 'approved' : 'awaiting';
       const status = dto.admin_status || defaultStatus;
-      
-      // DEBUG: Log admin dates
-      if (dto.admin_registered_at || dto.admin_checked_in_at) {
-        console.log('🔍 Admin dates received:', {
-          admin_registered_at: dto.admin_registered_at,
-          admin_checked_in_at: dto.admin_checked_in_at,
-          admin_is_checked_in: dto.admin_is_checked_in,
-        });
-      }
       const confirmedAt = status === 'approved' ? new Date() : null;
 
       // Check capacity only if we are trying to approve the registration

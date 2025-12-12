@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../infra/db/prisma.service';
 import { InvitationStatus, GetInvitationsQueryDto, InvitationResponseDto, GetInvitationsResponseDto } from './dto/invitation.dto';
 import * as crypto from 'crypto';
@@ -100,7 +100,7 @@ export class InvitationService {
       }
     }
 
-    // Vérifier si l'utilisateur existe déjà
+    // Vérifier si l'utilisateur existe déjà dans cette organisation
     const existingUser = await this.prisma.user.findFirst({
       where: { email, org_id: orgId },
     });
@@ -108,36 +108,33 @@ export class InvitationService {
       throw new BadRequestException('Un utilisateur avec cet email existe déjà dans cette organisation');
     }
 
-    // Vérifier s'il existe déjà une invitation en cours pour cet email dans cette organisation
+    // Vérifier s'il existe déjà une invitation pour cet email dans cette organisation
     const existingInvitation = await this.prisma.invitation.findFirst({
       where: { 
         email, 
         org_id: orgId,
-        status: InvitationStatus.PENDING
       },
+      orderBy: { created_at: 'desc' }, // Plus récente en premier
     });
 
-    let isReplacement = false;
-    if (existingInvitation) {
-      isReplacement = true;
-      // Annuler l'invitation existante
-      await this.prisma.invitation.update({
-        where: { id: existingInvitation.id },
-        data: { status: InvitationStatus.CANCELLED }
+    // Si une invitation PENDING existe → Retourner erreur 409 avec détails
+    if (existingInvitation && existingInvitation.status === InvitationStatus.PENDING) {
+      // NestJS ConflictException: le premier paramètre devient 'message', le second devient 'error'
+      throw new ConflictException({
+        statusCode: 409,
+        message: 'Une invitation est déjà en cours pour cet email',
+        hasPendingInvitation: true,
+        existingInvitation: {
+          id: existingInvitation.id,
+          email: existingInvitation.email,
+          createdAt: existingInvitation.created_at,
+          expiresAt: existingInvitation.expires_at,
+          status: existingInvitation.status,
+        },
       });
     }
 
-    // Annuler toutes les autres anciennes invitations pour cet email dans cette organisation
-    // (peu importe leur statut - cela évite les conflits de contrainte unique)
-    await this.prisma.invitation.updateMany({
-      where: { 
-        email, 
-        org_id: orgId,
-        status: { not: InvitationStatus.CANCELLED }
-      },
-      data: { status: InvitationStatus.CANCELLED }
-    });
-
+    // Si invitation EXPIRED/CANCELLED/ACCEPTED → Créer une nouvelle automatiquement
     // Générer un token unique d'invitation
     const invitationToken = crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date();
@@ -176,7 +173,75 @@ export class InvitationService {
       emailSent,
       organization: organization.name,
       role: role.name,
-      isReplacement,
+    };
+  }
+
+  /**
+   * Renvoyer une invitation existante (force le remplacement)
+   * Annule l'ancienne invitation PENDING et en crée une nouvelle
+   */
+  async resendInvitation(invitationId: string, invitedByUserId: string) {
+    // Récupérer l'invitation existante
+    const existingInvitation = await this.prisma.invitation.findUnique({
+      where: { id: invitationId },
+      include: {
+        organization: true,
+        role: true,
+      },
+    });
+
+    if (!existingInvitation) {
+      throw new NotFoundException('Invitation non trouvée');
+    }
+
+    // Vérifier que l'invitation est bien PENDING
+    if (existingInvitation.status !== InvitationStatus.PENDING) {
+      throw new BadRequestException('Cette invitation n\'est pas en cours');
+    }
+
+    // Annuler l'ancienne invitation
+    await this.prisma.invitation.update({
+      where: { id: invitationId },
+      data: { status: InvitationStatus.CANCELLED },
+    });
+
+    // Créer une nouvelle invitation
+    const invitationToken = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date();
+    expiresAt.setHours(expiresAt.getHours() + 48);
+
+    const newInvitation = await this.prisma.invitation.create({
+      data: {
+        email: existingInvitation.email,
+        token: invitationToken,
+        expires_at: expiresAt,
+        organization: { connect: { id: existingInvitation.org_id } },
+        role: { connect: { id: existingInvitation.role_id } },
+        invited_by: { connect: { id: invitedByUserId } },
+        status: InvitationStatus.PENDING,
+      },
+    });
+
+    // Construire l'URL et envoyer l'email
+    const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const invitationUrl = `${baseUrl}/complete-invitation/${invitationToken}`;
+
+    const emailSent = await this.sendInvitationEmail(
+      existingInvitation.email,
+      invitationUrl,
+      existingInvitation.organization.name,
+      existingInvitation.role.name
+    );
+
+    return {
+      id: newInvitation.id,
+      email: newInvitation.email,
+      invitationToken,
+      expiresAt,
+      emailSent,
+      organization: existingInvitation.organization.name,
+      role: existingInvitation.role.name,
+      isReplacement: true,
     };
   }
 
@@ -377,36 +442,6 @@ export class InvitationService {
       where: { id: invitationId },
       data: { status: InvitationStatus.CANCELLED },
     });
-  }
-
-  /**
-   * Renvoie une invitation (crée une nouvelle invitation avec un nouveau token)
-   */
-  async resendInvitation(invitationId: string, orgId: string, invitedByUserId: string) {
-    const invitation = await this.prisma.invitation.findFirst({
-      where: { id: invitationId, org_id: orgId },
-      include: {
-        organization: true,
-        role: true,
-      },
-    });
-
-    if (!invitation) {
-      throw new NotFoundException('Invitation non trouvée');
-    }
-
-    if (invitation.status === InvitationStatus.ACCEPTED) {
-      throw new BadRequestException('Cette invitation a déjà été acceptée');
-    }
-
-    // Annuler l'ancienne invitation
-    await this.prisma.invitation.update({
-      where: { id: invitationId },
-      data: { status: InvitationStatus.CANCELLED },
-    });
-
-    // Créer une nouvelle invitation
-    return this.sendInvitation(invitation.email, invitation.role_id, orgId, invitedByUserId);
   }
 
   /**

@@ -22,6 +22,9 @@ export const configSchema = z.object({
   // CORS Configuration
   API_CORS_ORIGIN: z.string().default('http://localhost:3001'),
   
+  // Frontend URL (for emails, redirects, etc.)
+  FRONTEND_URL: z.string().default('http://localhost:5173'),
+  
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.string().transform(Number).default('3000'),
 });
