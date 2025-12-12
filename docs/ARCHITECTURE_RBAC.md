@@ -259,6 +259,179 @@ Objectif : intégrer la notion de plan (offre/abonnement) et limiter l’accès 
      - met à jour `role_permissions` uniquement pour les rôles `managed_by_template = true`.
    - Les rôles custom (`managed_by_template = false`) ne sont jamais modifiés automatiquement.
 
+---
+
+## 6. PermissionRegistry : Source de vérité TypeScript
+
+Le `PermissionRegistry` centralise la définition de toutes les permissions en TypeScript.
+
+### 6.1 Structure
+
+```typescript
+// src/rbac/permission-registry.ts
+export interface PermissionDefinition {
+  module: string;                    // Module associé
+  allowedScopes: Scope[];            // Scopes autorisés pour cette permission
+  defaultScopeCeiling: Scope;        // Plafond par défaut
+  defaultScopesByRoleType: {         // Scopes par défaut par type de rôle
+    tenant_admin?: Scope;
+    tenant_manager?: Scope;
+    tenant_staff?: Scope;
+    support_L1?: Scope;
+    support_L2?: Scope;
+    custom?: Scope;
+  };
+  description?: string;
+}
+
+export const PERMISSION_REGISTRY: Record<string, PermissionDefinition> = {
+  // ========== EVENTS ==========
+  'event.read': {
+    module: 'events',
+    allowedScopes: ['own', 'assigned', 'team', 'org', 'any'],
+    defaultScopeCeiling: 'org',
+    defaultScopesByRoleType: {
+      tenant_admin: 'any',
+      tenant_manager: 'org',
+      tenant_staff: 'team',
+      support_L1: 'assigned',
+      custom: 'own',
+    },
+    description: 'Lire les événements'
+  },
+  'event.create': {
+    module: 'events',
+    allowedScopes: ['org', 'any'],
+    defaultScopeCeiling: 'org',
+    defaultScopesByRoleType: {
+      tenant_admin: 'any',
+      tenant_manager: 'org',
+      tenant_staff: 'org',
+      custom: 'org',
+    },
+    description: 'Créer un événement'
+  },
+  'event.update': {
+    module: 'events',
+    allowedScopes: ['own', 'assigned', 'team', 'org', 'any'],
+    defaultScopeCeiling: 'org',
+    defaultScopesByRoleType: {
+      tenant_admin: 'any',
+      tenant_manager: 'org',
+      tenant_staff: 'team',
+      custom: 'own',
+    },
+    description: 'Modifier un événement'
+  },
+  'event.delete': {
+    module: 'events',
+    allowedScopes: ['any'],
+    defaultScopeCeiling: 'any',
+    defaultScopesByRoleType: {
+      tenant_admin: 'any',
+    },
+    description: 'Supprimer un événement (admin only)'
+  },
+
+  // ========== ATTENDEES ==========
+  'attendee.read': {
+    module: 'attendees',
+    allowedScopes: ['own', 'assigned', 'team', 'org', 'any'],
+    defaultScopeCeiling: 'org',
+    defaultScopesByRoleType: {
+      tenant_admin: 'any',
+      tenant_manager: 'org',
+      tenant_staff: 'team',
+      custom: 'assigned',
+    },
+    description: 'Lire les participants'
+  },
+  'attendee.import': {
+    module: 'attendees',
+    allowedScopes: ['org', 'any'],
+    defaultScopeCeiling: 'org',
+    defaultScopesByRoleType: {
+      tenant_admin: 'any',
+      tenant_manager: 'org',
+      tenant_staff: 'org',
+    },
+    description: 'Importer des participants'
+  },
+
+  // ========== BADGES ==========
+  'badge.design.create': {
+    module: 'badges',
+    allowedScopes: ['org', 'any'],
+    defaultScopeCeiling: 'org',
+    defaultScopesByRoleType: {
+      tenant_admin: 'any',
+      tenant_manager: 'org',
+    },
+    description: 'Créer un design de badge'
+  },
+  'badge.print': {
+    module: 'badges',
+    allowedScopes: ['assigned', 'team', 'org', 'any'],
+    defaultScopeCeiling: 'org',
+    defaultScopesByRoleType: {
+      tenant_admin: 'any',
+      tenant_manager: 'org',
+      tenant_staff: 'team',
+      custom: 'assigned',
+    },
+    description: 'Imprimer des badges'
+  },
+
+  // ========== ROLES & PERMISSIONS ==========
+  'role.create': {
+    module: 'roles',
+    allowedScopes: ['org', 'any'],
+    defaultScopeCeiling: 'org',
+    defaultScopesByRoleType: {
+      tenant_admin: 'any',
+    },
+    description: 'Créer un rôle'
+  },
+  'role.assign': {
+    module: 'roles',
+    allowedScopes: ['org', 'any'],
+    defaultScopeCeiling: 'org',
+    defaultScopesByRoleType: {
+      tenant_admin: 'any',
+      tenant_manager: 'org',
+    },
+    description: 'Assigner un rôle à un utilisateur'
+  },
+
+  // ... 315+ permissions au total
+};
+```
+
+### 6.2 Utilisation du Registry
+
+**Extraction du module depuis une permission :**
+
+```typescript
+const permissionDef = PERMISSION_REGISTRY['event.read'];
+const moduleKey = permissionDef.module; // 'events'
+```
+
+**Vérification des scopes autorisés :**
+
+```typescript
+const allowedScopes = PERMISSION_REGISTRY['event.update'].allowedScopes;
+if (!allowedScopes.includes(requestedScope)) {
+  throw new Error('Scope non autorisé pour cette permission');
+}
+```
+
+**Obtention du scope par défaut pour un type de rôle :**
+
+```typescript
+const defaultScope = PERMISSION_REGISTRY['event.read']
+  .defaultScopesByRoleType.tenant_manager; // 'org'
+```
+
 5. **Gating par plan / modules**
    - Une permission ne suffit pas pour autoriser une action :
      - le module correspondant doit être activé pour l’org.
@@ -269,22 +442,191 @@ Objectif : intégrer la notion de plan (offre/abonnement) et limiter l’accès 
 
 ---
 
-## 5. API d’autorisation (vue d’ensemble)
+## 5. Architecture des Guards NestJS
 
-- `can(user, permissionKey, context)` :
-  - gère `is_root`,
-  - vérifie tenant vs plateforme,
-  - vérifie que le module est activé,
-  - calcule le meilleur `scope_limit` pour le user,
-  - applique `scopeCovers(scope_limit, context)`.
+### 5.1 Pipeline de Guards
 
-- `requirePermission(permissionKey, moduleKey?, context)` :
-  - middleware qui appelle `can()` et renvoie 403 en cas de refus.
+L'autorisation repose sur un pipeline de Guards NestJS, exécutés dans l'ordre :
 
-- Sur le front :
-  - `can(permissionKey, ctx?)`
-  - `canUse(moduleKey)`
-  - `canSee(componentKey)`
+```typescript
+1. JwtAuthGuard          → Authentification (extrait user du JWT)
+2. TenantContextGuard    → Multi-tenant (valide org, set currentOrgId)
+3. ModuleGatingGuard     → Gating modules (vérifie module activé)
+4. RequirePermissionGuard → Permission + scope (vérifie autorisation finale)
+```
+
+**Principes clés :**
+- **Séparation des responsabilités** : 1 Guard = 1 responsabilité
+- **Composabilité** : Les Guards peuvent être combinés selon les besoins
+- **Testabilité** : Chaque Guard est testable indépendamment
+- **Évolutivité** : Ajout de nouveaux Guards sans modifier l'existant
+
+### 5.2 Décorateurs
+
+#### `@RequirePermission(key, options?)`
+
+Décorateur principal pour les permissions avec options avancées :
+
+```typescript
+@RequirePermission('event.read', {
+  scope?: Scope,              // Force un scope spécifique
+  resourceIdParam?: string,   // Param pour extraire l'ID de la ressource
+  checkOwnership?: boolean,   // Vérifier ownership de la ressource
+  allowPlatform?: boolean     // Autoriser users plateforme
+})
+```
+
+**Exemples d'utilisation :**
+
+```typescript
+// Cas 1: Lecture simple (scope auto-déterminé)
+@Get()
+@RequirePermission('event.list')
+async findAll() { }
+
+// Cas 2: Création avec scope explicite
+@Post()
+@RequirePermission('event.create', { scope: 'org' })
+async create(@Body() dto) { }
+
+// Cas 3: Modification avec ownership
+@Patch(':id')
+@RequirePermission('event.update', { 
+  resourceIdParam: 'id',
+  checkOwnership: true 
+})
+async update(@Param('id') id: string, @Body() dto) { }
+
+// Cas 4: Suppression admin only
+@Delete(':id')
+@RequirePermission('event.delete', { 
+  scope: 'any',
+  resourceIdParam: 'id'
+})
+async delete(@Param('id') id: string) { }
+```
+
+#### `@RequireModule(moduleKey)`
+
+Décorateur optionnel pour gating explicite de module :
+
+```typescript
+@Post(':eventId/badges')
+@RequireModule('badges')  // Vérifie que le module badges est activé
+@RequirePermission('badge.create', { scope: 'team' })
+async createBadge(@Param('eventId') eventId: string) { }
+```
+
+#### `@ScopeContext(builder)`
+
+Décorateur pour construire un ScopeContext custom dans les cas complexes :
+
+```typescript
+@Post(':eventId/sessions')
+@RequirePermission('session.create', { scope: 'team' })
+@ScopeContext((req, params) => ({
+  resourceTenantId: params.eventId,
+  actorTenantId: req.user.currentOrgId,
+  actorUserId: req.user.id,
+  actorTeamIds: req.user.teams || []
+}))
+async createSession(@Param('eventId') eventId: string) { }
+```
+
+### 5.3 Services d'autorisation
+
+#### `AuthorizationService`
+
+Service central qui orchestre toute la logique d'autorisation :
+
+```typescript
+@Injectable()
+export class AuthorizationService {
+  constructor(
+    private prisma: PrismaService,
+    private modulesService: ModulesService,
+  ) {}
+
+  // Méthode principale
+  async can(
+    user: UserPayload, 
+    permissionKey: string, 
+    context: ScopeContext
+  ): Promise<boolean>
+
+  // Méthodes auxiliaires
+  async getBestScopeForPermission(
+    user: UserPayload, 
+    permissionKey: string, 
+    orgId: string
+  ): Promise<Scope | null>
+
+  scopeCovers(scopeLimit: Scope, context: ScopeContext): boolean
+
+  private async isTenantMember(userId: string, orgId: string): Promise<boolean>
+  
+  private async hasPlatformAccess(userId: string, orgId: string): Promise<boolean>
+  
+  private getHighestScope(scopes: Scope[]): Scope
+}
+```
+
+**Algorithme de `can()` :**
+
+1. **Vérifier is_root** : Si `user.is_root === true` → accès total (return true)
+2. **Vérifier tenant vs plateforme** :
+   - User tenant : vérifier appartenance à l'org via `OrgUser`
+   - User plateforme : vérifier accès via `PlatformUserOrgAccess` (si scope = assigned)
+3. **Vérifier module activé** : `isModuleEnabledForTenant(tenantId, moduleKey)`
+4. **Récupérer le meilleur scope** : `getBestScopeForPermission(user, permissionKey, orgId)`
+   - Si aucun scope trouvé → **refuser l'accès** (return false)
+5. **Vérifier scope coverage** : `scopeCovers(bestScope, context)`
+
+#### `ModulesService`
+
+Service dédié à la gestion des plans et modules :
+
+```typescript
+@Injectable()
+export class ModulesService {
+  async isModuleEnabledForTenant(
+    tenantId: string, 
+    moduleKey: string
+  ): Promise<boolean> {
+    // 1. Lire plan de l'org
+    // 2. Vérifier plan_modules
+    // 3. Appliquer org_module_overrides (priorité)
+    // 4. Retourner boolean
+  }
+}
+```
+
+### 5.4 API Frontend
+
+Service d'autorisation côté front :
+
+```typescript
+// ability.service.ts
+export class AbilityService {
+  can(permissionKey: string, ctx?: ScopeContext): boolean
+  canUse(moduleKey: string): boolean
+  canSee(componentKey: string): boolean
+}
+```
+
+**Endpoint backend pour le front :**
+
+```typescript
+// GET /api/me/permissions
+{
+  "permissions": [
+    { "key": "event.read", "scope": "org" },
+    { "key": "event.create", "scope": "org" },
+    { "key": "badge.print", "scope": "team" }
+  ],
+  "modules": ["events", "attendees", "badges"]
+}
+```
 
 ---
 
