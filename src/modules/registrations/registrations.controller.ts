@@ -35,6 +35,22 @@ import { resolveRegistrationReadScope } from '../../common/utils/resolve-registr
 export class RegistrationsController {
   constructor(private readonly registrationsService: RegistrationsService) {}
 
+  @Get('template')
+  @Permissions('registrations.read')
+  @ApiOperation({ summary: 'Download registration import template' })
+  @ApiResponse({ status: 200, description: 'Template downloaded successfully' })
+  async downloadTemplate(@Res() res: Response) {
+    const { buffer, filename } = await this.registrationsService.generateTemplate();
+    
+    res.set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Length': buffer.length,
+    });
+    
+    res.send(buffer);
+  }
+
   @Get('events/:eventId/registrations')
   @Permissions('registrations.read')
   @ApiOperation({ summary: 'List registrations for an event' })

@@ -14,6 +14,7 @@ import { CreateRegistrationDto } from './dto/create-registration.dto';
 import { UpdateRegistrationStatusDto } from './dto/update-registration-status.dto';
 import { CheckinRegistrationDto } from './dto/checkin-registration.dto';
 import * as XLSX from 'xlsx';
+import * as ExcelJS from 'exceljs';
 import * as QRCode from 'qrcode';
 import { Prisma } from '@prisma/client';
 import { RegistrationScope } from '../../common/utils/resolve-registration-scope.util';
@@ -646,12 +647,23 @@ export class RegistrationsService {
 
     // Process each row
     for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
+      const rawRow = rows[i];
       const rowNumber = i + 2; // Excel row number (1-based + header)
+
+      // Create normalized row for lookup (lowercase keys, no accents)
+      const normalizeKey = (key: string) => key.toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+      const row: Record<string, any> = {};
+      Object.keys(rawRow).forEach(key => {
+        if (key) {
+          row[normalizeKey(key)] = rawRow[key];
+        }
+      });
 
       try {
         // Extract required fields using all possible column name variations
-        const emailAliases = ['email', 'Email', 'E-mail', 'e-mail', 'mail', 'Mail'];
+        // Note: aliases must be normalized (lowercase, no accents)
+        const emailAliases = ['email', 'e-mail', 'mail', 'courriel'];
         const email = emailAliases.map(alias => row[alias]).find(val => val);
         
         if (!email) {
@@ -665,22 +677,23 @@ export class RegistrationsService {
         }
 
         // Helper function to find value from multiple column aliases
+        // Checks for non-empty string after trimming
         const findValue = (aliases: string[]) => 
-          aliases.map(alias => row[alias]).find(val => val !== undefined && val !== null && val !== '');
+          aliases.map(alias => row[alias]).find(val => val !== undefined && val !== null && String(val).trim() !== '');
 
-        // Extract attendee data with comprehensive alias support
+        // Extract attendee data with comprehensive alias support (lowercase, no accents)
         const attendeeData = {
           email: String(email).toLowerCase().trim(),
-          first_name: findValue(['first_name', 'First Name', 'Prénom', 'prénom', 'prenom', 'firstname', 'FirstName']),
-          last_name: findValue(['last_name', 'Last Name', 'Nom', 'nom', 'lastname', 'LastName']),
-          phone: findValue(['phone', 'Phone', 'Téléphone', 'téléphone', 'telephone', 'Tel', 'tel']),
-          company: findValue(['company', 'Company', 'Organisation', 'organisation', 'Entreprise', 'entreprise', 'org']),
-          job_title: findValue(['job_title', 'Job Title', 'Désignation', 'désignation', 'Poste', 'poste', 'title']),
-          country: findValue(['country', 'Country', 'Pays', 'pays']),
+          first_name: findValue(['first_name', 'first name', 'prenom', 'firstname', 'first']),
+          last_name: findValue(['last_name', 'last name', 'nom', 'lastname', 'nom de famille', 'last']),
+          phone: findValue(['phone', 'telephone', 'tel', 'mobile', 'portable', 'cell', 'gsm']),
+          company: findValue(['company', 'organisation', 'organization', 'entreprise', 'org', 'societe', 'company name', 'nom de l\'entreprise', 'raison sociale', 'business', 'etablissement']),
+          job_title: findValue(['job_title', 'job title', 'designation', 'poste', 'title', 'fonction', 'role', 'position']),
+          country: findValue(['country', 'pays', 'nation', 'state']),
         };
 
         // Extract registration data
-        let attendanceType = findValue(['attendance_type', 'Attendance Type', 'Mode', 'mode']) || 'onsite';
+        let attendanceType = findValue(['attendance_type', 'attendance type', 'mode', 'participation', 'attendance']) || 'onsite';
         
         // Map old/alternative values to valid AttendanceMode enum
         const attendanceTypeMapping: Record<string, string> = {
@@ -699,35 +712,139 @@ export class RegistrationsService {
         const lowerAttendanceType = String(attendanceType).toLowerCase();
         attendanceType = attendanceTypeMapping[lowerAttendanceType] || 'onsite';
         
-        const eventAttendeeTypeId = row['event_attendee_type_id'] || null;
+        let eventAttendeeTypeId = row['event_attendee_type_id'] || null;
+        // Validate UUID format for event_attendee_type_id
+        if (eventAttendeeTypeId) {
+           const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+           if (!uuidRegex.test(String(eventAttendeeTypeId))) {
+             eventAttendeeTypeId = null; // Fallback to null if invalid
+           }
+        }
 
-        // All standard column names (these won't be stored in answers JSON)
+        // Extract Status if present
+        const statusRaw = findValue(['status', 'statut', 'state', 'etat', 'état']);
+        let importedStatus: string | null = null;
+        
+        if (statusRaw) {
+          // Normalize value: lowercase, trim, remove accents
+          const normalizedStatus = String(statusRaw).toLowerCase().trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+          
+          const statusMap: Record<string, string> = {
+            // Approved
+            'approved': 'approved', 'approuve': 'approved', 'valide': 'approved', 'ok': 'approved', 'yes': 'approved', 'oui': 'approved', 'accepted': 'approved', 'accepte': 'approved',
+            // Confirmed
+            'confirmed': 'confirmed', 'confirme': 'confirmed',
+            // Checked In
+            'checked_in': 'checked_in', 'checkedin': 'checked_in', 'present': 'checked_in',
+            // Refused
+            'refused': 'refused', 'refuse': 'refused', 'rejected': 'refused', 'rejete': 'refused', 'rejet': 'refused', 'declined': 'refused', 'decline': 'refused', 'ko': 'refused', 'no': 'refused', 'non': 'refused',
+            // Pending
+            'pending': 'pending', 'en attente': 'pending', 'attente': 'pending', 'waiting': 'pending', 'awaiting': 'awaiting',
+            // Cancelled
+            'cancelled': 'cancelled', 'canceled': 'cancelled', 'annule': 'cancelled',
+          };
+          
+          importedStatus = statusMap[normalizedStatus] || null;
+          
+          // Fallback: partial match if exact match fails
+          if (!importedStatus) {
+             if (normalizedStatus.includes('refus') || normalizedStatus.includes('reject') || normalizedStatus.includes('declin')) importedStatus = 'refused';
+             else if (normalizedStatus.includes('approuv') || normalizedStatus.includes('accept') || normalizedStatus.includes('valid')) importedStatus = 'approved';
+             else if (normalizedStatus.includes('attente') || normalizedStatus.includes('wait') || normalizedStatus.includes('pend')) importedStatus = 'pending';
+             else if (normalizedStatus.includes('cancel') || normalizedStatus.includes('annul')) importedStatus = 'cancelled';
+          }
+        }
+
+        // Extract Registration Date
+        const registrationDateRaw = findValue(['date d\'inscription', 'registration_date', 'created_at', 'date inscription', 'inscrit le']);
+        let registrationDate = new Date(); // Default to NOW
+        
+        if (registrationDateRaw) {
+          // Try to parse date
+          // Handle Excel serial date if it's a number
+          if (typeof registrationDateRaw === 'number') {
+             // Excel base date is 1900-01-01. JS is ms since 1970.
+             // Rough conversion: (value - 25569) * 86400 * 1000
+             const date = new Date((registrationDateRaw - 25569) * 86400 * 1000);
+             if (!isNaN(date.getTime())) {
+               registrationDate = date;
+             }
+          } else {
+            const date = new Date(String(registrationDateRaw));
+            if (!isNaN(date.getTime())) {
+              registrationDate = date;
+            }
+          }
+        }
+
+        // Extract Check-in Date
+        const checkInRaw = findValue(['check-in', 'checkin', 'date de check-in', 'checked_in_at', 'présence', 'presence', 'checked']);
+        let checkInDate: Date | null = null;
+        let isCheckedIn = false;
+
+        if (checkInRaw) {
+          const rawStr = String(checkInRaw).toLowerCase().trim();
+          
+          // Check if it's a boolean-like value
+          const booleanTrue = ['yes', 'oui', 'checked', 'present', 'présent', 'ok', 'true', 'vrai', '1', 'checkedin', 'checked_in'];
+          
+          if (booleanTrue.some(v => rawStr === v || rawStr.includes(v))) {
+            isCheckedIn = true;
+            checkInDate = new Date(); // Default to NOW
+          } else {
+            // Try to parse as date
+            let date: Date | null = null;
+            if (typeof checkInRaw === 'number') {
+               date = new Date((checkInRaw - 25569) * 86400 * 1000);
+            } else {
+               date = new Date(String(checkInRaw));
+            }
+            
+            if (date && !isNaN(date.getTime())) {
+              isCheckedIn = true;
+              checkInDate = date;
+            }
+          }
+        }
+
+        // If check-in is detected, override status to checked_in
+        if (isCheckedIn) {
+          importedStatus = 'checked_in';
+        }
+
+        // All standard column names (normalized: lowercase, no accents)
         const standardFields = [
           // Email aliases
-          'email', 'Email', 'E-mail', 'e-mail', 'mail', 'Mail',
+          'email', 'e-mail', 'mail', 'courriel',
           // First name aliases  
-          'first_name', 'First Name', 'Prénom', 'prénom', 'prenom', 'firstname', 'FirstName',
+          'first_name', 'first name', 'prenom', 'firstname', 'first',
           // Last name aliases
-          'last_name', 'Last Name', 'Nom', 'nom', 'lastname', 'LastName',
+          'last_name', 'last name', 'nom', 'lastname', 'nom de famille', 'last',
           // Phone aliases
-          'phone', 'Phone', 'Téléphone', 'téléphone', 'telephone', 'Tel', 'tel',
+          'phone', 'telephone', 'tel', 'mobile', 'portable', 'cell', 'gsm',
           // Company aliases
-          'company', 'Company', 'Organisation', 'organisation', 'Entreprise', 'entreprise', 'org',
+          'company', 'organisation', 'organization', 'entreprise', 'org', 'societe', 'company name', 'nom de l\'entreprise', 'raison sociale', 'business', 'etablissement',
           // Job title aliases
-          'job_title', 'Job Title', 'Désignation', 'désignation', 'Poste', 'poste', 'title',
+          'job_title', 'job title', 'designation', 'poste', 'title', 'fonction', 'role', 'position',
           // Country aliases
-          'country', 'Country', 'Pays', 'pays',
+          'country', 'pays', 'nation', 'state',
           // Attendance type aliases
-          'attendance_type', 'Attendance Type', 'Mode', 'mode',
+          'attendance_type', 'attendance type', 'mode', 'participation', 'attendance',
+          // Status aliases
+          'status', 'statut', 'state', 'etat', 'état',
+          // Date aliases
+          'date d\'inscription', 'registration_date', 'created_at', 'date inscription', 'inscrit le',
+          'check-in', 'checkin', 'date de check-in', 'checked_in_at', 'présence', 'presence', 'checked',
           // Attendee type aliases
-          'attendee_type', 'Attendee Type', 'Type', 'type', 'participant_type',
+          'attendee_type', 'attendee type', 'type', 'participant_type',
           'event_attendee_type_id',
         ];
         
         // Custom fields and comments will be stored in answers JSON
         const answers: Record<string, any> = {};
-        for (const [key, value] of Object.entries(row)) {
-          if (!standardFields.includes(key) && value !== null && value !== undefined && value !== '') {
+        for (const [key, value] of Object.entries(rawRow)) {
+          const normalizedKey = normalizeKey(key);
+          if (!standardFields.includes(normalizedKey) && value !== null && value !== undefined && String(value).trim() !== '') {
             answers[key] = value;
           }
         }
@@ -781,32 +898,44 @@ export class RegistrationsService {
             },
           });
 
+          // Determine target status
+          // Priority: 1. Imported Status, 2. Default to 'pending' (awaiting) if no status provided
+          // Note: We ignore auto-approve setting for imports unless explicitly requested, 
+          // to avoid accidentally approving everyone when no status column exists.
+          const targetStatus = importedStatus || 'awaiting';
+          const isTargetApproved = ['approved', 'confirmed', 'checked_in'].includes(targetStatus);
+          
+          // Map 'checked_in' status to 'approved' for DB, as 'checked_in' is not a valid DB status
+          const dbStatus = targetStatus === 'checked_in' ? 'approved' : targetStatus;
+          const dbCheckInDate = targetStatus === 'checked_in' ? (checkInDate || new Date()) : null;
+
           // Determine if we need to check capacity
           let checkCapacity = false;
           let willIncrement = false;
 
           if (!existingRegistration) {
-            // New registration: check capacity if auto-approve is on
-            if (event.capacity && shouldAutoApprove) {
+            // New registration: check capacity if target status consumes a spot
+            if (event.capacity && isTargetApproved) {
               checkCapacity = true;
               willIncrement = true;
             }
           } else {
             // Existing registration
+            const isExistingApproved = ['approved', 'confirmed', 'checked_in'].includes(existingRegistration.status);
+            
             if (existingRegistration.deleted_at) {
-              // Restoring: do NOT check capacity (they previously had a spot)
-              // Restoring a deleted registration should always be allowed
-              if (replaceExisting && shouldAutoApprove) {
-                willIncrement = true; // Still increment counter for future checks
+              // Restoring
+              if (replaceExisting && isTargetApproved) {
+                willIncrement = true; 
               }
-            } else if (['awaiting', 'refused'].includes(existingRegistration.status)) {
-              // Updating status to approved?
-              if (replaceExisting && shouldAutoApprove) {
+            } else {
+              // Updating
+              // If changing from non-approved to approved
+              if (replaceExisting && !isExistingApproved && isTargetApproved) {
                 checkCapacity = true;
                 willIncrement = true;
               }
             }
-            // If already approved, no need to check capacity even if replaceExisting is true
           }
 
           if (checkCapacity) {
@@ -833,8 +962,9 @@ export class RegistrationsService {
                     attendance_type: attendanceType,
                     event_attendee_type_id: eventAttendeeTypeId,
                     answers: Object.keys(answers).length > 0 ? answers : null,
-                    status: shouldAutoApprove ? 'approved' : 'awaiting', // Reset status on restore
-                    confirmed_at: shouldAutoApprove ? new Date() : null,
+                    status: dbStatus as any, // Use mapped DB status
+                    confirmed_at: isTargetApproved ? new Date() : null,
+                    checked_in_at: dbCheckInDate,
                     // Update snapshots with new data
                     snapshot_first_name: attendeeData.first_name,
                     snapshot_last_name: attendeeData.last_name,
@@ -856,10 +986,11 @@ export class RegistrationsService {
               }
             }
 
-            if (existingRegistration.status === 'refused') {
+            if (existingRegistration.status === 'refused' && targetStatus !== 'refused' && !replaceExisting) {
               throw new ForbiddenException('This attendee was previously declined for this event');
             }
-            if (['awaiting', 'approved'].includes(existingRegistration.status)) {
+            
+            if (['awaiting', 'approved', 'confirmed', 'checked_in'].includes(existingRegistration.status)) {
               // Si replaceExisting = true, on met à jour au lieu de throw
               if (replaceExisting) {
                 const updatedRegistration = await tx.registration.update({
@@ -868,8 +999,9 @@ export class RegistrationsService {
                     attendance_type: attendanceType,
                     event_attendee_type_id: eventAttendeeTypeId,
                     answers: Object.keys(answers).length > 0 ? answers : null,
-                    status: shouldAutoApprove ? 'approved' : existingRegistration.status,
-                    confirmed_at: shouldAutoApprove && !existingRegistration.confirmed_at ? new Date() : existingRegistration.confirmed_at,
+                    status: dbStatus as any, // Use mapped DB status
+                    confirmed_at: isTargetApproved && !existingRegistration.confirmed_at ? new Date() : existingRegistration.confirmed_at,
+                    checked_in_at: dbCheckInDate || existingRegistration.checked_in_at, // Update check-in if provided, else keep existing
                     // Update snapshots with new data
                     snapshot_first_name: attendeeData.first_name,
                     snapshot_last_name: attendeeData.last_name,
@@ -891,22 +1023,19 @@ export class RegistrationsService {
             }
           }
 
-          // Determine status
-          const status = shouldAutoApprove ? 'approved' : 'awaiting';
-          const confirmedAt = status === 'approved' ? new Date() : null;
-
           // Create registration with snapshots and source tracking
           const newRegistration = await tx.registration.create({
             data: {
               org_id: orgId,
               event_id: eventId,
               attendee_id: attendee.id,
-              status,
+              status: dbStatus as any,
               attendance_type: attendanceType,
               event_attendee_type_id: eventAttendeeTypeId,
               answers: Object.keys(answers).length > 0 ? answers : null,
               invited_at: new Date(),
-              confirmed_at: confirmedAt,
+              confirmed_at: isTargetApproved ? new Date() : null,
+              checked_in_at: dbCheckInDate,
               // Source tracking: mark as import
               source: 'import',
               // Snapshot attendee data at time of registration (only provided data)
@@ -1024,22 +1153,100 @@ export class RegistrationsService {
       'Téléphone': registration.attendee?.phone || '',
       'Entreprise': registration.attendee?.company || '',
       'Poste': registration.attendee?.job_title || '',
-      'Événement': registration.event?.name || '',
       'Statut': registration.status,
-      'Date d\'inscription': registration.created_at?.toISOString().split('T')[0] || '',
-      'Date d\'invitation': registration.invited_at?.toISOString().split('T')[0] || '',
-      'Date de confirmation': registration.confirmed_at?.toISOString().split('T')[0] || '',
+      'Date d\'inscription': registration.created_at ? new Date(registration.created_at) : new Date(),
+      'Check-in': registration.checked_in_at ? new Date(registration.checked_in_at) : '',
     }));
 
     const timestamp = new Date().toISOString().split('T')[0];
     
     if (format === 'excel' || format === 'xlsx') {
-      // Generate Excel file
-      const worksheet = XLSX.utils.json_to_sheet(data);
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, worksheet, 'Inscriptions');
+      // Generate Excel file using ExcelJS for better features (data validation)
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet('Inscriptions');
+
+      // Define columns
+      worksheet.columns = [
+        { header: 'Prénom', key: 'first_name', width: 20 },
+        { header: 'Nom', key: 'last_name', width: 20 },
+        { header: 'Email', key: 'email', width: 30 },
+        { header: 'Téléphone', key: 'phone', width: 15 },
+        { header: 'Entreprise', key: 'company', width: 25 },
+        { header: 'Poste', key: 'job_title', width: 20 },
+        { header: 'Statut', key: 'status', width: 15 },
+        { header: 'Date d\'inscription', key: 'created_at', width: 20 },
+        { header: 'Check-in', key: 'check_in', width: 20 },
+      ];
+
+      // Add rows
+      data.forEach(item => {
+        worksheet.addRow({
+          first_name: item['Prénom'],
+          last_name: item['Nom'],
+          email: item['Email'],
+          phone: item['Téléphone'],
+          company: item['Entreprise'],
+          job_title: item['Poste'],
+          status: item['Statut'],
+          created_at: item['Date d\'inscription'],
+          check_in: item['Check-in'],
+        });
+      });
+
+      // Add Data Validation for Status (Column G) and Dates (Columns H, I)
+      // Apply to all data rows + buffer for new entries
+      const rowCount = data.length;
+      const maxRows = Math.max(rowCount + 100, 1000); // Ensure at least 1000 rows have validation
       
-      const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+      // Format Date Columns (H and I)
+      worksheet.getColumn('H').numFmt = 'dd/mm/yyyy hh:mm';
+      worksheet.getColumn('I').numFmt = 'dd/mm/yyyy hh:mm';
+
+      for (let i = 2; i <= maxRows; i++) {
+        // Status (G)
+        const cellG = worksheet.getCell(`G${i}`);
+        cellG.dataValidation = {
+          type: 'list',
+          allowBlank: true,
+          formulae: ['"Approuvé,En attente,Refusé,Annulé,Présent"'],
+          showErrorMessage: true,
+          errorStyle: 'error',
+          errorTitle: 'Valeur invalide',
+          error: 'Veuillez sélectionner une valeur dans la liste.'
+        };
+
+        // Registration Date (H)
+        const cellH = worksheet.getCell(`H${i}`);
+        cellH.dataValidation = {
+          type: 'date',
+          operator: 'greaterThanOrEqual',
+          showErrorMessage: true,
+          errorTitle: 'Date invalide',
+          error: 'Veuillez entrer une date valide (format JJ/MM/AAAA HH:MM)',
+          showInputMessage: true,
+          promptTitle: 'Format de date',
+          prompt: 'Utilisez le format JJ/MM/AAAA HH:MM',
+          allowBlank: true,
+          formulae: [new Date(2000, 0, 1)]
+        };
+
+        // Check-in (I)
+        const cellI = worksheet.getCell(`I${i}`);
+        cellI.dataValidation = {
+          type: 'date',
+          operator: 'greaterThanOrEqual',
+          showErrorMessage: true,
+          errorTitle: 'Date invalide',
+          error: 'Veuillez entrer une date valide (format JJ/MM/AAAA HH:MM)',
+          showInputMessage: true,
+          promptTitle: 'Format de date',
+          prompt: 'Utilisez le format JJ/MM/AAAA HH:MM',
+          allowBlank: true,
+          formulae: [new Date(2000, 0, 1)]
+        };
+      }
+
+      const buffer = await workbook.xlsx.writeBuffer();
       const filename = `inscriptions_export_${timestamp}.xlsx`;
       
       return { buffer: Buffer.from(buffer), filename };
@@ -1059,6 +1266,113 @@ export class RegistrationsService {
 
       return { buffer, filename };
     }
+  }
+
+  /**
+   * Generate an Excel template for import
+   */
+  async generateTemplate() {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('Inscriptions');
+
+    // Define columns
+    worksheet.columns = [
+      { header: 'Prénom', key: 'first_name', width: 20 },
+      { header: 'Nom', key: 'last_name', width: 20 },
+      { header: 'Email', key: 'email', width: 30 },
+      { header: 'Téléphone', key: 'phone', width: 15 },
+      { header: 'Entreprise', key: 'company', width: 25 },
+      { header: 'Poste', key: 'job_title', width: 20 },
+      { header: 'Pays', key: 'country', width: 15 },
+      { header: 'Mode', key: 'attendance_type', width: 15 },
+      { header: 'Statut', key: 'status', width: 15 },
+      { header: 'Date d\'inscription', key: 'created_at', width: 20 },
+      { header: 'Check-in', key: 'check_in', width: 20 },
+    ];
+
+    // Add example row
+    worksheet.addRow({
+      first_name: 'Jean',
+      last_name: 'Dupont',
+      email: 'jean.dupont@example.com',
+      phone: '+33612345678',
+      company: 'Acme Corp',
+      job_title: 'Directeur',
+      country: 'France',
+      attendance_type: 'Présentiel',
+      status: 'En attente',
+      created_at: new Date(),
+      check_in: '',
+    });
+
+    // Apply validation to 1000 rows
+    const maxRows = 1000;
+
+    // Format Date Columns (J and K)
+    // Force Text format for other columns to avoid auto-formatting issues
+    worksheet.getColumn('J').numFmt = 'dd/mm/yyyy hh:mm';
+    worksheet.getColumn('K').numFmt = 'dd/mm/yyyy hh:mm';
+
+    for (let i = 2; i <= maxRows; i++) {
+      // Mode (H)
+      const cellH = worksheet.getCell(`H${i}`);
+      cellH.dataValidation = {
+        type: 'list',
+        allowBlank: true,
+        formulae: ['"Présentiel,Distanciel,Hybride"'],
+        showErrorMessage: true,
+        errorStyle: 'error',
+        errorTitle: 'Valeur invalide',
+        error: 'Veuillez sélectionner une valeur dans la liste.'
+      };
+
+      // Status (I)
+      const cellI = worksheet.getCell(`I${i}`);
+      cellI.dataValidation = {
+        type: 'list',
+        allowBlank: true,
+        formulae: ['"Approuvé,En attente,Refusé,Annulé,Présent"'],
+        showErrorMessage: true,
+        errorStyle: 'error',
+        errorTitle: 'Valeur invalide',
+        error: 'Veuillez sélectionner une valeur dans la liste.'
+      };
+
+      // Registration Date (J)
+      const cellJ = worksheet.getCell(`J${i}`);
+      cellJ.dataValidation = {
+        type: 'date',
+        operator: 'greaterThanOrEqual',
+        showErrorMessage: true,
+        errorTitle: 'Date invalide',
+        error: 'Veuillez entrer une date valide (format JJ/MM/AAAA HH:MM)',
+        showInputMessage: true,
+        promptTitle: 'Format de date',
+        prompt: 'Utilisez le format JJ/MM/AAAA HH:MM',
+        allowBlank: true,
+        formulae: [new Date(2000, 0, 1)]
+      };
+
+      // Check-in (K)
+      const cellK = worksheet.getCell(`K${i}`);
+      cellK.dataValidation = {
+        type: 'date',
+        operator: 'greaterThanOrEqual',
+        showErrorMessage: true,
+        errorTitle: 'Date invalide',
+        error: 'Veuillez entrer une date valide (format JJ/MM/AAAA HH:MM)',
+        showInputMessage: true,
+        promptTitle: 'Format de date',
+        prompt: 'Utilisez le format JJ/MM/AAAA HH:MM',
+        allowBlank: true,
+        formulae: [new Date(2000, 0, 1)]
+      };
+    }
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const filename = `template_inscriptions.xlsx`;
+    
+    return { buffer: Buffer.from(buffer), filename };
   }
 
   /**
