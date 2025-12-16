@@ -97,6 +97,53 @@ export class PublicService {
   }
 
   /**
+   * Get event attendee types by public token
+   */
+  async getEventAttendeeTypesByPublicToken(publicToken: string) {
+    // Try to find by public_token first
+    let eventId: string | null = null;
+    
+    const eventSetting = await this.prisma.eventSetting.findUnique({
+      where: { public_token: publicToken },
+      select: { event_id: true },
+    });
+
+    if (eventSetting) {
+      eventId = eventSetting.event_id;
+    } else {
+      // Fallback: try to find by event ID
+      const event = await this.prisma.event.findUnique({
+        where: { id: publicToken },
+        select: { id: true },
+      });
+      if (event) {
+        eventId = event.id;
+      }
+    }
+
+    if (!eventId) {
+      throw new NotFoundException('Event not found');
+    }
+
+    // Fetch attendee types linked to this event
+    const eventAttendeeTypes = await this.prisma.eventAttendeeType.findMany({
+      where: { event_id: eventId },
+      include: {
+        attendeeType: {
+          select: {
+            id: true,
+            name: true,
+            color_hex: true,
+            code: true,
+          },
+        },
+      },
+    });
+
+    return eventAttendeeTypes;
+  }
+
+  /**
    * Public registration endpoint
    * - Upserts attendee by (org_id, email)
    * - Checks capacity

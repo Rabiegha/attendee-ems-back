@@ -16,6 +16,14 @@ export class PublicController {
     return this.publicService.getEventByPublicToken(publicToken);
   }
 
+  @Get(':publicToken/attendee-types')
+  @ApiOperation({ summary: 'Get event attendee types by public token (no auth required)' })
+  @ApiResponse({ status: 200, description: 'Event attendee types retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Event not found' })
+  async getEventAttendeeTypes(@Param('publicToken') publicToken: string) {
+    return this.publicService.getEventAttendeeTypesByPublicToken(publicToken);
+  }
+
   @Post(':publicToken/register')
   @ApiOperation({ summary: 'Register to an event (no auth required)' })
   @ApiResponse({ status: 201, description: 'Registration successful' })
