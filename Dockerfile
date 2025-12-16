@@ -43,4 +43,4 @@ RUN chmod +x ./scripts/entrypoint.sh
 
 EXPOSE 3000
 ENTRYPOINT ["./scripts/entrypoint.sh"]
-CMD ["node", "dist/main.js"]
+CMD ["node", "dist/src/main.js"]
