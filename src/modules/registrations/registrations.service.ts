@@ -63,7 +63,7 @@ export class RegistrationsService {
     }
 
     if (dto.attendanceType) {
-      where.attendance_type = dto.attendanceType;
+      where.attendance_mode = dto.attendanceType;
     }
 
     if (dto.attendeeTypeId) {
@@ -349,7 +349,7 @@ export class RegistrationsService {
           event_id: eventId,
           attendee_id: attendee.id,
           status,
-          attendance_type: dto.attendance_type,
+          attendance_mode: dto.attendance_type,
           event_attendee_type_id: dto.event_attendee_type_id,
           answers: dto.answers ? (dto.answers as Prisma.InputJsonValue) : null,
           invited_at: dto.admin_registered_at ? new Date(dto.admin_registered_at) : new Date(),
@@ -432,7 +432,7 @@ export class RegistrationsService {
     const updated = await this.prisma.registration.update({
       where: { id },
       data: {
-        attendance_type: dto.attendance_type,
+        attendance_mode: dto.attendance_type,
         event_attendee_type_id: dto.event_attendee_type_id,
         answers: dto.answers ? (dto.answers as Prisma.InputJsonValue) : undefined,
         // Update snapshots if attendee data is provided
@@ -959,7 +959,7 @@ export class RegistrationsService {
                   where: { id: existingRegistration.id },
                   data: {
                     deleted_at: null,
-                    attendance_type: attendanceType,
+                    attendance_mode: attendanceType,
                     event_attendee_type_id: eventAttendeeTypeId,
                     answers: Object.keys(answers).length > 0 ? answers : null,
                     status: dbStatus as any, // Use mapped DB status
@@ -996,7 +996,7 @@ export class RegistrationsService {
                 const updatedRegistration = await tx.registration.update({
                   where: { id: existingRegistration.id },
                   data: {
-                    attendance_type: attendanceType,
+                    attendance_mode: attendanceType,
                     event_attendee_type_id: eventAttendeeTypeId,
                     answers: Object.keys(answers).length > 0 ? answers : null,
                     status: dbStatus as any, // Use mapped DB status
@@ -1030,7 +1030,7 @@ export class RegistrationsService {
               event_id: eventId,
               attendee_id: attendee.id,
               status: dbStatus as any,
-              attendance_type: attendanceType,
+              attendance_mode: attendanceType,
               event_attendee_type_id: eventAttendeeTypeId,
               answers: Object.keys(answers).length > 0 ? answers : null,
               invited_at: new Date(),
@@ -1284,7 +1284,7 @@ export class RegistrationsService {
       { header: 'Entreprise', key: 'company', width: 25 },
       { header: 'Poste', key: 'job_title', width: 20 },
       { header: 'Pays', key: 'country', width: 15 },
-      { header: 'Mode', key: 'attendance_type', width: 15 },
+      { header: 'Mode', key: 'attendance_mode', width: 15 },
       { header: 'Statut', key: 'status', width: 15 },
       { header: 'Date d\'inscription', key: 'created_at', width: 20 },
       { header: 'Check-in', key: 'check_in', width: 20 },
@@ -1299,7 +1299,7 @@ export class RegistrationsService {
       company: 'Acme Corp',
       job_title: 'Directeur',
       country: 'France',
-      attendance_type: 'Présentiel',
+      attendance_mode: 'Présentiel',
       status: 'En attente',
       created_at: new Date(),
       check_in: '',

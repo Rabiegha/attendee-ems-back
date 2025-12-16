@@ -21,6 +21,7 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiConsumes, ApiBody
 import { EventsService } from './events.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
+import { UpdateEventAttendeeTypeDto } from './dto/update-event-attendee-type.dto';
 import { ListEventsDto } from './dto/list-events.dto';
 import { ChangeEventStatusDto } from './dto/change-event-status.dto';
 import { RegistrationsService } from '../registrations/registrations.service';
@@ -510,5 +511,47 @@ export class EventsController {
     const orgId = allowAny ? null : req.user.org_id;
     
     return this.registrationsService.markBadgePrinted(eventId, registrationId, orgId);
+  }
+
+  // =================================================================================================
+  // Event Attendee Types
+  // =================================================================================================
+
+  @Get(':id/attendee-types')
+  @Permissions('events.read')
+  @ApiOperation({ summary: 'List attendee types for an event' })
+  async getAttendeeTypes(@Param('id') id: string, @Request() req) {
+    const orgId = resolveEffectiveOrgId({ reqUser: req.user, explicitOrgId: undefined, allowAny: false });
+    return this.eventsService.getAttendeeTypes(id, orgId);
+  }
+
+  @Post(':id/attendee-types')
+  @Permissions('events.update')
+  @ApiOperation({ summary: 'Add an attendee type to an event' })
+  @ApiBody({ schema: { type: 'object', properties: { attendeeTypeId: { type: 'string' } } } })
+  async addAttendeeType(@Param('id') id: string, @Body('attendeeTypeId') attendeeTypeId: string, @Request() req) {
+    const orgId = resolveEffectiveOrgId({ reqUser: req.user, explicitOrgId: undefined, allowAny: false });
+    return this.eventsService.addAttendeeType(id, orgId, attendeeTypeId);
+  }
+
+  @Put(':id/attendee-types/:typeId')
+  @Permissions('events.update')
+  @ApiOperation({ summary: 'Update an event attendee type' })
+  async updateAttendeeType(
+    @Param('id') id: string,
+    @Param('typeId') typeId: string,
+    @Body() dto: UpdateEventAttendeeTypeDto,
+    @Request() req
+  ) {
+    const orgId = resolveEffectiveOrgId({ reqUser: req.user, explicitOrgId: undefined, allowAny: false });
+    return this.eventsService.updateAttendeeType(id, orgId, typeId, dto);
+  }
+
+  @Delete(':id/attendee-types/:typeId')
+  @Permissions('events.update')
+  @ApiOperation({ summary: 'Remove an attendee type from an event' })
+  async removeAttendeeType(@Param('id') id: string, @Param('typeId') typeId: string, @Request() req) {
+    const orgId = resolveEffectiveOrgId({ reqUser: req.user, explicitOrgId: undefined, allowAny: false });
+    return this.eventsService.removeAttendeeType(id, orgId, typeId);
   }
 }

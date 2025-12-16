@@ -25,7 +25,6 @@ export async function seedAttendeeTypes() {
       text_color_hex: '#000000',
       icon: 'star',
       is_active: true,
-      sort_order: 1,
     },
     {
       org_id: acmeOrg.id,
@@ -35,7 +34,6 @@ export async function seedAttendeeTypes() {
       text_color_hex: '#FFFFFF',
       icon: 'microphone',
       is_active: true,
-      sort_order: 2,
     },
     {
       org_id: acmeOrg.id,
@@ -45,7 +43,6 @@ export async function seedAttendeeTypes() {
       text_color_hex: '#FFFFFF',
       icon: 'briefcase',
       is_active: true,
-      sort_order: 3,
     },
     {
       org_id: acmeOrg.id,
@@ -55,7 +52,6 @@ export async function seedAttendeeTypes() {
       text_color_hex: '#FFFFFF',
       icon: 'camera',
       is_active: true,
-      sort_order: 4,
     },
     {
       org_id: acmeOrg.id,
@@ -65,7 +61,6 @@ export async function seedAttendeeTypes() {
       text_color_hex: '#FFFFFF',
       icon: 'user',
       is_active: true,
-      sort_order: 5,
     },
     {
       org_id: acmeOrg.id,
@@ -75,7 +70,6 @@ export async function seedAttendeeTypes() {
       text_color_hex: '#FFFFFF',
       icon: 'users',
       is_active: true,
-      sort_order: 6,
     },
   ];
 

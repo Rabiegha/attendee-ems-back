@@ -222,7 +222,7 @@ export class PublicService {
           event_id: event.id,
           attendee_id: attendee.id,
           status,
-          attendance_type: dto.attendance_type,
+          attendance_mode: dto.attendance_type,
           event_attendee_type_id: dto.event_attendee_type_id,
           answers: dto.answers ? (dto.answers as Prisma.InputJsonValue) : null,
           invited_at: new Date(),
@@ -250,7 +250,7 @@ export class PublicService {
         registration: {
           id: registration.id,
           status: registration.status,
-          attendance_type: registration.attendance_type,
+          attendance_type: registration.attendance_mode,
           confirmed_at: registration.confirmed_at,
           attendee: {
             email: registration.attendee.email,

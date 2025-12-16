@@ -23,6 +23,7 @@ export async function seedAttendeesAndRegistrations() {
     },
     include: {
       settings: true,
+      eventAttendeeTypes: true, // Inclure les types de participants de l'événement
     },
   });
 
@@ -204,13 +205,21 @@ export async function seedAttendeesAndRegistrations() {
         ? `${attendee.job_title} - ${event.name.substring(0, 10)}...`
         : attendee.job_title;
 
+      // Assigner un type de participant aléatoire si disponible
+      let eventAttendeeTypeId = null;
+      if (event.eventAttendeeTypes && event.eventAttendeeTypes.length > 0) {
+        const randomType = event.eventAttendeeTypes[Math.floor(Math.random() * event.eventAttendeeTypes.length)];
+        eventAttendeeTypeId = randomType.id;
+      }
+
       await prisma.registration.create({
         data: {
           org_id: acmeOrg.id,
           event_id: event.id,
           attendee_id: attendee.id,
+          event_attendee_type_id: eventAttendeeTypeId,
           status,
-          attendance_type: 'onsite' as const,
+          attendance_mode: 'onsite' as const,
           // Remplissage des données snapshot
           snapshot_first_name: attendee.first_name,
           snapshot_last_name: attendee.last_name,

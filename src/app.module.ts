@@ -21,6 +21,7 @@ import { StorageModule } from './infra/storage/storage.module';
 import { BadgeTemplatesModule } from './modules/badge-templates/badge-templates.module';
 import { BadgeGenerationModule } from './modules/badge-generation/badge-generation.module';
 import { BadgesModule } from './modules/badges/badges.module';
+import { AttendeeTypesModule } from './modules/attendee-types/attendee-types.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { BadgesModule } from './modules/badges/badges.module';
     BadgeTemplatesModule,
     BadgeGenerationModule,
     BadgesModule,
+    AttendeeTypesModule,
     RouterModule.register(appRoutes),
     EventsModule,
     PublicModule,

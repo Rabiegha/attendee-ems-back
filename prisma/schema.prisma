@@ -312,7 +312,6 @@ model AttendeeType {
   text_color_hex  String?
   icon            String?
   is_active       Boolean  @default(true)
-  sort_order      Int      @default(0)
   created_at      DateTime @default(now()) @map("created_at")
   updated_at      DateTime @updatedAt @map("updated_at")
 
@@ -322,7 +321,6 @@ model AttendeeType {
 
   @@unique([org_id, code])
   @@unique([id, org_id])
-  @@index([org_id, sort_order])
   @@index([org_id, name])
   @@map("attendee_types")
 }
@@ -540,7 +538,8 @@ model EventAttendeeType {
   org_id            String   @db.Uuid
   attendee_type_id  String   @db.Uuid
   capacity          Int?
-  sort_order        Int      @default(0)
+  color_hex         String?
+  text_color_hex    String?
   created_at        DateTime @default(now()) @map("created_at")
   updated_at        DateTime @updatedAt @map("updated_at")
 
@@ -552,7 +551,7 @@ model EventAttendeeType {
 
   @@unique([id, event_id, org_id])
   @@unique([event_id, attendee_type_id])
-  @@index([org_id, event_id, sort_order])
+  @@index([org_id, event_id])
   @@map("event_attendee_types")
 }
 
@@ -579,7 +578,7 @@ model Registration {
   event_id                String   @db.Uuid
   attendee_id             String   @db.Uuid
   status                  RegistrationStatus @default(awaiting)
-  attendance_type         AttendanceMode @default(onsite)
+  attendance_mode         AttendanceMode @default(onsite)
   answers                 Json?
   event_attendee_type_id  String?  @db.Uuid
   badge_template_id       String?  @db.Uuid

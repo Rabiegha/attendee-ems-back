@@ -650,7 +650,7 @@ export async function seedRegistrationsForEvent() {
         event_id: event.id,
         attendee_id: attendee.id,
         status,
-        attendance_type: attendanceMode,
+        attendance_mode: attendanceMode,
         event_attendee_type_id: eventAttendeeType.id,
         // Snapshot data
         snapshot_first_name: attendee.first_name,

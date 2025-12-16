@@ -9,6 +9,7 @@ import {
 import { PrismaService } from '../../infra/db/prisma.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
+import { UpdateEventAttendeeTypeDto } from './dto/update-event-attendee-type.dto';
 import { ListEventsDto } from './dto/list-events.dto';
 import { ChangeEventStatusDto } from './dto/change-event-status.dto';
 import { EventStatsDto } from './dto/event-stats.dto';
@@ -912,5 +913,115 @@ export class EventsService {
 
     // TODO: Implémenter l'export Excel si nécessaire
     throw new BadRequestException('Format Excel non encore supporté');
+  }
+
+  // =================================================================================================
+  // Event Attendee Types
+  // =================================================================================================
+
+  async getAttendeeTypes(eventId: string, orgId: string) {
+    // Ensure event exists and belongs to org
+    const event = await this.prisma.event.findFirst({
+      where: { id: eventId, org_id: orgId },
+    });
+
+    if (!event) {
+      throw new NotFoundException('Event not found');
+    }
+
+    return this.prisma.eventAttendeeType.findMany({
+      where: { event_id: eventId },
+      include: {
+        attendeeType: true,
+      },
+      orderBy: { created_at: 'asc' },
+    });
+  }
+
+  async addAttendeeType(eventId: string, orgId: string, attendeeTypeId: string) {
+    console.log('[addAttendeeType] Start:', { eventId, orgId, attendeeTypeId });
+    
+    const event = await this.prisma.event.findFirst({
+      where: { id: eventId, org_id: orgId },
+    });
+    console.log('[addAttendeeType] Event found:', !!event);
+
+    if (!event) {
+      throw new NotFoundException('Event not found');
+    }
+
+    // Check if attendee type belongs to org
+    const attendeeType = await this.prisma.attendeeType.findFirst({
+      where: { id: attendeeTypeId, org_id: orgId },
+    });
+    console.log('[addAttendeeType] AttendeeType found:', !!attendeeType);
+
+    if (!attendeeType) {
+      throw new NotFoundException('Attendee type not found');
+    }
+
+    // Check if already added
+    const existing = await this.prisma.eventAttendeeType.findUnique({
+      where: {
+        event_id_attendee_type_id: {
+          event_id: eventId,
+          attendee_type_id: attendeeTypeId,
+        },
+      },
+    });
+    console.log('[addAttendeeType] Existing:', !!existing);
+
+    if (existing) {
+      throw new ConflictException('Attendee type already added to event');
+    }
+
+    console.log('[addAttendeeType] Creating...');
+    const result = await this.prisma.eventAttendeeType.create({
+      data: {
+        event_id: eventId,
+        org_id: orgId,
+        attendee_type_id: attendeeTypeId,
+      },
+    });
+    console.log('[addAttendeeType] Created:', result.id);
+
+    // Fetch with relation
+    console.log('[addAttendeeType] Fetching with relation...');
+    return this.prisma.eventAttendeeType.findUnique({
+      where: { id: result.id },
+      include: { attendeeType: true },
+    });
+  }
+
+  async updateAttendeeType(eventId: string, orgId: string, id: string, dto: UpdateEventAttendeeTypeDto) {
+    const eventAttendeeType = await this.prisma.eventAttendeeType.findFirst({
+      where: { id, event_id: eventId, org_id: orgId },
+    });
+
+    if (!eventAttendeeType) {
+      throw new NotFoundException('Event attendee type not found');
+    }
+
+    return this.prisma.eventAttendeeType.update({
+      where: { id },
+      data: dto,
+      include: {
+        attendeeType: true,
+      },
+    });
+  }
+
+  async removeAttendeeType(eventId: string, orgId: string, id: string) {
+    const eventAttendeeType = await this.prisma.eventAttendeeType.findFirst({
+      where: { id, event_id: eventId, org_id: orgId },
+    });
+
+    if (!eventAttendeeType) {
+      throw new NotFoundException('Event attendee type not found');
+    }
+
+    return this.prisma.eventAttendeeType.delete({
+      where: { id },
+    });
   }
 }

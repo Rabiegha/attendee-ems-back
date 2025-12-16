@@ -78,14 +78,14 @@ async function runAllSeeders() {
     // 7.5. Seed Badge Templates
     logInfo('Seeding badge templates...');
     await seedBadgeTemplates(prisma);
+
+    // 8. Seed Event Attendee Types (Moved before registrations)
+    logInfo('Seeding event attendee types...');
+    const eventAttendeeTypes = await seedEventAttendeeTypes();
     
-    // 8. Seed Attendees and Registrations
+    // 9. Seed Attendees and Registrations
     logInfo('Seeding attendees and registrations...');
     const { attendees, registrationsCount } = await seedAttendeesAndRegistrations();
-    
-    // 9. Seed Event Attendee Types (for specific event)
-    logInfo('Seeding event attendee types for specific event...');
-    const eventAttendeeTypes = await seedEventAttendeeTypes();
     
     // 10. Seed Registrations for specific event
     logInfo('Seeding registrations for specific event...');

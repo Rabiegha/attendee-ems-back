@@ -18,6 +18,12 @@
 → **[PHASE1_API.md](PHASE1_API.md)** (15 min)
 - Documentation complète des endpoints
 - Exemples de requêtes
+
+### Je veux gérer les types de participants
+→ **[ATTENDEE_TYPES.md](ATTENDEE_TYPES.md)** (5 min)
+- Schéma de base de données
+- Endpoints API
+- Statistiques d'utilisation
 - Matrice des permissions
 - Règles métier
 
