@@ -107,6 +107,12 @@ update_env "JWT_SECRET" "${JWT_SECRET}" "$DEPLOY_DIR/backend/.env.production"
 # Ensure POSTGRES_USER is consistent
 update_env "POSTGRES_USER" "ems_prod" "$DEPLOY_DIR/backend/.env.production"
 
+# Reconstruct and update DATABASE_URL to ensure it uses the new password
+# This is critical because Prisma uses DATABASE_URL, not POSTGRES_PASSWORD directly
+echo "Updating DATABASE_URL..."
+NEW_DATABASE_URL="postgresql://ems_prod:${POSTGRES_PASSWORD}@postgres:5432/ems_production"
+update_env "DATABASE_URL" "${NEW_DATABASE_URL}" "$DEPLOY_DIR/backend/.env.production"
+
 echo -e "${GREEN}✓ All secrets generated and configured${NC}"
 
 # Create .env file for Docker Compose interpolation (Postgres service needs this)
