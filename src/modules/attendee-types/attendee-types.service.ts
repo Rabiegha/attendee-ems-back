@@ -51,30 +51,116 @@ export class AttendeeTypesService {
   }
 
   async create(orgId: string, dto: CreateAttendeeTypeDto) {
-    // Check if code exists
-    const existing = await this.prisma.attendeeType.findUnique({
+    // Check if name exists
+    const existingName = await this.prisma.attendeeType.findFirst({
       where: {
-        org_id_code: {
-          org_id: orgId,
-          code: dto.code,
-        },
+        org_id: orgId,
+        name: dto.name,
       },
     });
 
-    if (existing) {
-      throw new ConflictException('Attendee type with this code already exists');
+    if (existingName) {
+      throw new ConflictException('Un type de participant avec ce nom existe déjà');
+    }
+
+    let code = dto.code;
+
+    if (!code) {
+      // Generate code from name
+      const baseCode = this.slugify(dto.name);
+      code = baseCode;
+      let counter = 1;
+
+      while (true) {
+        const existing = await this.prisma.attendeeType.findUnique({
+          where: {
+            org_id_code: {
+              org_id: orgId,
+              code: code,
+            },
+          },
+        });
+
+        if (!existing) {
+          break;
+        }
+
+        code = `${baseCode}_${counter}`;
+        counter++;
+      }
+    } else {
+      // Check if provided code exists
+      const existing = await this.prisma.attendeeType.findUnique({
+        where: {
+          org_id_code: {
+            org_id: orgId,
+            code: dto.code,
+          },
+        },
+      });
+
+      if (existing) {
+        throw new ConflictException('Attendee type with this code already exists');
+      }
     }
 
     return this.prisma.attendeeType.create({
       data: {
         ...dto,
+        code,
         org_id: orgId,
       },
     });
   }
 
+  private slugify(text: string): string {
+    return text
+      .toString()
+      .toLowerCase()
+      .trim()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // Remove accents
+      .replace(/\s+/g, '_')     // Replace spaces with _
+      .replace(/[^\w_]+/g, '')  // Remove all non-word chars (except _)
+      .replace(/__+/g, '_');    // Replace multiple _ with single _
+  }
+
+  async checkNameAvailability(orgId: string, name: string, excludeId?: string): Promise<boolean> {
+    const where: any = {
+      org_id: orgId,
+      name: name,
+    };
+
+    if (excludeId) {
+      where.NOT = {
+        id: excludeId,
+      };
+    }
+
+    const existing = await this.prisma.attendeeType.findFirst({
+      where,
+    });
+
+    return !existing;
+  }
+
   async update(orgId: string, id: string, dto: UpdateAttendeeTypeDto) {
     await this.findOne(orgId, id); // Ensure exists
+
+    if (dto.name) {
+      const existingName = await this.prisma.attendeeType.findFirst({
+        where: {
+          org_id: orgId,
+          name: dto.name,
+          NOT: {
+            id: id,
+          },
+        },
+      });
+
+      if (existingName) {
+        throw new ConflictException('Un type de participant avec ce nom existe déjà');
+      }
+    }
 
     if (dto.code) {
       const existing = await this.prisma.attendeeType.findUnique({

@@ -540,6 +540,7 @@ model EventAttendeeType {
   capacity          Int?
   color_hex         String?
   text_color_hex    String?
+  is_active         Boolean  @default(true)
   created_at        DateTime @default(now()) @map("created_at")
   updated_at        DateTime @updatedAt @map("updated_at")
 

@@ -2,11 +2,11 @@ import { IsNotEmpty, IsString, IsOptional, IsBoolean, Matches } from 'class-vali
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateAttendeeTypeDto {
-  @ApiProperty({ description: 'Unique code for the attendee type' })
-  @IsNotEmpty()
+  @ApiPropertyOptional({ description: 'Unique code for the attendee type (auto-generated if not provided)' })
+  @IsOptional()
   @IsString()
   @Matches(/^[a-z0-9_]+$/, { message: 'Code must contain only lowercase letters, numbers and underscores' })
-  code: string;
+  code?: string;
 
   @ApiProperty({ description: 'Display name' })
   @IsNotEmpty()

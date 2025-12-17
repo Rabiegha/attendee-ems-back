@@ -1,8 +1,8 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Request, Query, BadRequestException } from '@nestjs/common';
 import { AttendeeTypesService } from './attendee-types.service';
 import { CreateAttendeeTypeDto } from './dto/create-attendee-type.dto';
 import { UpdateAttendeeTypeDto } from './dto/update-attendee-type.dto';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiResponse } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
@@ -19,6 +19,25 @@ export class AttendeeTypesController {
   @ApiOperation({ summary: 'Create a new attendee type' })
   create(@Param('orgId') orgId: string, @Body() createAttendeeTypeDto: CreateAttendeeTypeDto) {
     return this.attendeeTypesService.create(orgId, createAttendeeTypeDto);
+  }
+
+  @Get('check-name')
+  @Permissions('organizations.read')
+  @ApiOperation({ summary: 'Check if attendee type name is available' })
+  @ApiResponse({ status: 200, description: 'Name availability checked' })
+  @ApiQuery({ name: 'name', required: true, type: String })
+  @ApiQuery({ name: 'excludeId', required: false, type: String })
+  async checkNameAvailability(
+    @Param('orgId') orgId: string,
+    @Query('name') name: string,
+    @Query('excludeId') excludeId?: string,
+  ) {
+    if (!name || name.trim().length === 0) {
+      throw new BadRequestException('Name parameter is required');
+    }
+
+    const isAvailable = await this.attendeeTypesService.checkNameAvailability(orgId, name, excludeId);
+    return { available: isAvailable, name };
   }
 
   @Get()

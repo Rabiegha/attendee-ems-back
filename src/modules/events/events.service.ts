@@ -933,6 +933,9 @@ export class EventsService {
       where: { event_id: eventId },
       include: {
         attendeeType: true,
+        _count: {
+          select: { registrations: true }
+        }
       },
       orderBy: { created_at: 'asc' },
     });
@@ -972,6 +975,14 @@ export class EventsService {
     console.log('[addAttendeeType] Existing:', !!existing);
 
     if (existing) {
+      if (!existing.is_active) {
+        // Reactivate if it was deactivated
+        return this.prisma.eventAttendeeType.update({
+          where: { id: existing.id },
+          data: { is_active: true },
+          include: { attendeeType: true },
+        });
+      }
       throw new ConflictException('Attendee type already added to event');
     }
 
@@ -981,6 +992,7 @@ export class EventsService {
         event_id: eventId,
         org_id: orgId,
         attendee_type_id: attendeeTypeId,
+        is_active: true,
       },
     });
     console.log('[addAttendeeType] Created:', result.id);
@@ -1014,12 +1026,23 @@ export class EventsService {
   async removeAttendeeType(eventId: string, orgId: string, id: string) {
     const eventAttendeeType = await this.prisma.eventAttendeeType.findFirst({
       where: { id, event_id: eventId, org_id: orgId },
+      include: {
+        _count: {
+          select: { registrations: true }
+        }
+      }
     });
 
     if (!eventAttendeeType) {
       throw new NotFoundException('Event attendee type not found');
     }
 
+    // If used by registrations, prevent removal
+    if (eventAttendeeType._count.registrations > 0) {
+      throw new BadRequestException('Impossible de supprimer ce type car il est utilisé par des participants');
+    }
+
+    // If not used, hard delete
     return this.prisma.eventAttendeeType.delete({
       where: { id },
     });
