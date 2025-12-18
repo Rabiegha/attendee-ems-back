@@ -33,22 +33,6 @@ const usersData: UserSeedData[] = [
     isActive: true,
   },
   {
-    email: 'admin@attendee.fr',
-    password: 'admin123',
-    roleCode: 'SUPER_ADMIN',
-    first_name: 'Admin',
-    last_name: 'Attendee',
-    phone: '+33 1 00 00 00 00',
-    company: 'Attendee Platform',
-    job_title: 'Platform Administrator',
-    country: 'France',
-    metadata: {
-      preferences: { theme: 'light', language: 'fr' },
-      skills: ['administration', 'platform_management']
-    },
-    isActive: true,
-  },
-  {
     email: 'jane.smith@acme.com',
     password: 'admin123',
     roleCode: 'ADMIN',
@@ -118,6 +102,21 @@ const usersData: UserSeedData[] = [
     },
     isActive: true,
   },
+  {
+    email: 'admin@attendee.fr',
+    password: 'admin123',
+    roleCode: 'ADMIN',
+    first_name: 'Admin',
+    last_name: 'Choyou',
+    phone: '+33 6 12 34 56 78',
+    company: 'Choyou',
+    job_title: 'Administrator',
+    country: 'France',
+    metadata: {
+      preferences: { theme: 'light', language: 'fr' }
+    },
+    isActive: true,
+  },
 ];
 
 export async function seedUsers(): Promise<SeedResult[]> {
@@ -131,18 +130,27 @@ export async function seedUsers(): Promise<SeedResult[]> {
     const acmeOrg = await prisma.organization.findUnique({
       where: { slug: 'acme-corp' }
     });
+    const choyouOrg = await prisma.organization.findUnique({
+      where: { slug: 'choyou' }
+    });
     
-    if (!systemOrg || !acmeOrg) {
+    if (!systemOrg || !acmeOrg || !choyouOrg) {
       throw new Error('Required organizations not found');
     }
     
     for (const userData of usersData) {
       // Déterminer l'organisation selon l'email
       let orgId: string;
+      let orgName: string;
       if (userData.email.includes('@system.com')) {
         orgId = systemOrg.id;
+        orgName = 'System';
+      } else if (userData.email.includes('@attendee.fr')) {
+        orgId = choyouOrg.id;
+        orgName = 'Choyou';
       } else {
         orgId = acmeOrg.id;
+        orgName = 'Acme Corp';
       }
 
       // Récupérer le rôle approprié pour cette organisation
@@ -227,7 +235,7 @@ export async function seedUsers(): Promise<SeedResult[]> {
         },
       });
       
-      logSuccess(`✓ User: ${user.email} in organization: ${orgId === systemOrg.id ? 'System' : 'Acme Corp'}`);
+      logSuccess(`✓ User: ${user.email} in organization: ${orgName}`);
     }
     
     return results;

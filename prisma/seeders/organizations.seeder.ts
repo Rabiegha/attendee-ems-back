@@ -18,7 +18,11 @@ const organizationsData: OrganizationSeedData[] = [
     slug: 'acme-corp',
     timezone: 'UTC',
   },
-  // Vous pouvez ajouter d'autres organisations ici
+  {
+    name: 'Choyou',
+    slug: 'choyou',
+    timezone: 'Europe/Paris',
+  },
 ];
 
 export async function seedOrganizations(): Promise<SeedResult[]> {
