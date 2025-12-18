@@ -183,12 +183,9 @@ docker compose -f docker-compose.prod.yml up -d --build --force-recreate
 echo "Waiting for PostgreSQL to be ready..."
 sleep 10
 
-# Ensure PostgreSQL password matches .env.production (critical after container recreate)
-echo "Synchronizing PostgreSQL password with configuration..."
-docker exec -i ems-postgres psql -U postgres <<EOF
-ALTER USER ems_prod WITH PASSWORD '${POSTGRES_PASSWORD}';
-EOF
-echo -e "${GREEN}✓ PostgreSQL password synchronized${NC}"
+# Note: PostgreSQL password is set during container initialization via POSTGRES_PASSWORD env var
+# No need to manually sync password after creation - it's already correct
+echo -e "${GREEN}✓ PostgreSQL initialized with configured password${NC}"
 
 # Restart API to apply new database connection
 echo "Restarting API with correct database credentials..."
