@@ -159,7 +159,7 @@ cp -r "$DEPLOY_DIR/frontend/dist/"* "$DEPLOY_DIR/backend/frontend/"
 echo -e "${GREEN}✓ Frontend files copied${NC}"
 
 # Step 8: Start Docker services with fresh secrets
-echo -e "\n${YELLOW}[8/8] Starting Docker services...${NC}"
+echo -e "\n${YELLOW}[8/9] Starting Docker services...${NC}"
 cd "$DEPLOY_DIR/backend"
 
 # Check if postgres volume exists (indicates previous deployment)
@@ -218,23 +218,131 @@ echo -e "${GREEN}✓ Database seeded${NC}"
 echo -e "\n${GREEN}Checking service status:${NC}"
 docker ps --filter "name=ems" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
+# Step 9: Configure SSL certificates automatically
+echo -e "\n${YELLOW}[9/9] Configuring SSL certificates...${NC}"
+
+# Check if SSL certificates exist
+if docker compose -f docker-compose.prod.yml exec -T certbot ls /etc/letsencrypt/live/attendee.fr/fullchain.pem &>/dev/null; then
+    echo -e "${GREEN}✓ SSL certificates already exist and are valid${NC}"
+else
+    echo "SSL certificates not found, generating them now..."
+    
+    # Save original nginx configurations
+    echo "Creating temporary HTTP-only Nginx configuration..."
+    cp nginx/conf.d/attendee.fr.conf nginx/conf.d/attendee.fr.conf.ssl 2>/dev/null || true
+    cp nginx/conf.d/api.attendee.fr.conf nginx/conf.d/api.attendee.fr.conf.ssl 2>/dev/null || true
+    
+    # Create temporary HTTP-only configuration for attendee.fr
+    cat > nginx/conf.d/attendee.fr.conf <<'NGINX'
+# Configuration temporaire pour attendee.fr (HTTP only - pour obtenir certificats SSL)
+server {
+    listen 80;
+    server_name attendee.fr www.attendee.fr;
+
+    # Let's Encrypt validation
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    # Frontend static files
+    root /usr/share/nginx/html;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+NGINX
+
+    # Create temporary HTTP-only configuration for api.attendee.fr
+    cat > nginx/conf.d/api.attendee.fr.conf <<'NGINX'
+# Configuration temporaire pour api.attendee.fr (HTTP only - pour obtenir certificats SSL)
+server {
+    listen 80;
+    server_name api.attendee.fr;
+
+    # Let's Encrypt validation
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    # Proxy vers l'API
+    location / {
+        proxy_pass http://api:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+NGINX
+
+    # Restart Nginx with HTTP-only configuration
+    echo "Restarting Nginx with temporary HTTP-only configuration..."
+    docker compose -f docker-compose.prod.yml restart nginx
+    sleep 5
+    
+    # Generate SSL certificates with Certbot
+    echo "Requesting SSL certificates from Let's Encrypt..."
+    docker compose -f docker-compose.prod.yml exec -T certbot certbot certonly \
+        --webroot \
+        -w /var/www/certbot \
+        -d attendee.fr \
+        -d www.attendee.fr \
+        -d api.attendee.fr \
+        --email contact@attendee.fr \
+        --agree-tos \
+        --no-eff-email \
+        --non-interactive \
+        || {
+            echo -e "${RED}Failed to obtain SSL certificates${NC}"
+            echo "Restoring original configuration..."
+            mv nginx/conf.d/attendee.fr.conf.ssl nginx/conf.d/attendee.fr.conf 2>/dev/null || true
+            mv nginx/conf.d/api.attendee.fr.conf.ssl nginx/conf.d/api.attendee.fr.conf 2>/dev/null || true
+            echo -e "${YELLOW}WARNING: SSL certificates could not be obtained. The site will run on HTTP only.${NC}"
+        }
+    
+    # Check if certificates were successfully created
+    if docker compose -f docker-compose.prod.yml exec -T certbot ls /etc/letsencrypt/live/attendee.fr/fullchain.pem &>/dev/null; then
+        echo -e "${GREEN}✓ SSL certificates obtained successfully${NC}"
+        
+        # Restore SSL-enabled Nginx configurations
+        echo "Restoring SSL-enabled Nginx configuration..."
+        mv nginx/conf.d/attendee.fr.conf.ssl nginx/conf.d/attendee.fr.conf
+        mv nginx/conf.d/api.attendee.fr.conf.ssl nginx/conf.d/api.attendee.fr.conf
+        
+        # Restart Nginx with SSL configuration
+        echo "Restarting Nginx with SSL configuration..."
+        docker compose -f docker-compose.prod.yml restart nginx
+        sleep 3
+        
+        echo -e "${GREEN}✓ SSL certificates configured and active${NC}"
+    fi
+fi
+
 echo -e "\n${GREEN}========================================${NC}"
 echo -e "${GREEN}   Deployment completed successfully!${NC}"
 echo -e "${GREEN}========================================${NC}"
 
-echo -e "\n${YELLOW}Next steps:${NC}"
-echo "1. Configure DNS records at OVH:"
-echo "   - A record: attendee.fr → 51.75.252.74"
-echo "   - A record: api.attendee.fr → 51.75.252.74"
-echo ""
-echo "2. Once DNS is propagated (check with: dig attendee.fr), run:"
-echo "   sudo certbot --nginx -d attendee.fr -d www.attendee.fr -d api.attendee.fr"
-echo ""
-echo "3. Check service status:"
-echo "   docker ps"
-echo "   docker logs ems-api"
-echo "   docker logs ems-nginx"
-echo ""
-echo -e "${GREEN}Your application will be available at:${NC}"
+echo -e "\n${YELLOW}Service Status:${NC}"
+docker ps --filter "name=ems" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+
+echo -e "\n${GREEN}Your application is now available at:${NC}"
 echo "   - Frontend: https://attendee.fr"
 echo "   - API: https://api.attendee.fr"
+echo "   - API Health: https://api.attendee.fr/health"
+
+echo -e "\n${YELLOW}Demo credentials (from seed):${NC}"
+echo "   - Super Admin: john.doe@system.com / admin123"
+echo "   - Admin: jane.smith@acme.com / admin123"
+echo "   - Manager: bob.johnson@acme.com / manager123"
+
+echo -e "\n${YELLOW}Useful commands:${NC}"
+echo "   - View logs: docker compose -f docker-compose.prod.yml logs -f [api|nginx|postgres]"
+echo "   - Restart service: docker compose -f docker-compose.prod.yml restart [api|nginx]"
+echo "   - Check status: docker compose -f docker-compose.prod.yml ps"
+
