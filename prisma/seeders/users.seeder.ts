@@ -33,6 +33,22 @@ const usersData: UserSeedData[] = [
     isActive: true,
   },
   {
+    email: 'admin@attendee.fr',
+    password: 'admin123',
+    roleCode: 'SUPER_ADMIN',
+    first_name: 'Admin',
+    last_name: 'Attendee',
+    phone: '+33 1 00 00 00 00',
+    company: 'Attendee Platform',
+    job_title: 'Platform Administrator',
+    country: 'France',
+    metadata: {
+      preferences: { theme: 'light', language: 'fr' },
+      skills: ['administration', 'platform_management']
+    },
+    isActive: true,
+  },
+  {
     email: 'jane.smith@acme.com',
     password: 'admin123',
     roleCode: 'ADMIN',
