@@ -162,9 +162,9 @@ if [ -n "$POSTGRES_VOLUME_EXISTS" ]; then
     echo "Waiting for PostgreSQL to start..."
     sleep 10
     
-    # Update password in running PostgreSQL instance
+    # Update password in running PostgreSQL instance (use postgres superuser)
     echo "Updating PostgreSQL password to match new configuration..."
-    docker exec -i ems-postgres psql -U ems_prod -d ems_production <<EOF 2>/dev/null || true
+    docker exec -i ems-postgres psql -U postgres <<EOF 2>/dev/null || true
 ALTER USER ems_prod WITH PASSWORD '${POSTGRES_PASSWORD}';
 EOF
     
@@ -182,6 +182,18 @@ docker compose -f docker-compose.prod.yml up -d --build --force-recreate
 # Wait for database to be ready
 echo "Waiting for PostgreSQL to be ready..."
 sleep 10
+
+# Ensure PostgreSQL password matches .env.production (critical after container recreate)
+echo "Synchronizing PostgreSQL password with configuration..."
+docker exec -i ems-postgres psql -U postgres <<EOF
+ALTER USER ems_prod WITH PASSWORD '${POSTGRES_PASSWORD}';
+EOF
+echo -e "${GREEN}✓ PostgreSQL password synchronized${NC}"
+
+# Restart API to apply new database connection
+echo "Restarting API with correct database credentials..."
+docker compose -f docker-compose.prod.yml restart api
+sleep 5
 
 # Check if services are running
 echo -e "\n${GREEN}Checking service status:${NC}"
