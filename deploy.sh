@@ -5,6 +5,19 @@
 # VPS: 51.75.252.74
 # Domaines: attendee.fr, api.attendee.fr
 # ========================================
+#
+# PREMIER DÉPLOIEMENT SUR NOUVEAU VPS :
+#   1. Exécuter ce script normalement
+#   2. Si erreur d'authentification PostgreSQL, faire:
+#      docker compose -f docker-compose.prod.yml down -v
+#      docker compose -f docker-compose.prod.yml up -d
+#      docker compose -f docker-compose.prod.yml exec -T api npx prisma migrate deploy
+#      docker compose -f docker-compose.prod.yml exec -T api node dist/prisma/seed.js
+#
+# DÉPLOIEMENTS SUIVANTS :
+#   Simplement exécuter: ./deploy.sh
+#   Les volumes sont préservés pour garder les données
+# ========================================
 
 set -e  # Exit on error
 
