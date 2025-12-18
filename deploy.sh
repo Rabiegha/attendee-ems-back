@@ -201,7 +201,7 @@ docker compose -f docker-compose.prod.yml exec -T api npx prisma migrate deploy
 echo -e "${GREEN}✓ Migrations applied${NC}"
 
 echo "Running database seed..."
-docker compose -f docker-compose.prod.yml exec -T api npx ts-node prisma/seed.ts
+docker compose -f docker-compose.prod.yml exec -T api node dist/prisma/seed.js
 echo -e "${GREEN}✓ Database seeded${NC}"
 
 # Check if services are running
