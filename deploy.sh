@@ -165,43 +165,64 @@ cd "$DEPLOY_DIR/backend"
 # Check if postgres volume exists (indicates previous deployment)
 POSTGRES_VOLUME_EXISTS=$(docker volume ls -q -f name=ems_postgres_data 2>/dev/null || echo "")
 
+# Function to check if database connection works
+check_db_connection() {
+    docker compose -f docker-compose.prod.yml exec -T api npx prisma db execute --stdin <<< "SELECT 1;" &>/dev/null
+    return $?
+}
+
 if [ -n "$POSTGRES_VOLUME_EXISTS" ]; then
-    echo "Existing PostgreSQL volume found, updating password before recreating..."
+    echo "Existing PostgreSQL volume found, will verify password compatibility..."
     
-    # Start postgres to update password
-    docker compose -f docker-compose.prod.yml up -d postgres 2>/dev/null || true
+    # Stop existing containers (keep volumes to preserve data)
+    echo "Stopping existing containers..."
+    docker compose -f docker-compose.prod.yml down 2>/dev/null || true
     
-    # Wait for postgres to be ready
-    echo "Waiting for PostgreSQL to start..."
-    sleep 10
+    # Start services with fresh build and force recreate containers with new secrets
+    echo "Starting services with new configuration..."
+    docker compose -f docker-compose.prod.yml up -d --build --force-recreate
     
-    # Update password in running PostgreSQL instance (use postgres superuser)
-    echo "Updating PostgreSQL password to match new configuration..."
-    docker exec -i ems-postgres psql -U postgres <<EOF 2>/dev/null || true
-ALTER USER ems_prod WITH PASSWORD '${POSTGRES_PASSWORD}';
-EOF
+    # Wait for database to be ready
+    echo "Waiting for PostgreSQL to be ready..."
+    sleep 15
     
-    echo -e "${GREEN}✓ PostgreSQL password updated${NC}"
+    # Test database connection
+    echo "Testing database connection..."
+    if ! check_db_connection; then
+        echo -e "${YELLOW}Database authentication failed with existing volume${NC}"
+        echo -e "${YELLOW}This is expected on first deployment or after password change${NC}"
+        echo -e "${YELLOW}Recreating volumes with new credentials...${NC}"
+        
+        # Stop and remove volumes
+        docker compose -f docker-compose.prod.yml down -v 2>/dev/null || true
+        
+        # Restart with fresh volumes
+        echo "Starting services with fresh database..."
+        docker compose -f docker-compose.prod.yml up -d --build
+        
+        # Wait for fresh database initialization
+        echo "Waiting for fresh PostgreSQL initialization..."
+        sleep 15
+    fi
+else
+    # First deployment - no existing volume
+    echo "First deployment detected, starting fresh services..."
+    
+    # Stop any existing containers
+    docker compose -f docker-compose.prod.yml down 2>/dev/null || true
+    
+    # Start services with fresh build
+    docker compose -f docker-compose.prod.yml up -d --build
+    
+    # Wait for database initialization
+    echo "Waiting for PostgreSQL initialization..."
+    sleep 15
 fi
 
-# Stop existing containers (keep volumes to preserve data)
-echo "Stopping existing containers..."
-docker compose -f docker-compose.prod.yml down 2>/dev/null || true
-
-# Start services with fresh build and force recreate containers with new secrets
-echo "Starting services with new configuration..."
-docker compose -f docker-compose.prod.yml up -d --build --force-recreate
-
-# Wait for database to be ready
-echo "Waiting for PostgreSQL to be ready..."
-sleep 10
-
-# Note: PostgreSQL password is set during container initialization via POSTGRES_PASSWORD env var
-# No need to manually sync password after creation - it's already correct
 echo -e "${GREEN}✓ PostgreSQL initialized with configured password${NC}"
 
-# Restart API to apply new database connection
-echo "Restarting API with correct database credentials..."
+# Ensure API is ready
+echo "Ensuring API is ready..."
 docker compose -f docker-compose.prod.yml restart api
 sleep 5
 
