@@ -13,7 +13,8 @@ RUN echo "Build content:" && ls -R dist
 # Runtime
 FROM node:20-alpine AS runner
 WORKDIR /app
-ENV NODE_ENV=production
+# Keep development mode for seed execution
+ENV NODE_ENV=development
 
 # Installer les dépendances système de base
 RUN apk add --no-cache bash openssl
@@ -35,8 +36,10 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
-# Copy Prisma files for migrations/seeding in production
+# Copy source files and Prisma for migrations/seeding in production
 COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/src ./src
+COPY --from=builder /app/tsconfig.json ./tsconfig.json
 # Copy all scripts for admin tasks and entrypoint
 COPY --from=builder /app/scripts ./scripts
 RUN chmod +x ./scripts/entrypoint.sh

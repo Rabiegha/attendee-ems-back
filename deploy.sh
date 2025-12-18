@@ -195,6 +195,15 @@ echo "Restarting API with correct database credentials..."
 docker compose -f docker-compose.prod.yml restart api
 sleep 5
 
+# Run Prisma migrations and seed
+echo "Running Prisma migrations..."
+docker compose -f docker-compose.prod.yml exec -T api npx prisma migrate deploy
+echo -e "${GREEN}✓ Migrations applied${NC}"
+
+echo "Running database seed..."
+docker compose -f docker-compose.prod.yml exec -T api npx ts-node prisma/seed.ts
+echo -e "${GREEN}✓ Database seeded${NC}"
+
 # Check if services are running
 echo -e "\n${GREEN}Checking service status:${NC}"
 docker ps --filter "name=ems" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"

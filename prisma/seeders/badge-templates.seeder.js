@@ -1,0 +1,314 @@
+"use strict";
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __generator = (this && this.__generator) || function (thisArg, body) {
+    var _ = { label: 0, sent: function() { if (t[0] & 1) throw t[1]; return t[1]; }, trys: [], ops: [] }, f, y, t, g = Object.create((typeof Iterator === "function" ? Iterator : Object).prototype);
+    return g.next = verb(0), g["throw"] = verb(1), g["return"] = verb(2), typeof Symbol === "function" && (g[Symbol.iterator] = function() { return this; }), g;
+    function verb(n) { return function (v) { return step([n, v]); }; }
+    function step(op) {
+        if (f) throw new TypeError("Generator is already executing.");
+        while (g && (g = 0, op[0] && (_ = 0)), _) try {
+            if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
+            if (y = 0, t) op = [op[0] & 2, t.value];
+            switch (op[0]) {
+                case 0: case 1: t = op; break;
+                case 4: _.label++; return { value: op[1], done: false };
+                case 5: _.label++; y = op[1]; op = [0]; continue;
+                case 7: op = _.ops.pop(); _.trys.pop(); continue;
+                default:
+                    if (!(t = _.trys, t = t.length > 0 && t[t.length - 1]) && (op[0] === 6 || op[0] === 2)) { _ = 0; continue; }
+                    if (op[0] === 3 && (!t || (op[1] > t[0] && op[1] < t[3]))) { _.label = op[1]; break; }
+                    if (op[0] === 6 && _.label < t[1]) { _.label = t[1]; t = op; break; }
+                    if (t && _.label < t[2]) { _.label = t[2]; _.ops.push(op); break; }
+                    if (t[2]) _.ops.pop();
+                    _.trys.pop(); continue;
+            }
+            op = body.call(thisArg, _);
+        } catch (e) { op = [6, e]; y = 0; } finally { f = t = 0; }
+        if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
+    }
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.seedBadgeTemplates = seedBadgeTemplates;
+function seedBadgeTemplates(prisma) {
+    return __awaiter(this, void 0, void 0, function () {
+        var organization, user, templates, _i, templates_1, template;
+        return __generator(this, function (_a) {
+            switch (_a.label) {
+                case 0:
+                    console.log('📋 Seeding badge templates...');
+                    return [4 /*yield*/, prisma.organization.findFirst()];
+                case 1:
+                    organization = _a.sent();
+                    if (!organization) {
+                        console.log('⚠️  No organization found, skipping badge templates seeding');
+                        return [2 /*return*/];
+                    }
+                    return [4 /*yield*/, prisma.user.findFirst({
+                            where: { org_id: organization.id }
+                        })];
+                case 2:
+                    user = _a.sent();
+                    templates = [
+                        {
+                            org_id: organization.id,
+                            code: 'default-portrait',
+                            name: 'Badge Portrait Standard',
+                            description: 'Template portrait classique avec photo, nom et entreprise',
+                            html: "<div style=\"width: 400px; height: 600px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; color: white; font-family: Arial, sans-serif;\">\n        <div style=\"position: absolute; top: 40px; text-align: center;\">\n          <h1 style=\"font-size: 28px; margin: 0; font-weight: bold;\">\u00C9V\u00C9NEMENT</h1>\n        </div>\n        <div style=\"background: white; border-radius: 50%; width: 120px; height: 120px; margin: 20px 0; display: flex; align-items: center; justify-content: center;\">\n          <div style=\"color: #667eea; font-size: 48px;\">\uD83D\uDC64</div>\n        </div>\n        <div style=\"text-align: center; margin: 20px;\">\n          <h2 style=\"font-size: 24px; margin: 10px 0; font-weight: bold;\">{{firstName}} {{lastName}}</h2>\n          <p style=\"font-size: 16px; margin: 5px 0; opacity: 0.9;\">{{company}}</p>\n          <p style=\"font-size: 14px; margin: 5px 0; opacity: 0.8;\">{{jobTitle}}</p>\n        </div>\n        <div style=\"position: absolute; bottom: 40px; text-align: center;\">\n          <div style=\"background: white; padding: 10px; border-radius: 8px;\">\n            <div style=\"color: #667eea; font-size: 12px;\">QR Code</div>\n          </div>\n        </div>\n      </div>",
+                            css: "\n        .badge-container {\n          width: 400px;\n          height: 600px;\n          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);\n          position: relative;\n          display: flex;\n          flex-direction: column;\n          align-items: center;\n          justify-content: center;\n          color: white;\n          font-family: Arial, sans-serif;\n        }\n      ",
+                            width: 400,
+                            height: 600,
+                            template_data: {
+                                version: '1.0',
+                                elements: [
+                                    {
+                                        id: 'header',
+                                        type: 'text',
+                                        content: 'ÉVÉNEMENT',
+                                        x: 200,
+                                        y: 40,
+                                        fontSize: 28,
+                                        fontWeight: 'bold',
+                                        textAlign: 'center'
+                                    },
+                                    {
+                                        id: 'avatar',
+                                        type: 'image',
+                                        x: 200,
+                                        y: 180,
+                                        width: 120,
+                                        height: 120,
+                                        borderRadius: '50%'
+                                    },
+                                    {
+                                        id: 'name',
+                                        type: 'text',
+                                        content: '{{firstName}} {{lastName}}',
+                                        x: 200,
+                                        y: 320,
+                                        fontSize: 24,
+                                        fontWeight: 'bold',
+                                        textAlign: 'center'
+                                    },
+                                    {
+                                        id: 'company',
+                                        type: 'text',
+                                        content: '{{company}}',
+                                        x: 200,
+                                        y: 350,
+                                        fontSize: 16,
+                                        textAlign: 'center'
+                                    },
+                                    {
+                                        id: 'job-title',
+                                        type: 'text',
+                                        content: '{{jobTitle}}',
+                                        x: 200,
+                                        y: 375,
+                                        fontSize: 14,
+                                        textAlign: 'center'
+                                    },
+                                    {
+                                        id: 'qr-code',
+                                        type: 'qr',
+                                        x: 200,
+                                        y: 520,
+                                        width: 80,
+                                        height: 80
+                                    }
+                                ]
+                            },
+                            variables: ['firstName', 'lastName', 'company', 'jobTitle', 'eventName'],
+                            is_default: true,
+                            is_active: true,
+                            created_by: user === null || user === void 0 ? void 0 : user.id
+                        },
+                        {
+                            org_id: organization.id,
+                            code: 'landscape-modern',
+                            name: 'Badge Paysage Moderne',
+                            description: 'Template paysage avec design moderne et épuré',
+                            html: "<div style=\"width: 600px; height: 400px; background: #f8fafc; position: relative; display: flex; align-items: center; padding: 40px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; border: 2px solid #e2e8f0;\">\n        <div style=\"flex: 1;\">\n          <div style=\"color: #1a365d; font-size: 32px; font-weight: bold; margin-bottom: 10px;\">{{firstName}} {{lastName}}</div>\n          <div style=\"color: #4a5568; font-size: 18px; margin-bottom: 5px;\">{{company}}</div>\n          <div style=\"color: #718096; font-size: 16px; margin-bottom: 20px;\">{{jobTitle}}</div>\n          <div style=\"color: #2d3748; font-size: 14px; font-weight: 600;\">{{eventName}}</div>\n        </div>\n        <div style=\"flex-shrink: 0; text-align: center;\">\n          <div style=\"background: #667eea; color: white; width: 100px; height: 100px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 48px; margin-bottom: 20px;\">\uD83D\uDC64</div>\n          <div style=\"background: white; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0;\">\n            <div style=\"color: #4a5568; font-size: 12px;\">QR Code</div>\n          </div>\n        </div>\n      </div>",
+                            css: "\n        .badge-landscape {\n          width: 600px;\n          height: 400px;\n          background: #f8fafc;\n          position: relative;\n          display: flex;\n          align-items: center;\n          padding: 40px;\n          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;\n          border: 2px solid #e2e8f0;\n        }\n      ",
+                            width: 600,
+                            height: 400,
+                            template_data: {
+                                version: '1.0',
+                                elements: [
+                                    {
+                                        id: 'name',
+                                        type: 'text',
+                                        content: '{{firstName}} {{lastName}}',
+                                        x: 40,
+                                        y: 120,
+                                        fontSize: 32,
+                                        fontWeight: 'bold',
+                                        color: '#1a365d'
+                                    },
+                                    {
+                                        id: 'company',
+                                        type: 'text',
+                                        content: '{{company}}',
+                                        x: 40,
+                                        y: 160,
+                                        fontSize: 18,
+                                        color: '#4a5568'
+                                    },
+                                    {
+                                        id: 'job-title',
+                                        type: 'text',
+                                        content: '{{jobTitle}}',
+                                        x: 40,
+                                        y: 185,
+                                        fontSize: 16,
+                                        color: '#718096'
+                                    },
+                                    {
+                                        id: 'event-name',
+                                        type: 'text',
+                                        content: '{{eventName}}',
+                                        x: 40,
+                                        y: 225,
+                                        fontSize: 14,
+                                        fontWeight: '600',
+                                        color: '#2d3748'
+                                    },
+                                    {
+                                        id: 'avatar',
+                                        type: 'image',
+                                        x: 460,
+                                        y: 80,
+                                        width: 100,
+                                        height: 100,
+                                        borderRadius: '50%'
+                                    },
+                                    {
+                                        id: 'qr-code',
+                                        type: 'qr',
+                                        x: 485,
+                                        y: 220,
+                                        width: 50,
+                                        height: 50
+                                    }
+                                ]
+                            },
+                            variables: ['firstName', 'lastName', 'company', 'jobTitle', 'eventName'],
+                            is_default: false,
+                            is_active: true,
+                            created_by: user === null || user === void 0 ? void 0 : user.id
+                        },
+                        {
+                            org_id: organization.id,
+                            code: 'minimal-badge',
+                            name: 'Badge Minimaliste',
+                            description: 'Design épuré et minimaliste pour événements professionnels',
+                            html: "<div style=\"width: 350px; height: 500px; background: white; position: relative; border: 1px solid #000; color: #000; font-family: 'Helvetica Neue', Arial, sans-serif;\">\n        <div style=\"border-bottom: 3px solid #000; padding: 20px; text-align: center;\">\n          <h1 style=\"font-size: 18px; margin: 0; font-weight: 300; letter-spacing: 2px;\">{{eventName}}</h1>\n        </div>\n        <div style=\"padding: 40px 20px; text-align: center;\">\n          <div style=\"width: 80px; height: 80px; border: 2px solid #000; border-radius: 50%; margin: 0 auto 30px; display: flex; align-items: center; justify-content: center;\">\n            <div style=\"font-size: 36px;\">\uD83D\uDC64</div>\n          </div>\n          <h2 style=\"font-size: 24px; margin: 0 0 10px 0; font-weight: 400;\">{{firstName}} {{lastName}}</h2>\n          <p style=\"font-size: 14px; margin: 0 0 5px 0; color: #666;\">{{company}}</p>\n          <p style=\"font-size: 12px; margin: 0; color: #999;\">{{jobTitle}}</p>\n        </div>\n        <div style=\"position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);\">\n          <div style=\"width: 60px; height: 60px; border: 1px solid #000; display: flex; align-items: center; justify-content: center;\">\n            <div style=\"font-size: 10px;\">QR</div>\n          </div>\n        </div>\n      </div>",
+                            css: "\n        .badge-minimal {\n          width: 350px;\n          height: 500px;\n          background: white;\n          position: relative;\n          border: 1px solid #000;\n          color: #000;\n          font-family: 'Helvetica Neue', Arial, sans-serif;\n        }\n      ",
+                            width: 350,
+                            height: 500,
+                            template_data: {
+                                version: '1.0',
+                                elements: [
+                                    {
+                                        id: 'event-header',
+                                        type: 'text',
+                                        content: '{{eventName}}',
+                                        x: 175,
+                                        y: 40,
+                                        fontSize: 18,
+                                        fontWeight: '300',
+                                        letterSpacing: '2px',
+                                        textAlign: 'center'
+                                    },
+                                    {
+                                        id: 'avatar',
+                                        type: 'shape',
+                                        x: 175,
+                                        y: 140,
+                                        width: 80,
+                                        height: 80,
+                                        borderRadius: '50%',
+                                        border: '2px solid #000'
+                                    },
+                                    {
+                                        id: 'name',
+                                        type: 'text',
+                                        content: '{{firstName}} {{lastName}}',
+                                        x: 175,
+                                        y: 250,
+                                        fontSize: 24,
+                                        fontWeight: '400',
+                                        textAlign: 'center'
+                                    },
+                                    {
+                                        id: 'company',
+                                        type: 'text',
+                                        content: '{{company}}',
+                                        x: 175,
+                                        y: 280,
+                                        fontSize: 14,
+                                        color: '#666',
+                                        textAlign: 'center'
+                                    },
+                                    {
+                                        id: 'job-title',
+                                        type: 'text',
+                                        content: '{{jobTitle}}',
+                                        x: 175,
+                                        y: 300,
+                                        fontSize: 12,
+                                        color: '#999',
+                                        textAlign: 'center'
+                                    },
+                                    {
+                                        id: 'qr-code',
+                                        type: 'qr',
+                                        x: 175,
+                                        y: 420,
+                                        width: 60,
+                                        height: 60
+                                    }
+                                ]
+                            },
+                            variables: ['firstName', 'lastName', 'company', 'jobTitle', 'eventName'],
+                            is_default: false,
+                            is_active: true,
+                            created_by: user === null || user === void 0 ? void 0 : user.id
+                        }
+                    ];
+                    _i = 0, templates_1 = templates;
+                    _a.label = 3;
+                case 3:
+                    if (!(_i < templates_1.length)) return [3 /*break*/, 6];
+                    template = templates_1[_i];
+                    return [4 /*yield*/, prisma.badgeTemplate.upsert({
+                            where: {
+                                org_id_code: {
+                                    org_id: template.org_id,
+                                    code: template.code
+                                }
+                            },
+                            update: template,
+                            create: template,
+                        })];
+                case 4:
+                    _a.sent();
+                    _a.label = 5;
+                case 5:
+                    _i++;
+                    return [3 /*break*/, 3];
+                case 6:
+                    console.log("\u2705 Created ".concat(templates.length, " badge templates"));
+                    return [2 /*return*/];
+            }
+        });
+    });
+}
