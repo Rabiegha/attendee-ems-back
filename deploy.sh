@@ -242,9 +242,20 @@ docker ps --filter "name=ems" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}
 # Step 9: Configure SSL certificates automatically
 echo -e "\n${YELLOW}[9/9] Configuring SSL certificates...${NC}"
 
-# Check if SSL certificates exist
-if docker compose -f docker-compose.prod.yml exec -T certbot ls /etc/letsencrypt/live/attendee.fr/fullchain.pem &>/dev/null; then
-    echo -e "${GREEN}✓ SSL certificates already exist and are valid${NC}"
+# Check if SSL certificates exist on host first
+if [ -f "/etc/letsencrypt/live/attendee.fr/fullchain.pem" ]; then
+    echo -e "${GREEN}✓ SSL certificates found on host${NC}"
+    
+    # Check if they're already in the Docker volume
+    if docker run --rm -v ems_certbot_conf:/certs alpine test -f /certs/live/attendee.fr/fullchain.pem 2>/dev/null; then
+        echo -e "${GREEN}✓ SSL certificates already copied to Docker volume${NC}"
+    else
+        echo "Copying SSL certificates from host to Docker volume..."
+        sudo docker run --rm -v /etc/letsencrypt:/source -v ems_certbot_conf:/dest alpine sh -c 'cp -r /source/* /dest/'
+        echo -e "${GREEN}✓ SSL certificates copied to Docker volume${NC}"
+    fi
+elif docker compose -f docker-compose.prod.yml exec -T certbot ls /etc/letsencrypt/live/attendee.fr/fullchain.pem &>/dev/null; then
+    echo -e "${GREEN}✓ SSL certificates already exist in Docker volume${NC}"
 else
     echo "SSL certificates not found, generating them now..."
     
@@ -330,6 +341,16 @@ NGINX
     # Check if certificates were successfully created
     if docker compose -f docker-compose.prod.yml exec -T certbot ls /etc/letsencrypt/live/attendee.fr/fullchain.pem &>/dev/null; then
         echo -e "${GREEN}✓ SSL certificates obtained successfully${NC}"
+        
+        # Copy certificates from certbot container to the shared volume
+        echo "Ensuring certificates are available in the correct Docker volume..."
+        docker compose -f docker-compose.prod.yml exec -T certbot sh -c 'cp -r /etc/letsencrypt/* /etc/letsencrypt/' 2>/dev/null || true
+        
+        # Also copy from host if available (backup method)
+        if [ -f "/etc/letsencrypt/live/attendee.fr/fullchain.pem" ]; then
+            echo "Copying certificates from host to Docker volume..."
+            sudo docker run --rm -v /etc/letsencrypt:/source -v ems_certbot_conf:/dest alpine sh -c 'cp -r /source/* /dest/'
+        fi
         
         # Restore SSL-enabled Nginx configurations
         echo "Restoring SSL-enabled Nginx configuration..."
