@@ -8,6 +8,7 @@ import {
   Body,
   UseGuards,
   Req,
+  Res,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { BadgeGenerationService } from './badge-generation.service';
@@ -249,5 +250,56 @@ export class BadgeGenerationController {
     return {
       message: 'Badge deleted successfully',
     };
+  }
+
+  /**
+   * GET /events/:eventId/badges/pdf
+   * Génère un PDF avec tous les badges de l'événement
+   */
+  @Get('events/:eventId/badges/pdf')
+  @Permissions('badges.read:org')
+  @ApiOperation({ summary: 'Générer un PDF avec tous les badges de l\'événement' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'PDF généré avec succès',
+    content: {
+      'application/pdf': {
+        schema: {
+          type: 'string',
+          format: 'binary',
+        },
+      },
+    },
+  })
+  async generateEventBadgesPDF(
+    @Param('eventId') eventId: string,
+    @Query('attendeeTypeId') attendeeTypeId?: string,
+    @Query('status') status?: string,
+    @Req() req?: any,
+    @Res() res?: any,
+  ) {
+    // Pour SUPER_ADMIN, permettre l'accès à toutes les organisations
+    const allowAny = req.user.role === 'SUPER_ADMIN' || req.user.permissions?.some((p: string) =>
+      p.endsWith(':any')
+    );
+    const orgId = allowAny ? null : req.user.org_id;
+
+    const pdfBuffer = await this.badgeGenerationService.generateEventBadgesPDF(
+      eventId,
+      orgId,
+      {
+        attendeeTypeId,
+        status,
+      },
+    );
+
+    // Retourner le PDF directement
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="badges-${eventId}.pdf"`,
+      'Content-Length': pdfBuffer.length,
+    });
+
+    return res.send(pdfBuffer);
   }
 }

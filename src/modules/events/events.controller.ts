@@ -19,6 +19,7 @@ import { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiConsumes, ApiBody, ApiQuery } from '@nestjs/swagger';
 import { EventsService } from './events.service';
+import { BadgeGenerationService } from '../badge-generation/badge-generation.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
 import { UpdateEventAttendeeTypeDto } from './dto/update-event-attendee-type.dto';
@@ -45,6 +46,7 @@ export class EventsController {
     private readonly eventsService: EventsService,
     private readonly registrationsService: RegistrationsService,
     private readonly prisma: PrismaService,
+    private readonly badgeGenerationService: BadgeGenerationService,
   ) {}
 
   @Post()
@@ -605,5 +607,52 @@ export class EventsController {
   ) {
     const orgId = resolveEffectiveOrgId({ reqUser: req.user, explicitOrgId: undefined, allowAny: false });
     return this.eventsService.deleteBadgeRule(id, orgId, ruleId, req.user.id);
+  }
+
+  @Get(':id/badges/pdf')
+  @Permissions('badges.read')
+  @ApiOperation({ summary: 'Générer un PDF avec tous les badges de l\'événement' })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'PDF généré avec succès',
+    content: {
+      'application/pdf': {
+        schema: {
+          type: 'string',
+          format: 'binary',
+        },
+      },
+    },
+  })
+  async generateEventBadgesPDF(
+    @Param('id') eventId: string,
+    @Query('attendeeTypeId') attendeeTypeId?: string,
+    @Query('status') status?: string,
+    @Request() req?: any,
+    @Res() res?: Response,
+  ) {
+    // Pour SUPER_ADMIN, permettre l'accès à toutes les organisations
+    const allowAny = req.user.role === 'SUPER_ADMIN' || req.user.permissions?.some((p: string) =>
+      p.endsWith(':any')
+    );
+    const orgId = allowAny ? null : req.user.org_id;
+
+    const pdfBuffer = await this.badgeGenerationService.generateEventBadgesPDF(
+      eventId,
+      orgId,
+      {
+        attendeeTypeId,
+        status,
+      },
+    );
+
+    // Retourner le PDF directement
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `attachment; filename="badges-${eventId}.pdf"`,
+      'Content-Length': pdfBuffer.length,
+    });
+
+    return res.send(pdfBuffer);
   }
 }

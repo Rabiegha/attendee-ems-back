@@ -1109,5 +1109,306 @@ export class BadgeGenerationService {
 
     return base64Image;
   }
+
+  /**
+   * Génère un PDF contenant tous les badges d'un événement
+   * Chaque badge utilise le bon template selon les règles définies
+   */
+  async generateEventBadgesPDF(
+    eventId: string,
+    orgId: string | null,
+    filters?: {
+      attendeeTypeId?: string;
+      status?: string;
+    },
+  ): Promise<Buffer> {
+    this.logger.log(`Generating PDF for event ${eventId}...`);
+
+    // 1. Récupérer l'événement avec ses règles de badges
+    const event = await this.prisma.event.findFirst({
+      where: {
+        id: eventId,
+        ...(orgId !== null && { org_id: orgId }),
+      },
+      include: {
+        badgeRules: {
+          include: {
+            badgeTemplate: {
+              select: {
+                id: true,
+                name: true,
+                html: true,
+                css: true,
+                width: true,
+                height: true,
+                variables: true,
+                template_data: true,
+              },
+            },
+            ruleAttendeeTypes: {
+              include: {
+                attendeeType: true,
+              },
+            },
+          },
+          orderBy: {
+            priority: 'asc',
+          },
+        },
+        settings: {
+          include: {
+            badgeTemplate: {
+              select: {
+                id: true,
+                name: true,
+                html: true,
+                css: true,
+                width: true,
+                height: true,
+                variables: true,
+                template_data: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!event) {
+      throw new NotFoundException('Event not found');
+    }
+
+    // 2. Récupérer toutes les inscriptions approuvées
+    const whereClause: any = {
+      event_id: eventId,
+      status: 'approved', // Seulement les approuvés par défaut
+    };
+
+    if (orgId !== null) {
+      whereClause.org_id = orgId;
+    }
+
+    if (filters?.attendeeTypeId) {
+      whereClause.event_attendee_type_id = filters.attendeeTypeId;
+    }
+
+    if (filters?.status) {
+      whereClause.status = filters.status as any;
+    }
+
+    const registrations = await this.prisma.registration.findMany({
+      where: whereClause,
+      include: {
+        attendee: true,
+        eventAttendeeType: {
+          include: {
+            attendeeType: true,
+          },
+        },
+      },
+      orderBy: [
+        { event_attendee_type_id: 'asc' },
+        { attendee: { last_name: 'asc' } },
+      ],
+    });
+
+    if (registrations.length === 0) {
+      throw new BadRequestException('No registrations found for this event');
+    }
+
+    this.logger.log(`Found ${registrations.length} registrations to generate badges for`);
+    this.logger.log(`Event has ${event.badgeRules.length} badge rules`);
+    this.logger.log(`Event settings badge template: ${event.settings?.badgeTemplate?.id || 'NONE'}`);
+
+    // 3. Déterminer le template pour chaque inscription selon les règles
+    const badgeConfigs = await Promise.all(
+      registrations.map(async (registration) => {
+        // Appliquer les règles de badge dans l'ordre de priorité
+        let selectedTemplate = event.settings?.badgeTemplate || null;
+
+        this.logger.log(`Processing registration ${registration.id}, event_attendee_type_id: ${registration.event_attendee_type_id}, attendee_type_id: ${registration.eventAttendeeType?.attendee_type_id}`);
+
+        for (const rule of event.badgeRules) {
+          // Vérifier si ce type de participant correspond à cette règle
+          this.logger.log(`Rule ${rule.id} has ${rule.ruleAttendeeTypes.length} attendee types: ${rule.ruleAttendeeTypes.map(rt => rt.attendee_type_id).join(', ')}`);
+          
+          const matchesRule = rule.ruleAttendeeTypes.some(
+            (rt) => rt.attendee_type_id === registration.eventAttendeeType?.attendee_type_id,
+          );
+
+          this.logger.log(`Rule ${rule.id} (priority ${rule.priority}): ${matchesRule ? 'MATCH' : 'no match'}, has template: ${!!rule.badgeTemplate}`);
+
+          if (matchesRule && rule.badgeTemplate) {
+            selectedTemplate = rule.badgeTemplate;
+            this.logger.log(
+              `Rule ${rule.id} matched for registration ${registration.id} (${registration.eventAttendeeType?.attendeeType.name})`,
+            );
+            break; // Première règle qui matche
+          }
+        }
+
+        if (!selectedTemplate) {
+          this.logger.warn(
+            `No template found for registration ${registration.id}, using default`,
+          );
+        } else {
+          this.logger.log(`Selected template ${selectedTemplate.id} for registration ${registration.id}`);
+        }
+
+        return {
+          registration,
+          template: selectedTemplate,
+        };
+      }),
+    );
+
+    // 4. Générer le HTML pour chaque badge
+    const badgeHTMLs = await Promise.all(
+      badgeConfigs.map(async ({ registration, template }) => {
+        if (!template) {
+          return null;
+        }
+
+        // Préparer les données du badge
+        const qrData = `${process.env.FRONTEND_URL || 'https://attendee.fr'}/check-in/${registration.id}`;
+        const qrCodeBase64 = await this.generateQRCode(qrData);
+
+        const badgeData = {
+          firstName: registration.attendee.first_name || '',
+          lastName: registration.attendee.last_name || '',
+          fullName: `${registration.attendee.first_name || ''} ${registration.attendee.last_name || ''}`.trim(),
+          email: registration.attendee.email || '',
+          company: registration.attendee.company || '',
+          attendeeType: registration.eventAttendeeType?.attendeeType.name || 'Participant',
+          attendeeTypeColor: registration.eventAttendeeType?.color_hex || registration.eventAttendeeType?.attendeeType.color_hex || '#000000',
+          attendeeTypeTextColor: registration.eventAttendeeType?.text_color_hex || registration.eventAttendeeType?.attendeeType.text_color_hex || '#FFFFFF',
+          eventName: event.name,
+          qrCode: qrCodeBase64,
+        };
+
+        // Fallback: générer HTML/CSS depuis template_data si vides
+        let htmlContent = template.html || '';
+        let cssContent = template.css || '';
+        
+        if (!htmlContent || !cssContent) {
+          this.logger.warn(`Template ${template.id} has no HTML/CSS, generating from template_data`);
+          const generated = this.generateHTMLFromTemplateData(template);
+          if (!htmlContent) htmlContent = generated.html;
+          if (!cssContent) cssContent = generated.css;
+        }
+        
+        // Remplacer les variables dans le HTML
+        htmlContent = this.replaceVariables(htmlContent, badgeData);
+
+        this.logger.log(`Badge HTML length: ${htmlContent.length}, CSS length: ${cssContent.length}, template ${template.id}`);
+
+        return {
+          html: htmlContent,
+          css: cssContent,
+          width: template.width,
+          height: template.height,
+        };
+      }),
+    );
+
+    // Filtrer les badges null
+    const validBadges = badgeHTMLs.filter((b) => b !== null);
+
+    this.logger.log(`Generated ${validBadges.length} valid badges`);
+
+    if (validBadges.length === 0) {
+      throw new BadRequestException('No valid badge templates configured');
+    }
+
+    // 5. Créer le HTML du PDF avec tous les badges (1 badge par page)
+    const pdfHTML = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <style>
+            * { 
+              margin: 0; 
+              padding: 0; 
+              box-sizing: border-box; 
+            }
+            body { 
+              font-family: Arial, sans-serif;
+              background: white;
+            }
+            .badge-page {
+              page-break-after: always;
+              width: 100%;
+              height: 100vh;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+            }
+            .badge-page:last-child {
+              page-break-after: auto;
+            }
+            /* Styles individuels pour chaque badge */
+            ${validBadges
+              .map(
+                (badge, idx) => `
+              .badge-${idx} {
+                width: ${badge.width}px;
+                height: ${badge.height}px;
+              }
+              .badge-${idx} .badge-content {
+                ${badge.css}
+              }
+            `,
+              )
+              .join('\n')}
+          </style>
+        </head>
+        <body>
+          ${validBadges
+            .map(
+              (badge, idx) => `
+            <div class="badge-page">
+              <div class="badge-${idx}">
+                <div class="badge-content">
+                  ${badge.html}
+                </div>
+              </div>
+            </div>
+          `,
+            )
+            .join('\n')}
+        </body>
+      </html>
+    `;
+
+    // 6. Générer le PDF avec Puppeteer
+    const browser = await this.getBrowser();
+    const page = await browser.newPage();
+
+    await page.setContent(pdfHTML, {
+      waitUntil: 'networkidle0',
+      timeout: 120000, // 2 minutes pour les gros templates
+    });
+
+    // Utiliser les dimensions du premier badge pour le format de page
+    const firstBadge = validBadges[0];
+    const pdfBuffer = await page.pdf({
+      width: `${firstBadge.width}px`,
+      height: `${firstBadge.height}px`,
+      printBackground: true,
+      margin: {
+        top: '0mm',
+        right: '0mm',
+        bottom: '0mm',
+        left: '0mm',
+      },
+    });
+
+    await page.close();
+
+    this.logger.log(`✅ PDF generated with ${validBadges.length} badges`);
+
+    return Buffer.from(pdfBuffer);
+  }
 }
  
