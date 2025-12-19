@@ -318,6 +318,7 @@ model AttendeeType {
   // Relations
   organization         Organization @relation(fields: [org_id], references: [id], onDelete: Cascade)
   eventAttendeeTypes   EventAttendeeType[]
+  badgeRuleAttendeeTypes EventBadgeRuleAttendeeType[] // Règles de badges utilisant ce type
 
   @@unique([org_id, code])
   @@unique([id, org_id])
@@ -353,6 +354,7 @@ model BadgeTemplate {
   eventAttendeeTypeBadges EventAttendeeTypeBadge[]
   registrations        Registration[]
   badges               Badge[]
+  badgeRules           EventBadgeRule[] // Règles utilisant ce template
 
   @@unique([org_id, code])
   @@unique([id, org_id])
@@ -426,6 +428,7 @@ model Event {
   eventTags               EventTag[]
   badgeTemplates          BadgeTemplate[] // Templates de badges pour cet événement
   badges                  Badge[]         // Badges générés pour cet événement
+  badgeRules              EventBadgeRule[] // Règles de badges par attendee type
 
   @@unique([id, org_id])
   @@unique([org_id, code])
@@ -829,3 +832,42 @@ model EventTag {
   @@index([tag_id])
   @@map("event_tags")
 }
+
+// ===== Event Badge Rules (Règles de badges par attendee type) =====
+model EventBadgeRule {
+  id                String   @id @default(uuid()) @db.Uuid
+  org_id            String   @db.Uuid
+  event_id          String   @db.Uuid
+  badge_template_id String   @db.Uuid
+  priority          Int      @default(0) // Ordre d'application des règles (0 = plus haute priorité)
+  created_at        DateTime @default(now()) @map("created_at")
+  updated_at        DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  event         Event         @relation(fields: [event_id, org_id], references: [id, org_id], onDelete: Cascade, onUpdate: NoAction)
+  badgeTemplate BadgeTemplate @relation(fields: [badge_template_id, org_id], references: [id, org_id], onDelete: Cascade, onUpdate: NoAction)
+  ruleAttendeeTypes EventBadgeRuleAttendeeType[]
+
+  @@unique([event_id, org_id, priority]) // Une seule règle par priorité par événement
+  @@index([org_id, event_id])
+  @@index([badge_template_id])
+  @@map("event_badge_rules")
+}
+
+// Table de liaison entre règles de badges et attendee types
+model EventBadgeRuleAttendeeType {
+  rule_id         String   @db.Uuid
+  org_id          String   @db.Uuid
+  attendee_type_id String  @db.Uuid
+  created_at      DateTime @default(now()) @map("created_at")
+
+  // Relations
+  rule          EventBadgeRule @relation(fields: [rule_id], references: [id], onDelete: Cascade)
+  attendeeType  AttendeeType   @relation(fields: [attendee_type_id, org_id], references: [id, org_id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([rule_id, attendee_type_id])
+  @@index([org_id, rule_id])
+  @@index([attendee_type_id])
+  @@map("event_badge_rule_attendee_types")
+}
+

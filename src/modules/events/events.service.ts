@@ -920,7 +920,6 @@ export class EventsService {
   // =================================================================================================
 
   async getAttendeeTypes(eventId: string, orgId: string) {
-    // Ensure event exists and belongs to org
     const event = await this.prisma.event.findFirst({
       where: { id: eventId, org_id: orgId },
     });
@@ -1037,14 +1036,260 @@ export class EventsService {
       throw new NotFoundException('Event attendee type not found');
     }
 
-    // If used by registrations, prevent removal
+    // If used by registrations, use soft delete (set is_active = false)
     if (eventAttendeeType._count.registrations > 0) {
-      throw new BadRequestException('Impossible de supprimer ce type car il est utilisé par des participants');
+      return this.prisma.eventAttendeeType.update({
+        where: { id },
+        data: { is_active: false },
+        include: { attendeeType: true }
+      });
     }
 
-    // If not used, hard delete
-    return this.prisma.eventAttendeeType.delete({
+    // If not used, soft delete anyway for consistency
+    return this.prisma.eventAttendeeType.update({
       where: { id },
+      data: { is_active: false },
+      include: { attendeeType: true }
     });
   }
+
+  // ===== Badge Rules Methods =====
+
+  async getBadgeRules(eventId: string, orgId: string, userId: string) {
+    // Verify event exists and belongs to org
+    await this.findOne(eventId, { scope: 'org', orgId, userId });
+
+    const rules = await this.prisma.eventBadgeRule.findMany({
+      where: {
+        event_id: eventId,
+        org_id: orgId,
+      },
+      include: {
+        ruleAttendeeTypes: {
+          select: {
+            attendee_type_id: true,
+          },
+        },
+      },
+      orderBy: {
+        priority: 'asc',
+      },
+    });
+
+    return rules.map(rule => ({
+      id: rule.id,
+      eventId: rule.event_id,
+      badgeTemplateId: rule.badge_template_id,
+      priority: rule.priority,
+      attendeeTypeIds: rule.ruleAttendeeTypes.map(rt => rt.attendee_type_id),
+      createdAt: rule.created_at,
+      updatedAt: rule.updated_at,
+    }));
+  }
+
+  async createBadgeRule(eventId: string, orgId: string, userId: string, dto: any) {
+    // Verify event exists and belongs to org
+    await this.findOne(eventId, { scope: 'org', orgId, userId });
+
+    // Verify badge template exists and belongs to org
+    const badgeTemplate = await this.prisma.badgeTemplate.findFirst({
+      where: {
+        id: dto.badgeTemplateId,
+        org_id: orgId,
+      },
+    });
+
+    if (!badgeTemplate) {
+      throw new NotFoundException('Badge template not found');
+    }
+
+    // Verify all attendee types exist and belong to org
+    const attendeeTypes = await this.prisma.attendeeType.findMany({
+      where: {
+        id: { in: dto.attendeeTypeIds },
+        org_id: orgId,
+      },
+    });
+
+    if (attendeeTypes.length !== dto.attendeeTypeIds.length) {
+      throw new BadRequestException('One or more attendee types not found');
+    }
+
+    // Get next priority if not specified
+    let priority = dto.priority;
+    if (priority === undefined) {
+      const maxPriorityRule = await this.prisma.eventBadgeRule.findFirst({
+        where: {
+          event_id: eventId,
+          org_id: orgId,
+        },
+        orderBy: {
+          priority: 'desc',
+        },
+      });
+      priority = maxPriorityRule ? maxPriorityRule.priority + 1 : 0;
+    }
+
+    // Create rule with attendee types
+    const rule = await this.prisma.eventBadgeRule.create({
+      data: {
+        org_id: orgId,
+        event_id: eventId,
+        badge_template_id: dto.badgeTemplateId,
+        priority,
+        ruleAttendeeTypes: {
+          create: dto.attendeeTypeIds.map(typeId => ({
+            org_id: orgId,
+            attendee_type_id: typeId,
+          })),
+        },
+      },
+      include: {
+        ruleAttendeeTypes: {
+          select: {
+            attendee_type_id: true,
+          },
+        },
+      },
+    });
+
+    return {
+      id: rule.id,
+      eventId: rule.event_id,
+      badgeTemplateId: rule.badge_template_id,
+      priority: rule.priority,
+      attendeeTypeIds: rule.ruleAttendeeTypes.map(rt => rt.attendee_type_id),
+      createdAt: rule.created_at,
+      updatedAt: rule.updated_at,
+    };
+  }
+
+  async updateBadgeRule(eventId: string, orgId: string, ruleId: string, userId: string, dto: any) {
+    // Verify event exists
+    await this.findOne(eventId, { scope: 'org', orgId, userId });
+
+    // Verify rule exists and belongs to event
+    const existingRule = await this.prisma.eventBadgeRule.findFirst({
+      where: {
+        id: ruleId,
+        event_id: eventId,
+        org_id: orgId,
+      },
+    });
+
+    if (!existingRule) {
+      throw new NotFoundException('Badge rule not found');
+    }
+
+    // Verify badge template if provided
+    if (dto.badgeTemplateId) {
+      const badgeTemplate = await this.prisma.badgeTemplate.findFirst({
+        where: {
+          id: dto.badgeTemplateId,
+          org_id: orgId,
+        },
+      });
+
+      if (!badgeTemplate) {
+        throw new NotFoundException('Badge template not found');
+      }
+    }
+
+    // Verify attendee types if provided
+    if (dto.attendeeTypeIds) {
+      const attendeeTypes = await this.prisma.attendeeType.findMany({
+        where: {
+          id: { in: dto.attendeeTypeIds },
+          org_id: orgId,
+        },
+      });
+
+      if (attendeeTypes.length !== dto.attendeeTypeIds.length) {
+        throw new BadRequestException('One or more attendee types not found');
+      }
+    }
+
+    // Update rule
+    const updateData: any = {};
+    if (dto.badgeTemplateId !== undefined) {
+      updateData.badge_template_id = dto.badgeTemplateId;
+    }
+    if (dto.priority !== undefined) {
+      updateData.priority = dto.priority;
+    }
+
+    // Update in transaction to handle attendee types
+    const rule = await this.prisma.$transaction(async (prisma) => {
+      // Update rule data
+      const updatedRule = await prisma.eventBadgeRule.update({
+        where: { id: ruleId },
+        data: updateData,
+      });
+
+      // Update attendee types if provided
+      if (dto.attendeeTypeIds) {
+        // Delete existing associations
+        await prisma.eventBadgeRuleAttendeeType.deleteMany({
+          where: { rule_id: ruleId },
+        });
+
+        // Create new associations
+        await prisma.eventBadgeRuleAttendeeType.createMany({
+          data: dto.attendeeTypeIds.map(typeId => ({
+            rule_id: ruleId,
+            org_id: orgId,
+            attendee_type_id: typeId,
+          })),
+        });
+      }
+
+      // Fetch updated rule with associations
+      return prisma.eventBadgeRule.findUnique({
+        where: { id: ruleId },
+        include: {
+          ruleAttendeeTypes: {
+            select: {
+              attendee_type_id: true,
+            },
+          },
+        },
+      });
+    });
+
+    return {
+      id: rule.id,
+      eventId: rule.event_id,
+      badgeTemplateId: rule.badge_template_id,
+      priority: rule.priority,
+      attendeeTypeIds: rule.ruleAttendeeTypes.map(rt => rt.attendee_type_id),
+      createdAt: rule.created_at,
+      updatedAt: rule.updated_at,
+    };
+  }
+
+  async deleteBadgeRule(eventId: string, orgId: string, ruleId: string, userId: string) {
+    // Verify event exists
+    await this.findOne(eventId, { scope: 'org', orgId, userId });
+
+    // Verify rule exists and belongs to event
+    const existingRule = await this.prisma.eventBadgeRule.findFirst({
+      where: {
+        id: ruleId,
+        event_id: eventId,
+        org_id: orgId,
+      },
+    });
+
+    if (!existingRule) {
+      throw new NotFoundException('Badge rule not found');
+    }
+
+    // Delete rule (cascade will delete associated attendee types)
+    await this.prisma.eventBadgeRule.delete({
+      where: { id: ruleId },
+    });
+
+    return { message: 'Badge rule deleted successfully' };
+  }
 }
+

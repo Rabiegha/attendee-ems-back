@@ -22,6 +22,7 @@ import { EventsService } from './events.service';
 import { CreateEventDto } from './dto/create-event.dto';
 import { UpdateEventDto } from './dto/update-event.dto';
 import { UpdateEventAttendeeTypeDto } from './dto/update-event-attendee-type.dto';
+import { CreateEventBadgeRuleDto, UpdateEventBadgeRuleDto } from './dto/event-badge-rule.dto';
 import { ListEventsDto } from './dto/list-events.dto';
 import { ChangeEventStatusDto } from './dto/change-event-status.dto';
 import { RegistrationsService } from '../registrations/registrations.service';
@@ -553,5 +554,56 @@ export class EventsController {
   async removeAttendeeType(@Param('id') id: string, @Param('typeId') typeId: string, @Request() req) {
     const orgId = resolveEffectiveOrgId({ reqUser: req.user, explicitOrgId: undefined, allowAny: false });
     return this.eventsService.removeAttendeeType(id, orgId, typeId);
+  }
+
+  // ===== Badge Rules Endpoints =====
+  
+  @Get(':id/badge-rules')
+  @Permissions('events.read')
+  @ApiOperation({ summary: 'Get all badge rules for an event' })
+  @ApiResponse({ status: 200, description: 'Badge rules retrieved successfully' })
+  async getBadgeRules(@Param('id') id: string, @Request() req) {
+    const orgId = resolveEffectiveOrgId({ reqUser: req.user, explicitOrgId: undefined, allowAny: false });
+    return this.eventsService.getBadgeRules(id, orgId, req.user.id);
+  }
+
+  @Post(':id/badge-rules')
+  @Permissions('events.update')
+  @ApiOperation({ summary: 'Create a new badge rule for an event' })
+  @ApiResponse({ status: 201, description: 'Badge rule created successfully' })
+  async createBadgeRule(
+    @Param('id') id: string,
+    @Body() dto: CreateEventBadgeRuleDto,
+    @Request() req
+  ) {
+    const orgId = resolveEffectiveOrgId({ reqUser: req.user, explicitOrgId: undefined, allowAny: false });
+    return this.eventsService.createBadgeRule(id, orgId, req.user.id, dto);
+  }
+
+  @Put(':id/badge-rules/:ruleId')
+  @Permissions('events.update')
+  @ApiOperation({ summary: 'Update a badge rule' })
+  @ApiResponse({ status: 200, description: 'Badge rule updated successfully' })
+  async updateBadgeRule(
+    @Param('id') id: string,
+    @Param('ruleId') ruleId: string,
+    @Body() dto: UpdateEventBadgeRuleDto,
+    @Request() req
+  ) {
+    const orgId = resolveEffectiveOrgId({ reqUser: req.user, explicitOrgId: undefined, allowAny: false });
+    return this.eventsService.updateBadgeRule(id, orgId, ruleId, req.user.id, dto);
+  }
+
+  @Delete(':id/badge-rules/:ruleId')
+  @Permissions('events.update')
+  @ApiOperation({ summary: 'Delete a badge rule' })
+  @ApiResponse({ status: 200, description: 'Badge rule deleted successfully' })
+  async deleteBadgeRule(
+    @Param('id') id: string,
+    @Param('ruleId') ruleId: string,
+    @Request() req
+  ) {
+    const orgId = resolveEffectiveOrgId({ reqUser: req.user, explicitOrgId: undefined, allowAny: false });
+    return this.eventsService.deleteBadgeRule(id, orgId, ruleId, req.user.id);
   }
 }

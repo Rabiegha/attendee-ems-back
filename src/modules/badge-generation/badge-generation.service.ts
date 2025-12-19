@@ -909,20 +909,72 @@ export class BadgeGenerationService {
     
     // Si un template est spécifié en override (changement de template), l'utiliser
     if (templateIdOverride) {
+      this.logger.log(`Using override template: ${templateIdOverride}`);
       badgeTemplate = await this.badgeTemplatesService.findOne(
         templateIdOverride,
         orgId || registration.org_id,
       );
     } else if (registration.badge_template_id) {
+      // Si la registration a déjà un template assigné, l'utiliser
+      this.logger.log(`Using registration-specific template: ${registration.badge_template_id}`);
       badgeTemplate = await this.badgeTemplatesService.findOne(
         registration.badge_template_id,
         orgId || registration.org_id,
       );
     } else {
-      badgeTemplate = await this.badgeTemplatesService.getTemplateForEvent(
-        registration.event_id,
-        orgId || registration.org_id,
-      );
+      // Sinon, chercher une règle correspondant à l'attendee type
+      let templateIdFromRule = null;
+      
+      if (registration.event_attendee_type_id) {
+        const attendeeTypeId = registration.eventAttendeeType?.attendee_type_id;
+        
+        if (attendeeTypeId) {
+          this.logger.log(`Looking for badge rule for attendee type: ${attendeeTypeId}`);
+          
+          // Récupérer les règles de badge pour cet événement
+          const badgeRules = await this.prisma.eventBadgeRule.findMany({
+            where: {
+              event_id: registration.event_id,
+              org_id: registration.org_id,
+            },
+            include: {
+              ruleAttendeeTypes: {
+                select: {
+                  attendee_type_id: true,
+                },
+              },
+            },
+            orderBy: {
+              priority: 'asc',
+            },
+          });
+          
+          // Trouver la première règle qui correspond à l'attendee type
+          const matchingRule = badgeRules.find(rule => 
+            rule.ruleAttendeeTypes.some(rat => rat.attendee_type_id === attendeeTypeId)
+          );
+          
+          if (matchingRule) {
+            this.logger.log(`Found matching badge rule with template: ${matchingRule.badge_template_id}`);
+            templateIdFromRule = matchingRule.badge_template_id;
+          }
+        }
+      }
+      
+      // Si une règle a été trouvée, utiliser son template
+      if (templateIdFromRule) {
+        badgeTemplate = await this.badgeTemplatesService.findOne(
+          templateIdFromRule,
+          orgId || registration.org_id,
+        );
+      } else {
+        // Sinon, utiliser le template par défaut de l'événement
+        this.logger.log(`No rule found, using default template for event`);
+        badgeTemplate = await this.badgeTemplatesService.getTemplateForEvent(
+          registration.event_id,
+          orgId || registration.org_id,
+        );
+      }
     }
 
     if (!badgeTemplate) {
