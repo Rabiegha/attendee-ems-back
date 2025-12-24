@@ -3,7 +3,7 @@ import { RouterModule } from '@nestjs/core';
 import { ConfigModule } from './config/config.module';
 import { PrismaModule } from './infra/db/prisma.module';
 import { AuthModule } from './auth/auth.module';
-import { RbacModule } from './rbac/rbac.module';
+import { RbacModule } from './authorization/rbac.module';
 import { UsersModule } from './modules/users/users.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { RolesModule } from './modules/roles/roles.module';

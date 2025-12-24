@@ -5,9 +5,9 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { CaslAbilityFactory } from '../../rbac/casl-ability.factory';
+import { CaslAbilityFactory } from '../../authorization/casl-ability.factory';
 import { PERMISSIONS_KEY } from '../decorators/permissions.decorator';
-import { Action, Subjects } from '../../rbac/rbac.types';
+import { Action, Subjects } from '../../authorization/rbac.types';
 
 @Injectable()
 export class PermissionsGuard implements CanActivate {

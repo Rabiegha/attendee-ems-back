@@ -1,4 +1,4 @@
-import { RbacContext } from "@/rbac/rbac.service";
+import { RbacContext } from "@/authorization/rbac.service";
 import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from "@nestjs/common";
 
 @Injectable()

@@ -233,15 +233,15 @@ class AssignRoleHandler {
 
 ## 📊 Comparaison des approches
 
-| Aspect | Full DDD (2-3 semaines) | Approche Hybride (1 semaine) | NestJS pur (1 semaine) |
-|--------|-------------------------|------------------------------|------------------------|
-| **Temps dev** | 2-3 semaines | 1 semaine | 1 semaine |
-| **Logique métier isolée** | ✅ Oui | ✅ Oui (Domain Services) | ❌ Non (dans services) |
-| **Testabilité** | ✅ Excellente | ✅ Bonne | ⚠️ Moyenne (mock Prisma) |
-| **Courbe apprentissage** | ⚠️ Élevée | ✅ Faible | ✅ Faible |
-| **Migration future** | N/A | ✅ Facile | ❌ Difficile |
-| **Boilerplate** | ⚠️ Beaucoup | ✅ Minimal | ✅ Minimal |
-| **Maintenabilité long terme** | ✅ Excellente | ✅ Bonne | ⚠️ Moyenne |
+| Aspect                          | Full DDD (2-3 semaines)  | Approche Hybride (1 semaine) | NestJS pur (1 semaine)    |
+|---------------------------------|--------------------------|------------------------------|---------------------------|
+| **Temps dev**                   | 2-3 semaines             | 1 semaine                    | 1 semaine                 |
+| **Logique métier isolée**       | ✅ Oui                   | ✅ Oui (Domain Services)      | ❌ Non (dans services)    |
+| **Testabilité**                 | ✅ Excellente            | ✅ Bonne                      | ⚠️ Moyenne (mock Prisma)  |
+| **Courbe apprentissage**        | ⚠️ Élevée                | ✅ Faible                     | ✅ Faible                 |
+| **Migration future**            | N/A | ✅ Facile          | ❌ Difficile                  |                           |
+| **Boilerplate**                 | ⚠️ Beaucoup              | ✅ Minimal                    | ✅ Minimal                |
+| **Maintenabilité long terme**   | ✅ Excellente            | ✅ Bonne                      | ⚠️ Moyenne                |
 
 ---
 
