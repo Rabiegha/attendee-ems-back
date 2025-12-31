@@ -1,14 +1,21 @@
-# Attendees Architecture RBAC, Multi-tenant, Propagation & Plans
+# Attendees EMS - Architecture RBAC, Multi-tenant, Propagation & Plans
 
+> **Stack technique :** NestJS + Prisma + PostgreSQL  
+> **Version :** 1.0  
+> **Dernière mise à jour :** Décembre 2024
 
-Ce document décrit l’architecture du système d’autorisation de la plateforme :
-- RBAC (rôles / permissions / scopes),
-- multi-tenant (user dans plusieurs organisations),
-- gestion des plans et des modules,
-- propagation des permissions à grande échelle.
+Ce document décrit l'architecture du système d'autorisation de la plateforme EMS :
+- RBAC (rôles / permissions / scopes) avec NestJS Guards & Decorators
+- Multi-tenant (utilisateur dans plusieurs organisations)
+- Gestion des plans et des modules (feature gating)
+- Propagation des permissions à grande échelle
+- Intégration avec CASL (Ability-based authorization)
 
+---
 
+## Table des matières
 
+<<<<<<< Updated upstream:docs/rbac/ARCHITECTURE_RBAC.md
 # Brainstorming
 
 Ce qu'il faut mettre en place :
@@ -39,40 +46,202 @@ Ce qu'il faut mettre en place :
     * accès aux orgs contrôlé via platform_user_org_access.
 * Garantir côté BDD :
     * un user tenant ne peut avoir que des rôles de ses orgs (FK composites user_id + org_id vers org_users et roles).
+=======
+1. [Brainstorming & Vision](#brainstorming)
+2. [Objectifs](#objectifs)
+3. [Modèle conceptuel](#modèle-conceptuel)
+4. [Architecture NestJS](#architecture-nestjs)
+5. [Tables RBAC & Plans](#tables-rbac--plans)
+6. [Invariants importants](#invariants-importants)
+7. [API d'autorisation](#api-dautorisation)
+8. [Références](#références)
 
-3. Hiérarchie et structure des rôles (rank, rôles types, rôles clés)
-* Définir une hiérarchie claire entre les rôles via rank (plus grand = plus puissant).
-* Respecter les règles d’anti-escalade :
-    * un user ne peut pas créer/assigner un rôle de rank ≥ au sien,
-    * un user ne peut jamais modifier son propre rôle,
-    * seul un is_root peut créer/assigner un rôle root.
-* Introduire des rôles types : tenant_admin, tenant_manager, tenant_staff, support_L1, support_L2, etc.
-* Introduire des rôles clés par org :
-    * Admin, Manager, Staff “standard” :
-        * role_type = tenant_admin / tenant_manager / tenant_staff,
-        * managed_by_template = true,
-        * is_locked = true (non modifiables / non supprimables).
-    * Ces rôles servent de socle commun et de cible principale pour la propagation auto.
+---
 
-4. Permissions alignées avec la logique métier + PermissionRegistry
-* Lister les actions métier réelles :
-    * gérer événements, gérer sessions, scanner badges, gérer partenaires, gérer staff, exporter, importer, etc.
-* Regrouper ces actions en permissions (ex : event.read, event.create, attendee.import, badge.print, event.export…).
-* Lier chaque permission à :
-    * un module (module_key),
-    * une liste de scopes possibles (scope_levels),
-    * des scopes par défaut par type de rôle (defaultScopesByRoleType).
-* Centraliser tout ça dans un PermissionRegistry (source de vérité globale).
+# Brainstorming
 
-5. Provisioning automatique des rôles et permissions par organisation
-* À la création d’une nouvelle org :
-    * créer automatiquement les rôles clés (Admin, Manager, Staff) avec :
-        * role_type + rank + permission_ceiling_scope,
-        * is_locked = true, managed_by_template = true.
-    * assigner les permissions de base via le PermissionRegistry.
-* Utiliser un seeder / script idempotent (upsert) pour :
-    * recréer / corriger les rôles standard si besoin,
-    * rejouer la config sans dupliquer.
+# Brainstorming
+
+## Vue d'ensemble : Ce qu'il faut mettre en place
+
+### 1. Nouveau moteur d'autorisation centralisé (RBAC + scopes) avec NestJS
+
+**Architecture NestJS actuelle :**
+- ✅ **Guards** : `PermissionsGuard`, `JwtAuthGuard`, `TenantContextGuard`, `RoleModificationGuard`
+- ✅ **CASL Factory** : `CaslAbilityFactory` pour la vérification binaire des capabilities
+- ✅ **RbacService** : Service embryonnaire avec méthodes `can()`, `canAsTenant()`, `canAsPlatform()`
+- ✅ **Decorators** : `@Permissions()` pour marquer les endpoints
+- ⚠️ **Limitations actuelles** :
+  - Gating binaire uniquement (possède ou non la permission)
+  - Scopes ignorés dans CASL
+  - Pas de gating par module (plans)
+  - Logique de scope partielle dans `RbacService`
+
+**Ce qui doit être ajouté/amélioré :**
+* Introduire un **moteur d'autorisations centralisé** (évolution de `RbacService`) basé sur :
+    * Les rôles (tenant / plateforme / root)
+    * Les permissions (avec `module_key`)
+    * Les scopes (own, assigned, team, any) - **implémentation complète**
+* Respecter les deux axes :
+    * **Type de rôle** : `is_platform`, `is_root`, `role_type`
+    * **Portée (scope)** : `scope` dans `role_permissions` (own, team, assigned, any)
+* Fournir une API/middleware NestJS générique :
+    * `can(user, permissionKey, context): Promise<boolean>`
+    * `@Permissions(permissionKey1, permissionKey2, ...)` - Decorator existant (améliorer le Guard)
+    * `hasPermissionWithScope(user, permissionKey): { hasPermission, scope }`
+* **Intégration avec CASL** :
+    * CASL reste pour la vérification binaire (capability check)
+    * Le moteur RBAC gère les scopes et le gating modules
+    * Séparation claire des responsabilités
+
+### 2. Modèle multi-tenant : user dans plusieurs orgs, plusieurs rôles
+>>>>>>> Stashed changes:docs/ARCHITECTURE_RBAC.md
+
+**État actuel dans Prisma :**
+- ✅ `User` : Compte global sans `org_id` direct (déjà préparé pour multi-tenant)
+- ✅ `OrgUser` : Table de liaison user ↔ organization (multi-appartenance)
+- ✅ `UserRole` : Rôles par user + org (composite key)
+- ✅ `PlatformUserOrgAccess` : Accès plateforme aux organisations
+- ✅ Enum `OrgUserStatus` : active | invited | suspended
+- ⚠️ **Limitations actuelles** :
+  - JWT contient encore des infos d'une seule org (pas de `currentOrgId` dynamique)
+  - Pas de switch d'organisation implémenté
+  - Services utilisent encore des patterns mono-tenant
+
+**Ce qui doit être fait :**
+* **User global** (compte unique) + appartenance aux orgs via `OrgUser` :
+    * Un user peut appartenir à plusieurs organisations
+    * Champ `is_default` pour définir l'org par défaut
+* **Rôles attachés via `UserRole`** :
+    * Un user peut avoir plusieurs rôles par org
+    * Support des rôles plateforme (`org_id = NULL`)
+* **Users plateforme** :
+    * `is_platform = true`, rôles plateforme (`roles.org_id = NULL`)
+    * Accès aux orgs contrôlé via `PlatformUserOrgAccess`
+* **Garantir côté BDD** (via Prisma) :
+    * Un user tenant ne peut avoir que des rôles de ses orgs
+    * FK composites : `UserRole(user_id, org_id)` → `OrgUser(user_id, org_id)`
+* **JWT multi-org** :
+    * Stocker `currentOrgId` dans le payload JWT
+    * Créer un endpoint `POST /auth/switch-org` pour changer d'org active
+    * Régénérer le token avec les permissions de la nouvelle org
+
+### 3. Hiérarchie et structure des rôles (rank, types de rôles, rôles clés)
+
+**État actuel dans Prisma :**
+- ✅ `Role.rank` : Hiérarchie numérique (plus grand = plus puissant)
+- ✅ `Role.is_platform` : Marqueur rôle plateforme
+- ✅ `Role.is_root` : Marqueur God role
+- ✅ `Role.role_type` : Enum `RoleType` (tenant_admin, tenant_manager, tenant_staff, support_L1, support_L2, custom)
+- ✅ `Role.is_locked` : Protection contre modification/suppression
+- ✅ `Role.managed_by_template` : Gestion automatique par PermissionRegistry
+- ✅ `Role.permission_ceiling_scope` : Plafond de scope (any, team, assigned, own)
+- ⚠️ **Seeders actuels** utilisent `level` au lieu de `rank` (à migrer)
+- ⚠️ **RoleModificationGuard** existe mais pas d'anti-escalade complète
+
+**Ce qui doit être fait :**
+* **Définir une hiérarchie claire** entre les rôles via `rank` :
+    * Valeurs : SUPER_ADMIN = 0, ADMIN = 1, MANAGER = 2, STAFF = 3, etc.
+    * Plus le rank est petit, plus le rôle est puissant
+* **Respecter les règles d'anti-escalade** (via NestJS Guards) :
+    * Un user ne peut pas créer/assigner un rôle de `rank ≤` au sien
+    * Un user ne peut jamais modifier son propre rôle
+    * Seul un `is_root` peut créer/assigner un rôle root
+* **Introduire des rôles types** via enum `RoleType` :
+    * `tenant_admin`, `tenant_manager`, `tenant_staff` (tenant)
+    * `support_L1`, `support_L2` (plateforme)
+    * `custom` (créé par les orgs)
+* **Introduire des rôles clés par org** :
+    * Admin, Manager, Staff "standard" :
+        * `role_type = tenant_admin / tenant_manager / tenant_staff`
+        * `managed_by_template = true`
+        * `is_locked = true` (non modifiables / non supprimables)
+    * Ces rôles servent de socle commun et de cible principale pour la propagation auto
+* **Migrer les seeders** :
+    * Remplacer `level` par `rank`
+    * Utiliser les nouveaux champs (`role_type`, `is_locked`, `managed_by_template`)
+
+### 4. Permissions alignées avec la logique métier + PermissionRegistry
+
+**État actuel :**
+- ✅ **Seeder permissions** : `prisma/seeders/permissions.seeder.ts` (~931 lignes)
+- ✅ **Structure actuelle** : `code`, `scope`, `name`, `description` dans le seeder
+- ✅ **Schema Prisma** : `Permission` avec `module_key`, `allowed_scopes[]`, `default_scope_ceiling`
+- ✅ **Permissions groupées** : organizations, users, events, attendees, registrations, roles, invitations, badges, analytics, reports
+- ⚠️ **Limitations** :
+  - Pas de `PermissionRegistry` TypeScript centralisé
+  - `module_key` non rempli systématiquement
+  - `allowed_scopes` et `default_scope_ceiling` non utilisés
+  - `defaultScopesByRoleType` non défini
+
+**Ce qui doit être fait :**
+* **Lister les actions métier réelles** (déjà partiellement fait) :
+    * Gérer événements, gérer sessions, scanner badges, gérer partenaires, gérer staff, exporter, importer, etc.
+* **Regrouper ces actions en permissions** :
+    * Format : `resource.action` (ex : `event.read`, `event.create`, `attendee.import`, `badge.print`, `event.export`)
+    * Scopes possibles : `own`, `assigned`, `team`, `any`
+* **Créer un `PermissionRegistry` TypeScript** (source de vérité) :
+    ```typescript
+    // src/rbac/permission-registry.ts
+    export const PERMISSION_REGISTRY = {
+      'event.read': {
+        module: 'events',
+        resource: 'event',
+        action: 'read',
+        allowedScopes: ['own', 'assigned', 'team', 'any'],
+        defaultScopeCeiling: 'any',
+        defaultScopesByRoleType: {
+          tenant_admin: 'any',
+          tenant_manager: 'any',
+          tenant_staff: 'team',
+          support_L1: 'assigned',
+          custom: 'own',
+        }
+      },
+      // ... toutes les permissions
+    };
+    ```
+* **Lier chaque permission à** :
+    * Un `module_key` (events, attendees, badges, analytics, etc.)
+    * Une liste de `allowed_scopes` (scopes possibles)
+    * Des scopes par défaut par type de rôle (`defaultScopesByRoleType`)
+* **Utiliser le Registry** :
+    * Dans les seeders (générer la table `Permission` depuis le Registry)
+    * Dans `RbacService` (validation des scopes autorisés)
+    * Dans les scripts de sync/propagation
+
+### 5. Provisioning automatique des rôles et permissions par organisation
+
+**État actuel :**
+- ✅ **Seeder rôles** : `prisma/seeders/roles.seeder.ts` crée les templates système
+- ✅ **Fonction `seedOrganizationRoles(orgId)`** : Clone les rôles pour une org
+- ⚠️ **Limitations** :
+  - Hook de création d'org non automatisé
+  - Pas de script de sync idempotent
+  - Utilise `level` au lieu de `rank`
+  - Ne remplit pas les nouveaux champs RBAC
+
+**Ce qui doit être fait :**
+* **À la création d'une nouvelle org** (via `OrganizationsService`) :
+    * Hook NestJS après création : `@OnEvent('organization.created')`
+    * Créer automatiquement les rôles clés (Admin, Manager, Staff) avec :
+        * `role_type` + `rank` + `permission_ceiling_scope`
+        * `is_locked = true`, `managed_by_template = true`
+    * Assigner les permissions de base via le `PermissionRegistry`
+* **Utiliser un seeder/script idempotent** (upsert) pour :
+    * Recréer / corriger les rôles standard si besoin
+    * Rejouer la config sans dupliquer
+    * Script CLI : `npm run permissions:sync`
+* **Service NestJS dédié** :
+    ```typescript
+    // src/rbac/role-provisioning.service.ts
+    @Injectable()
+    export class RoleProvisioningService {
+      async provisionDefaultRoles(orgId: string): Promise<void>
+      async syncPermissionsForOrg(orgId: string): Promise<void>
+      async syncAllOrganizations(): Promise<void>
+    }
+    ```
 
 6. Propagation / mise à jour des permissions à grande échelle
 Objectif : ajouter / modifier des permissions sans casser les customisations ni la sécurité.
@@ -95,42 +264,396 @@ Objectif : ajouter / modifier des permissions sans casser les customisations ni 
     * met à jour les role_permissions uniquement pour les rôles managed_by_template = true (surtout les rôles clés),
     * ne touche jamais aux rôles custom (managed_by_template = false).
 
-7. Gating par plan / modules
-Objectif : intégrer la notion de plan (offre/abonnement) et limiter l’accès aux modules, même si les permissions existent.
-* Implémenter isModuleEnabledForTenant(tenantId, moduleKey) :
-    * basé sur plans, plan_modules,
-    * applique les overrides org_module_overrides (force_enabled / force_disabled).
-* Faire évoluer requirePermission pour prendre aussi moduleKey :
-    * refuser l’accès si le module est désactivé pour l’org,
-    * même si l’utilisateur a la permission.
-* Lier chaque permission à un module_key (champ dans permissions ou constante TS).
-* Fournir des endpoints back-office pour :
-    * gérer les plans,
-    * gérer les modules d’un plan,
-    * gérer les overrides par org (réservés au Super Admin plateforme).
-* Invariant :
-    * une org ne peut plus utiliser un module qui n’est pas dans son plan ni dans ses overrides, même si un rôle a la permission en BDD.
+### 7. Gating par plan / modules
 
-8. Refactor de l’UI côté front
-* Adapter l’UI pour consommer le nouveau moteur d’autorisations + gating modules :
-    * affichage conditionnel des menus, pages, boutons, actions,
-    * feedback propre en cas de 403 (erreur d’autorisation).
-* Exposer un service d’“ability” front :
-    * can(permissionKey, ctx?),
-    * canUse(moduleKey),
-    * canSee(componentKey).
-* Utiliser ce service partout au lieu de checks “isAdmin” ou “role === 'XXX'`.
+**Objectif :** Intégrer la notion de plan (offre/abonnement) et limiter l'accès aux modules, même si les permissions existent.
 
+**État actuel :**
+- ✅ **Tables Prisma** : `Plan`, `Module`, `PlanModule`, `OrgModuleOverride` (100% implémentées)
+- ✅ **Organization.plan_id** : Lien vers le plan
+- ⚠️ **Limitations** :
+  - Pas de service `ModulesService` pour vérifier l'activation
+  - `module_key` non rempli systématiquement dans les permissions
+  - Gating non intégré dans `RbacService` ou guards
 
-## 1. Objectifs
+**Ce qui doit être fait :**
 
-- Garantir un contrôle d’accès sécurisé, cohérent et extensible.
-- Supporter plusieurs organisations (tenants) avec des rôles et permissions spécifiques.
-- Permettre à un même utilisateur d’appartenir à plusieurs organisations avec des rôles différents.
-- Introduire des rôles plateforme (support, super admin) et un rôle root.
-- Lier l’accès aux fonctionnalités aux plans / modules souscrits par chaque organisation.
-- Permettre la propagation contrôlée des nouvelles permissions sans casser les customisations locales.
+* **Créer `ModulesService`** :
+    ```typescript
+    // src/modules/plans/modules.service.ts
+    @Injectable()
+    export class ModulesService {
+      async isModuleEnabledForTenant(
+        tenantId: string, 
+        moduleKey: string
+      ): Promise<boolean> {
+        // 1. Lire Organization.plan_id
+        // 2. Vérifier PlanModule (modules inclus par défaut)
+        // 3. Appliquer OrgModuleOverride (prioritaire)
+        // 4. Retourner boolean
+      }
+    }
+    ```
 
+* **Intégrer dans `RbacService.can()`** :
+    ```typescript
+    async can(user, permissionKey, context): Promise<boolean> {
+      // ... vérifications existantes ...
+      
+      // Gating par module
+      const moduleKey = this.getModuleKeyForPermission(permissionKey);
+      if (moduleKey) {
+        const isEnabled = await this.modulesService.isModuleEnabledForTenant(
+          context.orgId, 
+          moduleKey
+        );
+        if (!isEnabled) return false;
+      }
+      
+      // ... suite des vérifications ...
+    }
+    ```
+
+* **Créer un decorator avancé** :
+    ```typescript
+    // src/common/decorators/require-permission.decorator.ts
+    export function RequirePermission(
+      permissionKey: string, 
+      moduleKey?: string
+    ) {
+      return applyDecorators(
+        SetMetadata('permission', permissionKey),
+        SetMetadata('module', moduleKey),
+        UseGuards(PermissionsGuard)
+      );
+    }
+    ```
+
+* **Endpoints back-office** (NestJS Controllers) :
+    ```typescript
+    // src/modules/plans/plans.controller.ts
+    @Controller('admin/plans')
+    @UseGuards(JwtAuthGuard, PermissionsGuard)
+    export class PlansController {
+      @Get() // GET /admin/plans
+      @Permissions('plans.read')
+      async findAll()
+      
+      @Post() // POST /admin/plans
+      @Permissions('plans.create')
+      async create()
+      
+      @Get(':id/modules') // GET /admin/plans/:id/modules
+      @Permissions('plans.read')
+      async getModules()
+      
+      @Post(':id/modules/:key') // POST /admin/plans/:id/modules/:key
+      @Permissions('plans.manage_modules')
+      async enableModule()
+      
+      @Delete(':id/modules/:key') // DELETE /admin/plans/:id/modules/:key
+      @Permissions('plans.manage_modules')
+      async disableModule()
+    }
+    
+    // src/modules/organizations/org-modules.controller.ts
+    @Controller('admin/organizations/:orgId/modules')
+    export class OrgModulesController {
+      @Put(':key') // PUT /admin/orgs/:orgId/modules/:key
+      @Permissions('organizations.manage_modules')
+      async overrideModule() // Force enable/disable
+    }
+    ```
+
+* **Seeder les plans de base** :
+    ```typescript
+    // prisma/seeders/plans.seeder.ts
+    const plans = [
+      { 
+        code: 'FREE', 
+        modules: ['events', 'attendees'] 
+      },
+      { 
+        code: 'PRO', 
+        modules: ['events', 'attendees', 'badges', 'reports'] 
+      },
+      { 
+        code: 'ENTERPRISE', 
+        modules: 'all' 
+      },
+    ];
+    ```
+
+* **Invariant** :
+    * Une org ne peut plus utiliser un module qui n'est pas dans son plan ni dans ses overrides, même si un rôle a la permission en BDD
+
+### 8. Refactor de l'UI côté front
+
+**État actuel du frontend :**
+- 📁 **Stack** : React/Vue/Angular (à confirmer selon `/attendee-ems-front`)
+- ⚠️ **Limitations probables** :
+  - Checks en dur type `if (user.role === 'admin')`
+  - Pas de service d'ability côté frontend
+  - Gestion 403 basique ou absente
+
+**Ce qui doit être fait :**
+
+* **Adapter l'UI** pour consommer le nouveau moteur d'autorisations + gating modules :
+    * Affichage conditionnel des menus, pages, boutons, actions
+    * Feedback propre en cas de 403 (erreur d'autorisation)
+
+* **Créer un endpoint backend** :
+    ```typescript
+    // src/modules/auth/auth.controller.ts
+    @Get('me/permissions')
+    @UseGuards(JwtAuthGuard)
+    async getMyPermissions(@CurrentUser() user) {
+      return {
+        permissions: user.permissions, // avec scopes
+        modules: await this.modulesService.getEnabledModulesForOrg(user.orgId),
+        orgId: user.currentOrgId,
+        isRoot: user.isRoot,
+        isPlatform: user.isPlatform,
+      };
+    }
+    
+    @Get('me/organizations')
+    @UseGuards(JwtAuthGuard)
+    async getMyOrganizations(@CurrentUser() user) {
+      // Retourne la liste des orgs de l'utilisateur
+    }
+    ```
+
+* **Exposer un service "ability" côté front** :
+    ```typescript
+    // frontend/src/services/ability.service.ts
+    class AbilityService {
+      private permissions: string[] = [];
+      private modules: string[] = [];
+      
+      can(permissionKey: string, scope?: string): boolean {
+        // Vérifie si user a la permission (avec ou sans scope)
+      }
+      
+      canUse(moduleKey: string): boolean {
+        return this.modules.includes(moduleKey);
+      }
+      
+      canSee(componentKey: string): boolean {
+        // Logique custom pour composants UI
+      }
+      
+      async refresh(): Promise<void> {
+        // Appelle GET /api/auth/me/permissions
+      }
+    }
+    ```
+
+* **Utiliser ce service partout** au lieu de checks en dur :
+    * ❌ `if (user.role === 'admin')`
+    * ❌ `if (user.isAdmin)`
+    * ✅ `if (ability.can('event.create'))`
+    * ✅ `if (ability.canUse('badges'))`
+
+* **Gérer les erreurs 403** :
+    ```typescript
+    // HTTP Interceptor
+    axios.interceptors.response.use(
+      response => response,
+      error => {
+        if (error.response.status === 403) {
+          // Afficher message : "Permission refusée : {permissionKey}"
+          // Optionnel : refresh permissions ou redirect
+        }
+        return Promise.reject(error);
+      }
+    );
+    ```
+
+---
+
+## Objectifs
+
+- Garantir un contrôle d'accès sécurisé, cohérent et extensible avec **NestJS Guards & Decorators**
+- Supporter plusieurs organisations (tenants) avec des rôles et permissions spécifiques
+- Permettre à un même utilisateur d'appartenir à plusieurs organisations avec des rôles différents
+- Introduire des rôles plateforme (support, super admin) et un rôle root
+- Lier l'accès aux fonctionnalités aux plans / modules souscrits par chaque organisation
+- Permettre la propagation contrôlée des nouvelles permissions sans casser les customisations locales
+- **Intégrer harmonieusement avec l'écosystème NestJS** (Dependency Injection, Guards, Interceptors, etc.)
+
+---
+
+## Architecture NestJS
+
+### Vue d'ensemble des composants
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         HTTP Request                             │
+└────────────────────────────────┬────────────────────────────────┘
+                                 │
+                    ┌────────────▼────────────┐
+                    │   JwtAuthGuard          │
+                    │   (Authentication)      │
+                    └────────────┬────────────┘
+                                 │
+                    ┌────────────▼────────────┐
+                    │ TenantContextGuard      │
+                    │ (Org context)           │
+                    └────────────┬────────────┘
+                                 │
+                    ┌────────────▼────────────┐
+                    │  PermissionsGuard       │
+                    │  (@Permissions)         │
+                    └────────────┬────────────┘
+                                 │
+                    ┌────────────▼────────────┐
+                    │ AuthorizationService    │
+                    │   .can(user, perm, ctx) │
+                    └────────────┬────────────┘
+                                 │
+                ┌────────────────┴────────────────┐
+                │                                 │
+    ┌───────────▼──────────┐         ┌───────────▼──────────┐
+    │  CaslAbilityFactory  │         │   ModulesService     │
+    │  (Binary gating)     │         │   (Feature gating)   │
+    └──────────────────────┘         └──────────────────────┘
+                │                                 │
+                └────────────────┬────────────────┘
+                                 │
+                    ┌────────────▼────────────┐
+                    │      Controller         │
+                    │      (Business Logic)   │
+                    └─────────────────────────┘
+```
+
+### Composants existants
+
+#### 1. Guards (src/common/guards/)
+
+**`JwtAuthGuard`**
+- Authentifie le user via JWT
+- Extrait le payload et l'attache à `request.user`
+- Premier guard dans la chaîne
+
+**`TenantContextGuard`**
+- Vérifie que le user a accès à l'org courante
+- Charge le contexte tenant
+
+**`PermissionsGuard`**
+- Lit les metadata `@Permissions()`
+- Délègue la vérification à `CaslAbilityFactory` (actuellement - gating binaire uniquement)
+- **À améliorer** : Doit utiliser `AuthorizationService.can()` pour scopes + gating module
+
+**`RoleModificationGuard`**
+- Empêche les modifications de rôles non autorisées
+- **À compléter** avec anti-escalade complète
+
+#### 2. Services RBAC (src/rbac/)
+
+**`CaslAbilityFactory`**
+- Crée des abilities CASL pour vérification binaire (capability check)
+- **Limite actuelle** : Ignore les scopes, gating binaire uniquement
+- **Rôle futur** : Rester pour checks binaires, les scopes gérés par `AuthorizationService`
+
+**`RbacService`** (embryonnaire)
+- Méthodes `can()`, `canAsTenant()`, `canAsPlatform()`
+- **À transformer** en `AuthorizationService` complet
+
+#### 3. Decorators (src/common/decorators/)
+
+**`@Permissions(...permissionKeys)`**
+- Marque les endpoints avec permissions requises
+- Lu par `PermissionsGuard`
+
+**`@CurrentUser()`** (probablement existant)
+- Extrait `request.user` (JWT payload)
+
+**À améliorer : `PermissionsGuard`**
+- Adapter pour utiliser `AuthorizationService` au lieu de juste CASL
+- Intégrer gating par module et scopes
+
+#### 4. Seeders Prisma (prisma/seeders/)
+
+**`permissions.seeder.ts`** (~931 lignes)
+- Seede toutes les permissions
+- Format: `{ code, scope, name, description }`
+- **À migrer** vers utilisation du `PermissionRegistry`
+
+**`roles.seeder.ts`** (~256 lignes)
+- Crée les rôles système (templates)
+- Fonction `seedOrganizationRoles(orgId)` pour cloner les rôles
+- **À migrer** : `level` → `rank`, ajouter nouveaux champs
+
+### Flow d'autorisation complet (cible)
+
+1. **Request arrives** → `JwtAuthGuard` authentifie
+2. **User authenticated** → `TenantContextGuard` vérifie org context
+3. **Org verified** → `PermissionsGuard` lit `@Permissions('event.create')`
+4. **Permission required** → `AuthorizationService.can()` appelé avec :
+   ```typescript
+   {
+     permissionKey: 'event.create',
+     moduleKey: 'events',
+     actorOrgId: user.currentOrgId,
+     actorUserId: user.sub,
+     // ... autres contextes
+   }
+   ```
+5. **Authorization checks** :
+   - ✅ User is root? → Allow
+   - ✅ Module enabled for org? → Check `ModulesService`
+   - ✅ User has permission? → Query `UserRole → RolePermission`
+   - ✅ Scope covers resource? → `scopeCovers(scope, context)`
+6. **Access granted/denied** → Continue to controller or throw 403
+
+### Modules NestJS impliqués
+
+```typescript
+// src/app.module.ts
+@Module({
+  imports: [
+    // ... autres modules
+    RbacModule,
+    AuthModule,
+    OrganizationsModule,
+    PlansModule,  // À créer
+  ],
+})
+export class AppModule {}
+
+// src/rbac/rbac.module.ts
+@Module({
+  providers: [
+    AuthorizationService,
+    CaslAbilityFactory,
+    RoleProvisioningService,
+    PermissionPropagationService,
+  ],
+  exports: [
+    AuthorizationService,
+    CaslAbilityFactory,
+  ],
+})
+export class RbacModule {}
+
+// src/modules/plans/plans.module.ts (nouveau)
+@Module({
+  providers: [
+    PlansService,
+    ModulesService,
+  ],
+  controllers: [
+    PlansController,
+    OrgModulesController,
+  ],
+  exports: [
+    ModulesService,
+  ],
+})
+export class PlansModule {}
+```
 
 ---
 
