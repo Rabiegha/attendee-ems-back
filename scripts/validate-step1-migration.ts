@@ -290,7 +290,8 @@ async function validateInvariants() {
     WHERE r.org_id IS NULL;
   `;
 
-  if (invalidTenantRoles[0].count === '0') {
+  const tenantRoleCount = parseInt(invalidTenantRoles[0].count as string);
+  if (tenantRoleCount === 0) {
     success('Aucun rôle platform dans tenant_user_roles');
     results.push({
       name: 'Invariant tenant_user_roles',
@@ -298,11 +299,11 @@ async function validateInvariants() {
       message: 'Aucun rôle platform',
     });
   } else {
-    error(`${invalidTenantRoles[0].count} rôle(s) platform invalides dans tenant_user_roles`);
+    error(`${tenantRoleCount} rôle(s) platform invalides dans tenant_user_roles`);
     results.push({
       name: 'Invariant tenant_user_roles',
       passed: false,
-      message: `${invalidTenantRoles[0].count} rôles invalides`,
+      message: `${tenantRoleCount} rôles invalides`,
     });
   }
 
@@ -314,7 +315,8 @@ async function validateInvariants() {
     WHERE r.org_id IS NOT NULL;
   `;
 
-  if (invalidPlatformRoles[0].count === '0') {
+  const platformRoleCount = parseInt(invalidPlatformRoles[0].count as string);
+  if (platformRoleCount === 0) {
     success('Aucun rôle tenant dans platform_user_roles');
     results.push({
       name: 'Invariant platform_user_roles',
@@ -322,11 +324,11 @@ async function validateInvariants() {
       message: 'Aucun rôle tenant',
     });
   } else {
-    error(`${invalidPlatformRoles[0].count} rôle(s) tenant invalides dans platform_user_roles`);
+    error(`${platformRoleCount} rôle(s) tenant invalides dans platform_user_roles`);
     results.push({
       name: 'Invariant platform_user_roles',
       passed: false,
-      message: `${invalidPlatformRoles[0].count} rôles invalides`,
+      message: `${platformRoleCount} rôles invalides`,
     });
   }
 
@@ -340,7 +342,8 @@ async function validateInvariants() {
     );
   `;
 
-  if (rolesWithoutMembership[0].count === '0') {
+  const membershipCount = parseInt(rolesWithoutMembership[0].count as string);
+  if (membershipCount === 0) {
     success('Tous les tenant_user_roles ont un membership correspondant');
     results.push({
       name: 'Invariant membership requis',
@@ -348,11 +351,11 @@ async function validateInvariants() {
       message: 'Tous les rôles ont un membership',
     });
   } else {
-    error(`${rolesWithoutMembership[0].count} rôle(s) sans membership`);
+    error(`${membershipCount} rôle(s) sans membership`);
     results.push({
       name: 'Invariant membership requis',
       passed: false,
-      message: `${rolesWithoutMembership[0].count} rôles sans membership`,
+      message: `${membershipCount} rôles sans membership`,
     });
   }
 }

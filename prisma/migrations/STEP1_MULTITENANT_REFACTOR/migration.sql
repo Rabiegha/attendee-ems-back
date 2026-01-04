@@ -276,6 +276,8 @@ FROM _migration_backup_users u
 ON CONFLICT ("user_id", "org_id") DO NOTHING;
 
 -- 2. Créer les assignations tenant_user_roles à partir de l'ancienne structure
+-- IMPORTANT: Ne migrer que les rôles TENANT (org_id IS NOT NULL)
+-- Les rôles platform seront assignés manuellement après la migration
 INSERT INTO "tenant_user_roles" ("user_id", "org_id", "role_id", "assigned_at", "created_at", "updated_at")
 SELECT 
     u.id,
@@ -285,7 +287,9 @@ SELECT
     u.created_at,
     u.updated_at
 FROM _migration_backup_users u
+INNER JOIN roles r ON u.role_id = r.id
 WHERE u.role_id IS NOT NULL
+  AND r.org_id IS NOT NULL  -- Seulement les rôles tenant
 ON CONFLICT ("user_id", "org_id") DO NOTHING;
 
 -- ================================================================

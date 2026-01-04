@@ -51,7 +51,10 @@
     "docker:shell": "docker compose -f docker-compose.dev.yml exec api bash",
     "docker:shell:db": "docker compose -f docker-compose.dev.yml exec db psql -U postgres -d ems",
     "docker:install": "docker compose -f docker-compose.dev.yml exec api npm i",
-    "docker:restart": "docker compose -f docker-compose.dev.yml restart api"
+    "docker:restart": "docker compose -f docker-compose.dev.yml restart api",
+    "docker:seed:step1": "docker compose -f docker-compose.dev.yml exec api npm run db:seed:step1",
+    "docker:validate:step1": "docker compose -f docker-compose.dev.yml exec api npm run db:validate:step1",
+    "step1:setup": "npm run docker:up && sleep 5 && npm run docker:generate && npm run docker:migrate:deploy && npm run docker:seed:step1 && npm run docker:validate:step1"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.922.0",

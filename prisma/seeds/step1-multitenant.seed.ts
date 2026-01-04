@@ -116,40 +116,53 @@ async function seedPlatformRoles() {
   console.log('🔄 Seeding platform roles...');
   
   for (const roleData of PLATFORM_ROLES) {
-    const role = await prisma.role.upsert({
+    // Pour les rôles platform, on ne peut pas utiliser org_id_code (car org_id = null)
+    // On cherche d'abord le rôle par code et is_platform
+    const existingRole = await prisma.role.findFirst({
       where: {
-        org_id_code: {
-          org_id: null,
-          code: roleData.code,
-        },
-      },
-      update: {
-        name: roleData.name,
-        description: roleData.description,
-        level: roleData.level,
-        rank: roleData.rank,
-        role_type: roleData.role_type,
-        is_platform: roleData.is_platform,
-        is_root: roleData.is_root,
-        is_system_role: roleData.is_system_role,
-        is_locked: roleData.is_locked,
-        managed_by_template: roleData.managed_by_template,
-      },
-      create: {
-        org_id: null,
         code: roleData.code,
-        name: roleData.name,
-        description: roleData.description,
-        level: roleData.level,
-        rank: roleData.rank,
-        role_type: roleData.role_type,
-        is_platform: roleData.is_platform,
-        is_root: roleData.is_root,
-        is_system_role: roleData.is_system_role,
-        is_locked: roleData.is_locked,
-        managed_by_template: roleData.managed_by_template,
+        org_id: null,
+        is_platform: true,
       },
     });
+
+    let role;
+    if (existingRole) {
+      // Update
+      role = await prisma.role.update({
+        where: { id: existingRole.id },
+        data: {
+          name: roleData.name,
+          description: roleData.description,
+          level: roleData.level,
+          rank: roleData.rank,
+          role_type: roleData.role_type,
+          is_platform: roleData.is_platform,
+          is_root: roleData.is_root,
+          is_system_role: roleData.is_system_role,
+          is_locked: roleData.is_locked,
+          managed_by_template: roleData.managed_by_template,
+        },
+      });
+    } else {
+      // Create
+      role = await prisma.role.create({
+        data: {
+          org_id: null,
+          code: roleData.code,
+          name: roleData.name,
+          description: roleData.description,
+          level: roleData.level,
+          rank: roleData.rank,
+          role_type: roleData.role_type,
+          is_platform: roleData.is_platform,
+          is_root: roleData.is_root,
+          is_system_role: roleData.is_system_role,
+          is_locked: roleData.is_locked,
+          managed_by_template: roleData.managed_by_template,
+        },
+      });
+    }
     
     console.log(`  ✅ Platform role: ${role.code} (${role.id})`);
   }
