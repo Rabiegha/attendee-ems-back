@@ -15,38 +15,6 @@ Ce document décrit l'architecture du système d'autorisation de la plateforme E
 
 ## Table des matières
 
-<<<<<<< Updated upstream:docs/rbac/ARCHITECTURE_RBAC.md
-# Brainstorming
-
-Ce qu'il faut mettre en place :
-
-1. Nouveau moteur d'autorisation centralisé (RBAC + scopes)
-* Introduire un moteur d'autorisations unique et centralisé basé sur :
-    * les rôles (tenant / plateforme / root),
-    * les permissions,
-    * les scopes (own, team, org, any).
-* Respecter les deux axes :
-    * type de rôle : is_platform, is_root, role_type,
-    * portée : scope_limit (own, team, org, any).
-* Architecture NestJS avec Guards séparés :
-    * `RbacService` : Service central avec méthode `can(user, permissionKey, context)`
-    * `ModulesService` : Service de gating modules avec `isModuleEnabledForTenant(tenantId, moduleKey)`
-    * Pipeline Guards : JwtAuthGuard → TenantContextGuard → ModuleGatingGuard → RequirePermissionGuard
-    * Décorateur `@RequirePermission(key, options?)` pour les routes (avec scope, resourceIdParam, checkOwnership)
-    * Décorateur `@RequireModule(moduleKey)` optionnel pour gating explicite
-    * Décorateur `@RbacContext(builder)` pour contextes custom complexes
- 
-2. Modèle multi-tenant : user dans plusieurs orgs, plusieurs rôles
-* User global (compte unique) + appartenance aux orgs via une table org_users :
-    * un user peut appartenir à plusieurs organisations.
-* Rôles attachés via user_roles :
-    * un user peut avoir plusieurs rôles par org.
-* Users plateforme :
-    * is_platform = true, rôles plateforme (roles.org_id = NULL),
-    * accès aux orgs contrôlé via platform_user_org_access.
-* Garantir côté BDD :
-    * un user tenant ne peut avoir que des rôles de ses orgs (FK composites user_id + org_id vers org_users et roles).
-=======
 1. [Brainstorming & Vision](#brainstorming)
 2. [Objectifs](#objectifs)
 3. [Modèle conceptuel](#modèle-conceptuel)
@@ -95,7 +63,6 @@ Ce qu'il faut mettre en place :
     * Séparation claire des responsabilités
 
 ### 2. Modèle multi-tenant : user dans plusieurs orgs, plusieurs rôles
->>>>>>> Stashed changes:docs/ARCHITECTURE_RBAC.md
 
 **État actuel dans Prisma :**
 - ✅ `User` : Compte global sans `org_id` direct (déjà préparé pour multi-tenant)
