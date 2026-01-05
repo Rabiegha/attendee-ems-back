@@ -1,8 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { BadRequestException } from '@nestjs/common';
-import { UsersService } from '../src/modules/users/users.service';
-import { AuthService } from '../src/auth/auth.service';
-import { PrismaService } from '../src/infra/db/prisma.service';
+import { UsersService } from './users.service';
+import { AuthService } from '../../auth/auth.service';
+import { PrismaService } from '../../infra/db/prisma.service';
 
 describe('UsersService', () => {
   let service: UsersService;

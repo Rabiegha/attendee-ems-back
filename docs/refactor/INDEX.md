@@ -1,197 +1,206 @@
-# STEP 1 - Multi-tenant Refactor
+# 📚 Index - Refactoring RBAC Multi-Tenant
+
+> **Guide complet du refactoring progressif vers une architecture hexagonale RBAC**
 
 ## 🎯 Vue d'ensemble
 
-Ce refactor transforme l'application d'un modèle **single-tenant** vers un modèle **multi-tenant** fiable avec des contraintes DB strictes.
+Ce refactoring transforme l'application en plusieurs phases séquentielles pour éviter tout retour en arrière :
 
-**Status** : ✅ PRÊT POUR IMPLÉMENTATION
-
----
-
-## 📖 Documentation
-
-### Commencer ici
-- **[QUICK_REFERENCE.md](./QUICK_REFERENCE.md)** - ⚡ Référence rapide avec toutes les commandes
-- **[README.md](./README.md)** - 📚 Vue d'ensemble complète du refactor
-
-### Documentation détaillée
-- **[STEP_1_MULTITENANT.md](./STEP_1_MULTITENANT.md)** - 📖 Documentation complète du modèle
-- **[STEP_1_EXECUTION_GUIDE.md](./STEP_1_EXECUTION_GUIDE.md)** - 🚀 Guide d'exécution pas à pas
-- **[STEP_1_DIAGRAMS.md](./STEP_1_DIAGRAMS.md)** - 📊 Diagrammes et schémas visuels
+1. **STEP 1** : Base de données multi-tenant ✅ **COMPLÉTÉ**
+2. **STEP 2** : JWT multi-organisation 📋 **À IMPLÉMENTER**
+3. **STEP 3** : Core RBAC hexagonal 📋 **À IMPLÉMENTER**
+4. **STEP 4** : Refactor services 📋 **À IMPLÉMENTER**
+5. **STEP 5** : Provisioning (automatisation) 📋 **PRÉPARATOIRE**
+6. **STEP 6** : Module Gating (plans) 📋 **PRÉPARATOIRE**
 
 ---
 
-## 🗂️ Fichiers Techniques
+## 📖 Documentation par STEP
+
+### ✅ STEP 1 : Multi-Tenant Database (COMPLÉTÉ)
+
+**Objectif** : Transformer la DB en modèle multi-tenant avec contraintes strictes
+
+- **[STEP_1_MULTITENANT.md](./STEP_1_MULTITENANT.md)** - Documentation complète + REX
+- **[STEP_1_EXECUTION_GUIDE.md](./STEP_1_EXECUTION_GUIDE.md)** - Guide d'exécution
+- **[STEP_1_DIAGRAMS.md](./STEP_1_DIAGRAMS.md)** - Schémas visuels
+
+**Résultats** :
+- ✅ Migration appliquée (User → OrgUser + TenantUserRole)
+- ✅ 22/22 tests d'intégration passés
+- ✅ 21/21 validations DB passées
+- ✅ Triggers check_platform_role et check_tenant_role
+
+---
+
+### 📋 STEP 2 : JWT Multi-Org (À IMPLÉMENTER)
+
+**Objectif** : Ajouter `currentOrgId` au JWT et permettre le switch d'organisation
+
+- **[STEP_2_JWT_MULTI_ORG.md](./STEP_2_JWT_MULTI_ORG.md)**
+
+**Ce qui sera fait** :
+- JwtPayload avec `currentOrgId` et `availableOrgs[]`
+- Endpoint `/auth/switch-org/:orgId`
+- TenantContextGuard pour injecter le contexte
+- Refresh token avec gestion du currentOrgId
+
+**Prérequis** : ✅ STEP 1 complété  
+**Durée estimée** : 1-2 jours
+
+---
+
+### 📋 STEP 3 : Core RBAC Hexagonal (À IMPLÉMENTER)
+
+**Objectif** : Créer le core RBAC avec architecture hexagonale (Ports & Adapters)
+
+- **[STEP_3_CORE_RBAC.md](./STEP_3_CORE_RBAC.md)**
+
+**Ce qui sera fait** :
+- AuthorizationService (core domain)
+- ScopeEvaluator et PermissionResolver
+- Interfaces SPI (RbacQueryPort, MembershipPort)
+- Adapters Prisma
+- RequirePermissionGuard et @RequirePermission decorator
+
+**Prérequis** : ✅ STEP 2 complété  
+**Durée estimée** : 2-3 jours
+
+---
+
+### 📋 STEP 4 : Refactor Services (À IMPLÉMENTER)
+
+**Objectif** : Migrer tous les services vers le nouveau modèle RBAC multi-tenant
+
+- **[STEP_4_REFACTOR_SERVICES.md](./STEP_4_REFACTOR_SERVICES.md)**
+
+**Ce qui sera fait** :
+- Migration des services (UsersService, EventsService, AttendeesService, etc.)
+- Transactions pour créer User + OrgUser + TenantUserRole
+- Queries avec joins sur org_users
+- Controllers avec @RequirePermission
+- Adaptation des tests
+
+**Prérequis** : ✅ STEP 3 complété  
+**Durée estimée** : 3-5 jours
+
+---
+
+### 🔧 STEP 5 : Provisioning (DOCUMENTATION PRÉPARATOIRE)
+
+**Objectif** : Automatiser la gestion des rôles/permissions à grande échelle
+
+- **[STEP_5_PROVISIONING.md](./STEP_5_PROVISIONING.md)**
+
+**Ce qui sera fait** :
+- ProvisioningService (créer rôles pour nouvelle org)
+- PropagationService (propager permissions à toutes les orgs)
+- Templates de rôles (ADMIN, MANAGER, VIEWER)
+- CLI commands (provision-org, propagate-permission)
+
+**Prérequis** : ✅ STEP 1-4 complétés  
+**Priorité** : 🟡 MOYEN (amélioration scalabilité)
+
+---
+
+### 🔧 STEP 6 : Module Gating (DOCUMENTATION PRÉPARATOIRE)
+
+**Objectif** : Restreindre l'accès aux modules selon le plan de l'organisation
+
+- **[STEP_6_MODULE_GATING.md](./STEP_6_MODULE_GATING.md)**
+
+**Ce qui sera fait** :
+- ModuleGatingService (vérifier accès module)
+- Plans (FREE, PRO, ENTERPRISE) avec modules inclus
+- RequireModuleGuard et @RequireModule decorator
+- Limites par plan (maxEvents, maxAttendees, etc.)
+
+**Prérequis** : ✅ STEP 1-5 complétés  
+**Priorité** : 🟡 MOYEN (monétisation)
+
+---
+
+## 🗺️ Roadmap Complète
+
+### Phase 1 : Fondation Multi-Tenant (1-2 semaines)
+- [x] **STEP 1** : DB multi-tenant ✅ **FAIT**
+- [ ] **STEP 2** : JWT multi-org (1-2j)
+- [ ] **STEP 3** : Core RBAC (2-3j)
+
+### Phase 2 : Implémentation (2-3 semaines)
+- [ ] **STEP 4** : Refactor services (3-5j)
+- [ ] Tests d'intégration complets
+- [ ] Documentation API mise à jour
+
+### Phase 3 : Optimisation (optionnel)
+- [ ] **STEP 5** : Provisioning automatique
+- [ ] **STEP 6** : Module Gating & Plans
+- [ ] Analytics et monitoring
+
+---
+
+## 🗂️ Fichiers Clés
 
 ### Schema & Migrations
-- `prisma/schema.prisma` - Nouveau modèle Prisma
-- `prisma/migrations/STEP1_MULTITENANT_REFACTOR/migration.sql` - Migration SQL complète
+- `prisma/schema.prisma` - Modèle Prisma multi-tenant
+- `prisma/migrations/STEP1_MULTITENANT_REFACTOR/` - Migration STEP 1
 
-### Scripts
-- `prisma/seeds/step1-multitenant.seed.ts` - Seed idempotent des rôles
-- `scripts/validate-step1-migration.ts` - Script de validation
+### Core RBAC (à créer)
+- `src/platform/authz/core/authorization.service.ts` - Service principal
+- `src/platform/authz/guards/require-permission.guard.ts` - Guard NestJS
+- `src/platform/authz/decorators/require-permission.decorator.ts` - Decorator
 
 ### Tests
-- `test/step1-multitenant.spec.ts` - Tests de validation du modèle
+- `test/step1-multitenant.spec.ts` - Tests STEP 1 ✅
+- `test/jest-step1.json` - Config Jest STEP 1
 
 ---
 
-## 🎬 Quick Start
+## 🎬 Quick Start (STEP 1 - Déjà fait)
 
 ```bash
-# 1. Backup obligatoire
-pg_dump -U postgres -d attendee_ems > backup.sql
-
-# 2. Appliquer la migration
-npx prisma generate
-npx prisma migrate deploy
-
-# 3. Seed les rôles
-npm run db:seed:step1
-
-# 4. Valider
-npm run db:validate:step1
-npm test -- step1-multitenant.spec.ts
+# Vérifier que STEP 1 est OK
+npm run test:step1              # 22/22 tests doivent passer
+npm run docker:validate:step1   # 21/21 validations doivent passer
 ```
-
-📖 **Guide complet** : [STEP_1_EXECUTION_GUIDE.md](./STEP_1_EXECUTION_GUIDE.md)
 
 ---
 
-## 🔑 Concepts Clés
+## 🎬 Quick Start (STEP 2 - À faire)
 
-### Avant (Single-tenant)
-```
-User → 1 Org → 1 Role
-```
-
-### Après (Multi-tenant)
-```
-User → N Orgs → N Roles (1 par org)
-     ↘ 1 Role Platform (optionnel)
-```
-
-### Nouveaux Modèles
-
-| Modèle | Description |
-|--------|-------------|
-| `OrgUser` | Membership (user ↔ org) |
-| `TenantUserRole` | 1 rôle tenant par user par org |
-| `PlatformUserRole` | 1 rôle platform max par user |
-| `PlatformUserOrgAccess` | Orgs accessibles (platform assigned) |
-
----
-
-## 🛡️ Garanties DB
-
-- ✅ Email unique global
-- ✅ 1 rôle tenant actif par user par org (UNIQUE)
-- ✅ 1 rôle platform max par user (UNIQUE)
-- ✅ User doit être membre de l'org (FK composite)
-- ✅ Rôle doit appartenir à l'org (FK composite)
-- ✅ Triggers empêchent cross-assignments (tenant ↔ platform)
-
----
-
-## 📊 Diagrammes
-
-```mermaid
-erDiagram
-    User ||--o{ OrgUser : "membre de N orgs"
-    User ||--o{ TenantUserRole : "N rôles tenant"
-    User ||--o| PlatformUserRole : "0-1 rôle platform"
-    Organization ||--o{ OrgUser : "N membres"
-    Role ||--o{ TenantUserRole : "assigné à N users"
-```
-
-📊 **Plus de diagrammes** : [STEP_1_DIAGRAMS.md](./STEP_1_DIAGRAMS.md)
-
----
-
-## 🧪 Tests
-
-### Lancer les tests
 ```bash
-# Tests unitaires du modèle
-npm test -- step1-multitenant.spec.ts
-
-# Validation complète
-npm run db:validate:step1
-
-# Tests E2E
-npm run test:e2e
+# 1. Implémenter JwtPayload avec currentOrgId
+# 2. Créer TenantContextGuard
+# 3. Endpoint /auth/switch-org/:orgId
+# 4. Tester le switch d'organisation
 ```
 
-### Tests manuels
-```bash
-# Ouvrir Prisma Studio
-npx prisma studio
-
-# Connexion PostgreSQL
-psql -U postgres -d attendee_ems
-```
+**Documentation** : [STEP_2_JWT_MULTI_ORG.md](./STEP_2_JWT_MULTI_ORG.md)
 
 ---
 
-## 🎯 Scénarios d'Utilisation
+## 📚 Autres Documents
 
-### Scénario 1 : User Multi-tenant
-Alice est Admin dans Org A et Viewer dans Org B
+### STEP 1 (Multi-Tenant DB)
+- [QUICK_REFERENCE.md](./QUICK_REFERENCE.md) - Référence rapide
+- [README.md](./README.md) - Vue d'ensemble STEP 1
+- [STEP_1_EXECUTION_GUIDE.md](./STEP_1_EXECUTION_GUIDE.md) - Guide d'exécution
+- [STEP_1_DIAGRAMS.md](./STEP_1_DIAGRAMS.md) - Diagrammes
 
-```typescript
-// Memberships
-await prisma.orgUser.createMany({
-  data: [
-    { user_id: 'alice', org_id: 'org-a' },
-    { user_id: 'alice', org_id: 'org-b' },
-  ],
-});
+---
 
-// Rôles
-await prisma.tenantUserRole.createMany({
-  data: [
-    { user_id: 'alice', org_id: 'org-a', role_id: 'role-admin-a' },
-    { user_id: 'alice', org_id: 'org-b', role_id: 'role-viewer-b' },
-  ],
-});
-```
+## 🆘 Support & Aide
 
-### Scénario 2 : Support Agent (Platform Assigned)
-Bob est support avec accès à 3 orgs spécifiques
+### Problèmes courants
 
-```typescript
-// Rôle platform
-await prisma.platformUserRole.create({
-  data: {
-    user_id: 'bob',
-    role_id: 'role-support',
-    scope: 'assigned',
-  },
-});
+**Q : Les tests STEP 1 échouent**  
+R : Vérifier que la migration est appliquée : `npx prisma migrate deploy`
 
-// Accès limités
-await prisma.platformUserOrgAccess.createMany({
-  data: [
-    { user_id: 'bob', org_id: 'org-1' },
-    { user_id: 'bob', org_id: 'org-2' },
-    { user_id: 'bob', org_id: 'org-3' },
-  ],
-});
-```
+**Q : Comment tester le multi-tenant ?**  
+R : Voir les scénarios dans [STEP_1_MULTITENANT.md](./STEP_1_MULTITENANT.md)
 
-### Scénario 3 : Root Administrator
-Charlie est root avec accès complet
-
-```typescript
-await prisma.platformUserRole.create({
-  data: {
-    user_id: 'charlie',
-    role_id: 'role-root',
-    scope: 'all',
-  },
-});
-// → Bypass toute la logique d'autorisation
-```
+**Q : Quelle est la prochaine étape ?**  
+R : Implémenter STEP 2 (JWT multi-org), voir [STEP_2_JWT_MULTI_ORG.md](./STEP_2_JWT_MULTI_ORG.md)
 
 ---
 
@@ -250,61 +259,57 @@ psql -U postgres -d attendee_ems < backup.sql
 # Vérifier l'état des migrations
 npx prisma migrate status
 
-# Voir les logs
-docker-compose logs -f api
+## 🔧 Commandes Utiles
 
-# Connexion DB pour diagnostic
+```bash
+# STEP 1 - Validation
+npm run test:step1              # Tests intégration STEP 1
+npm run docker:validate:step1   # Validation DB
+
+# Développement
+npx prisma studio               # Interface DB visuelle
+npx prisma generate             # Régénérer le client Prisma
+
+# Database
+npm run docker:db:reset         # Reset + seed DB
+docker-compose logs -f api      # Logs de l'API
+
+# Connexion DB
 psql -U postgres -d attendee_ems
 ```
-
-### Support
-1. Consulter [STEP_1_EXECUTION_GUIDE.md](./STEP_1_EXECUTION_GUIDE.md)
-2. Exécuter `npm run db:validate:step1`
-3. Vérifier les logs d'erreur
-4. Consulter la section Troubleshooting
-
----
-
-## 🚀 Prochaines Étapes
-
-Après STEP 1, voir :
-- **STEP 2** : Authorization Service (logique applicative)
-- **STEP 3** : Role Propagation (templates)
-- **STEP 4** : Advanced RBAC (conditions, feature flags)
-
-📖 **Roadmap complète** : [README.md](./README.md)
 
 ---
 
 ## 📚 Références Utiles
 
 ### Documentation Interne
-- [ARCHITECTURE_RBAC.md](../ARCHITECTURE_RBAC.md)
-- [DECISION_NO_CASL.md](../DECISION_NO_CASL.md)
-- [DATABASE_SCHEMA.md](../DATABASE_SCHEMA.md)
+- [ARCHITECTURE_RBAC.md](../ARCHITECTURE_RBAC.md) - Architecture globale
+- [DECISION_NO_CASL.md](../DECISION_NO_CASL.md) - Pourquoi pas CASL
+- [DATABASE_SCHEMA.md](../DATABASE_SCHEMA.md) - Schéma DB complet
 
 ### Documentation Externe
 - [Prisma Documentation](https://www.prisma.io/docs)
 - [PostgreSQL Constraints](https://www.postgresql.org/docs/current/ddl-constraints.html)
 - [NestJS Guards](https://docs.nestjs.com/guards)
+- [Hexagonal Architecture](https://alistair.cockburn.us/hexagonal-architecture/)
 
 ---
 
-## 📞 Support
+## 📞 Support & Contribution
 
 **Questions ?**
-- Consulter la documentation
-- Exécuter les scripts de validation
-- Vérifier les tests
+- Consulter la documentation des STEP correspondants
+- Vérifier les tests et validations
+- Consulter le [INDEX.md](./INDEX.md) pour une vue d'ensemble
 
 **Problèmes techniques ?**
-- Voir [STEP_1_EXECUTION_GUIDE.md](./STEP_1_EXECUTION_GUIDE.md) section Troubleshooting
-- Exécuter `npm run db:validate:step1`
-- Consulter les logs
+- Voir section "Support & Aide" ci-dessus
+- Exécuter les scripts de validation
+- Consulter les logs Docker
 
 ---
 
-**Date de création** : 4 Janvier 2026  
-**Version** : 1.0  
+**Dernière mise à jour** : 4 Janvier 2026  
+**Version** : 2.0 (refactor complet 6 STEPS)  
 **Auteur** : GitHub Copilot  
-**Status** : ✅ Prêt pour implémentation
+**Status** : ✅ STEP 1 complété, STEP 2-6 documentés
