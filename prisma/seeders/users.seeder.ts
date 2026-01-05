@@ -158,11 +158,10 @@ export async function seedUsers(): Promise<SeedResult[]> {
       
       const hashedPassword = await bcrypt.hash(userData.password, 10);
       
-      // Check if user already exists
-      const existingUser = await prisma.user.findFirst({
+      // Check if user already exists (email is now globally unique)
+      const existingUser = await prisma.user.findUnique({
         where: {
           email: userData.email,
-          org_id: orgId,
         }
       });
 
@@ -172,7 +171,6 @@ export async function seedUsers(): Promise<SeedResult[]> {
           where: { id: existingUser.id },
           data: {
             password_hash: hashedPassword,
-            role_id: role.id,
             first_name: userData.first_name,
             last_name: userData.last_name,
             phone: userData.phone,
@@ -186,10 +184,8 @@ export async function seedUsers(): Promise<SeedResult[]> {
       } else {
         user = await prisma.user.create({
           data: {
-            org_id: orgId,
             email: userData.email,
             password_hash: hashedPassword,
-            role_id: role.id,
             first_name: userData.first_name,
             last_name: userData.last_name,
             phone: userData.phone,
@@ -201,6 +197,39 @@ export async function seedUsers(): Promise<SeedResult[]> {
           },
         });
       }
+
+      // Create or update org membership (STEP 1: Multi-tenant)
+      await prisma.orgUser.upsert({
+        where: {
+          user_id_org_id: {
+            user_id: user.id,
+            org_id: orgId,
+          },
+        },
+        create: {
+          user_id: user.id,
+          org_id: orgId,
+        },
+        update: {}, // Nothing to update for membership
+      });
+
+      // Create or update tenant role (STEP 1: Multi-tenant)
+      await prisma.tenantUserRole.upsert({
+        where: {
+          user_id_org_id: {
+            user_id: user.id,
+            org_id: orgId,
+          },
+        },
+        create: {
+          user_id: user.id,
+          org_id: orgId,
+          role_id: role.id,
+        },
+        update: {
+          role_id: role.id, // Allow role change
+        },
+      });
 
       results.push({
         success: true,
@@ -227,12 +256,33 @@ export async function seedUsers(): Promise<SeedResult[]> {
   }
 }
 
-// Fonction pour obtenir un utilisateur par email
+// Fonction pour obtenir un utilisateur par email (STEP 1: Multi-tenant)
 export async function getUserByEmail(organizationId: string, email: string) {
-  return await prisma.user.findFirst({
+  const user = await prisma.user.findUnique({
     where: {
-      org_id: organizationId,
       email: email,
     },
+    include: {
+      orgMemberships: {
+        where: {
+          org_id: organizationId,
+        },
+      },
+      tenantRoles: {
+        where: {
+          org_id: organizationId,
+        },
+        include: {
+          role: true,
+        },
+      },
+    },
   });
+
+  // Check if user is member of the organization
+  if (!user || user.orgMemberships.length === 0) {
+    return null;
+  }
+
+  return user;
 }

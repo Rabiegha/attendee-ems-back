@@ -10,9 +10,15 @@ export async function seedBadgeTemplates(prisma: PrismaClient) {
     return;
   }
 
-  // Get the first user for created_by
+  // Get the first user for created_by (STEP 1: Multi-tenant)
   const user = await prisma.user.findFirst({
-    where: { org_id: organization.id }
+    where: {
+      orgMemberships: {
+        some: {
+          org_id: organization.id
+        }
+      }
+    }
   });
 
   const templates = [
