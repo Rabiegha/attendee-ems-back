@@ -12,88 +12,144 @@ Permettre aux utilisateurs de **switcher entre leurs organisations** et avoir l'
 ## ❓ Pourquoi maintenant ?
 
 **Avant STEP 2** : Le JWT contient uniquement `userId`, pas d'information sur l'org active  
-**Après STEP 2** : Le JWT contient `currentOrgId` → le core RBAC saura dans quel contexte évaluer les permissions
+**Après STEP 2** : Le JWT contient `currentOrgId` + `mode` → le core RBAC saura dans quel contexte évaluer les permissions
 
 **Sans ce STEP** : Impossible de faire du RBAC multi-org (on ne sait pas quelle org est active)
+
+### 💡 Approche JWT Minimal vs JWT Lourd
+
+| Aspect | JWT Lourd (❌ Ancien) | JWT Minimal (✅ Nouveau) |
+|--------|----------------------|-------------------------|
+| **Taille** | Gros (permissions + orgs) | Minimal (~200 bytes) |
+| **Scalabilité** | Limite si 50+ orgs | Illimité |
+| **Staleness** | Permissions obsolètes jusqu'au refresh | Toujours à jour (DB) |
+| **Sécurité** | Matrice RBAC exposée | Identité seule |
+| **Performance** | Parsing lourd | Léger + cache DB |
+
+**Décision** : JWT minimal + `/me/ability` pour charger permissions dynamiquement
 
 ---
 
 ## 📋 Architecture
 
-### JWT Payload v2 (Multi-org)
+### JWT Payload v2 (Minimal)
 
+> **🔑 PRINCIPE** : JWT minimal = "identité + contexte org", pas "toute la matrice RBAC"  
+> Les permissions sont chargées dynamiquement via l'endpoint `/me/ability`
+
+#### Avantages du JWT minimal :
+- ✅ Taille réduite (pas de limite si user a 50 orgs)
+- ✅ Pas de staleness : changements de permissions instantanés
+- ✅ Sécurité : pas de matrice RBAC exposée dans le token
+
+#### 3 types de tokens selon le contexte :
+
+**1) Tenant-mode token (org active)**
 ```typescript
 interface JwtPayload {
-  // Identité
   sub: string;              // userId
-  email: string;
-  
-  // Contexte org actif
-  currentOrgId: string | null;     // Org active (null si platform-only mode)
-  currentOrgSlug: string | null;   // Slug pour l'UI
-  
-  // Organisations accessibles
-  availableOrgs: Array<{
-    orgId: string;
-    orgSlug: string;
-    role: string;           // 'ADMIN' | 'MANAGER' | etc.
-    isPlatform: boolean;    // false pour tenant, true pour platform access
-  }>;
-  
-  // Permissions pour l'org active
-  permissions: string[];    // ['event.create', 'user.read', etc.]
-  
-  // Rôle principal
-  role: string;             // Nom du rôle actif (tenant ou platform)
-  roleLevel: number;        // Level du rôle (pour hierarchie)
-  
-  // Flags
-  isPlatform: boolean;      // true si rôle platform (SUPPORT/ROOT)
-  isRoot: boolean;          // true si ROOT (accès complet)
-  
-  // Metadata JWT standard
+  mode: 'tenant';           // Mode tenant
+  currentOrgId: string;     // Org active (requise)
   iat: number;
   exp: number;
 }
 ```
 
-### Flux de Connexion
-
-```
-1. POST /auth/login
-   ↓
-2. AuthService charge les orgs accessibles
-   - Via org_users (tenant)
-   - Via platform_user_org_access (platform assigned)
-   - OU toutes les orgs si ROOT/SUPPORT avec scope global
-   ↓
-3. Sélection org par défaut
-   - Première org accessible (tri alphabétique)
-   - OU dernière org utilisée (si stockée)
-   ↓
-4. Génération JWT avec currentOrgId
-   ↓
-5. Client stocke le JWT
+**2) Platform-mode token (support/root)**
+```typescript
+interface JwtPayload {
+  sub: string;              // userId
+  mode: 'platform';         // Mode platform
+  iat: number;
+  exp: number;
+}
 ```
 
-### Flux de Switch
+**3) Tenant-no-org token (multi-org sans org active)**
+```typescript
+interface JwtPayload {
+  sub: string;              // userId
+  mode: 'tenant';           // Mode tenant
+  // pas de currentOrgId → force selection
+  iat: number;
+  exp: number;
+}
+```
+
+### Flux de Connexion (Intelligence automatique)
+
+```
+1. POST /auth/login { email, password }
+   ↓
+2. Backend charge :
+   - platformRole (existe ?)
+   - org memberships (org_users)
+   - defaultOrgId (org_users.is_default)
+   ↓
+3. Décision du type de token :
+   
+   Cas A — User tenant-only (1 org)
+   ├─ membre d'1 org
+   ├─ pas de platform role
+   └─→ Token tenant-mode avec currentOrgId
+   
+   Cas B — User tenant-only (multi-org)
+   ├─ membre de plusieurs orgs
+   ├─ pas de platform role
+   │
+   ├─ Si defaultOrgId existe
+   │  └─→ Token tenant-mode avec defaultOrgId
+   │
+   └─ Sinon
+      └─→ Token tenant-no-org (force selection)
+   
+   Cas C — User platform (support/root)
+   ├─ a un platform role
+   └─→ Token platform-mode (sans org)
+   
+   Cas D — Aucune org
+   └─→ Erreur / Onboarding requis
+   ↓
+4. Client stocke le JWT minimal
+   ↓
+5. Si tenant-mode → appelle GET /me/ability
+   Si tenant-no-org → affiche sélecteur d'org
+   Si platform-mode → affiche interface platform
+```
+
+### Flux de Switch Org
 
 ```
 1. POST /auth/switch-org { orgId }
    ↓
-2. AuthService vérifie accès
-   - Membership tenant (org_users)
-   - OU accès platform (platform_user_org_access si assigned)
-   - OU ROOT/SUPPORT global
+2. Backend vérifie accès à l'org :
+   
+   Si user a platform_user_role :
+   ├─ scope='TENANT-ALL' → ✅ accès
+   └─ scope='TENANT-ASSIGNED' → check platform_user_org_access
+   
+   Sinon (tenant normal) :
+   └─ check org_users membership
    ↓
-3. Génération nouveau JWT
-   - Nouveau currentOrgId
-   - Nouvelles permissions pour cette org
-   - Nouveau role (si multi-rôles)
+3. Génération nouveau JWT tenant-mode
+   {
+     "sub": "user-123",
+     "mode": "tenant",
+     "currentOrgId": "org-abc",
+     "iat": 123,
+     "exp": 456
+   }
    ↓
-4. Client met à jour le JWT
+4. Réponse
+   {
+     "accessToken": "<jwt>",
+     "mode": "tenant"
+   }
    ↓
-5. Toutes les requêtes suivantes utilisent la nouvelle org
+5. Client met à jour le token
+   ↓
+6. Client appelle GET /me/ability
+   → récupère permissions pour la nouvelle org
 ```
 
 ---
@@ -104,28 +160,30 @@ interface JwtPayload {
 
 **`src/auth/interfaces/jwt-payload.interface.ts`** (NOUVEAU)
 ```typescript
+/**
+ * JWT Payload minimal
+ * Les permissions sont chargées dynamiquement via GET /me/ability
+ */
 export interface JwtPayload {
-  sub: string;
-  email: string;
-  currentOrgId: string | null;
-  currentOrgSlug: string | null;
-  availableOrgs: AvailableOrg[];
-  permissions: string[];
-  role: string;
-  roleLevel: number;
-  isPlatform: boolean;
-  isRoot: boolean;
-  iat: number;
-  exp: number;
+  sub: string;                      // userId
+  mode: 'tenant' | 'platform';      // Mode utilisateur
+  currentOrgId?: string;            // Org active (seulement si mode=tenant)
+  iat: number;                      // Issued at
+  exp: number;                      // Expiration
 }
 
-export interface AvailableOrg {
-  orgId: string;
-  orgSlug: string;
-  orgName: string;
-  role: string;
-  roleLevel: number;
-  isPlatform: boolean;
+/**
+ * Réponse de GET /me/ability
+ */
+export interface UserAbility {
+  orgId: string | null;
+  modules: string[];                // Modules accessibles
+  grants: Grant[];                  // Permissions avec scopes
+}
+
+export interface Grant {
+  key: string;                      // ex: 'event.create'
+  scope: 'any' | 'org' | 'own';     // Portée de la permission
 }
 ```
 
@@ -143,7 +201,10 @@ export class SwitchOrgDto {
 
 **`src/auth/auth.service.ts`** (MODIFIER)
 
-#### Méthode : `getAvailableOrgs(userId: string)`
+#### Méthode : `getAvailableOrgs(userId: string)` (pour UI only)
+
+> **Note** : Cette méthode est utilisée uniquement pour l'UI (liste des orgs dans le sélecteur).  
+> Elle ne charge PAS les permissions (qui sont dans `/me/ability`)
 
 ```typescript
 async getAvailableOrgs(userId: string): Promise<AvailableOrg[]> {
@@ -252,103 +313,121 @@ async getAvailableOrgs(userId: string): Promise<AvailableOrg[]> {
 
 #### Méthode : `generateJwtForOrg(userId: string, orgId: string | null)`
 
+> **🔑 Génère un JWT MINIMAL** : pas de permissions, pas de liste d'orgs  
+> Le client appellera `/me/ability` pour obtenir les permissions
+
 ```typescript
 async generateJwtForOrg(
   userId: string,
   orgId: string | null,
-): Promise<string> {
+): Promise<{ token: string; mode: 'tenant' | 'platform' }> {
   const user = await this.prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, email: true },
+    include: {
+      platformRole: true,
+      orgMemberships: true,
+    },
   });
 
   if (!user) {
     throw new NotFoundException('User not found');
   }
 
-  const availableOrgs = await this.getAvailableOrgs(userId);
+  // Déterminer le mode
+  const isPlatformUser = !!user.platformRole;
 
-  // Déterminer l'org active
-  let currentOrg: AvailableOrg | null = null;
+  // Si platform user ET pas d'org spécifiée → mode platform
+  if (isPlatformUser && !orgId) {
+    const payload: JwtPayload = {
+      sub: user.id,
+      mode: 'platform',
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + 3600 * 24 * 7, // 7 jours
+    };
+    return {
+      token: this.jwtService.sign(payload),
+      mode: 'platform',
+    };
+  }
+
+  // Mode tenant : vérifier accès à l'org
   if (orgId) {
-    currentOrg = availableOrgs.find((o) => o.orgId === orgId) || null;
-    if (!currentOrg) {
+    const hasAccess = await this.verifyOrgAccess(userId, orgId);
+    if (!hasAccess) {
       throw new ForbiddenException('Access to this organization denied');
     }
-  } else {
-    // Pas d'org spécifiée → prendre la première disponible
-    currentOrg = availableOrgs[0] || null;
   }
 
-  // Charger les permissions pour l'org active
-  let permissions: string[] = [];
-  let role: string = '';
-  let roleLevel: number = 0;
-  let isPlatform: boolean = false;
-  let isRoot: boolean = false;
+  // Générer token tenant-mode
+  const payload: JwtPayload = {
+    sub: user.id,
+    mode: 'tenant',
+    ...(orgId && { currentOrgId: orgId }), // Seulement si org active
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + 3600 * 24 * 7,
+  };
 
-  if (currentOrg) {
-    // Charger les permissions du rôle
-    const roleData = await this.prisma.role.findFirst({
-      where: {
-        name: currentOrg.role,
-        ...(currentOrg.isPlatform
-          ? { org_id: null, is_platform: true }
-          : { org_id: currentOrg.orgId }),
-      },
-      include: {
-        rolePermissions: {
-          include: {
-            permission: true,
-          },
-        },
-      },
-    });
+  return {
+    token: this.jwtService.sign(payload),
+    mode: 'tenant',
+  };
+}
 
-    if (roleData) {
-      permissions = roleData.rolePermissions.map((rp) => rp.permission.key);
-      role = roleData.name;
-      roleLevel = roleData.level;
-      isPlatform = roleData.is_platform;
-      isRoot = roleData.is_root || false;
+/**
+ * Vérifie que le user a accès à l'org
+ */
+private async verifyOrgAccess(userId: string, orgId: string): Promise<boolean> {
+  const user = await this.prisma.user.findUnique({
+    where: { id: userId },
+    include: {
+      orgMemberships: true,
+      platformRole: true,
+      platformOrgAccess: true,
+    },
+  });
+
+  if (!user) return false;
+
+  // 1. Membership tenant direct
+  if (user.orgMemberships.some((m) => m.org_id === orgId)) {
+    return true;
+  }
+
+  // 2. Platform user avec scope approprié
+  if (user.platformRole) {
+    const scope = user.platformRole.scope;
+    if (scope === 'TENANT-ALL') return true;
+    if (scope === 'TENANT-ASSIGNED') {
+      return user.platformOrgAccess.some((a) => a.org_id === orgId);
     }
   }
 
-  const payload: JwtPayload = {
-    sub: user.id,
-    email: user.email,
-    currentOrgId: currentOrg?.orgId || null,
-    currentOrgSlug: currentOrg?.orgSlug || null,
-    availableOrgs,
-    permissions,
-    role,
-    roleLevel,
-    isPlatform,
-    isRoot,
-    iat: Math.floor(Date.now() / 1000),
-    exp: Math.floor(Date.now() / 1000) + 3600 * 24 * 7, // 7 jours
-  };
-
-  return this.jwtService.sign(payload);
+  return false;
 }
 ```
 
 #### Méthode : `switchOrg(userId: string, orgId: string)`
 
 ```typescript
-async switchOrg(userId: string, orgId: string): Promise<string> {
-  // Vérifier que l'utilisateur a accès à cette org
-  const availableOrgs = await this.getAvailableOrgs(userId);
-  const targetOrg = availableOrgs.find((o) => o.orgId === orgId);
-
-  if (!targetOrg) {
+async switchOrg(
+  userId: string,
+  orgId: string,
+): Promise<{ accessToken: string; mode: 'tenant' }> {
+  // Vérifier accès
+  const hasAccess = await this.verifyOrgAccess(userId, orgId);
+  if (!hasAccess) {
     throw new ForbiddenException(
       'You do not have access to this organization',
     );
   }
 
-  // Générer un nouveau JWT avec la nouvelle org
-  return this.generateJwtForOrg(userId, orgId);
+  // Générer nouveau JWT tenant-mode
+  const result = await this.generateJwtForOrg(userId, orgId);
+  
+  return {
+    accessToken: result.token,
+    mode: result.mode,
+  };
 }
 ```
 
@@ -356,15 +435,58 @@ async switchOrg(userId: string, orgId: string): Promise<string> {
 
 ```typescript
 async login(email: string, password: string) {
-  // ... validation user/password existante ...
+  // Valider credentials
+  const user = await this.validateUser(email, password);
+  if (!user) {
+    throw new UnauthorizedException('Invalid credentials');
+  }
 
-  // Générer JWT avec org par défaut
-  const accessToken = await this.generateJwtForOrg(user.id, null);
+  // Charger contexte utilisateur
+  const userWithContext = await this.prisma.user.findUnique({
+    where: { id: user.id },
+    include: {
+      platformRole: true,
+      orgMemberships: {
+        include: {
+          organization: true,
+        },
+      },
+    },
+  });
+
+  // DÉCISION : quel type de token ?
+  let tokenResult: { token: string; mode: 'tenant' | 'platform' };
+
+  // Cas A : Platform user → mode platform
+  if (userWithContext.platformRole) {
+    tokenResult = await this.generateJwtForOrg(user.id, null);
+  }
+  // Cas B : Aucune org → erreur
+  else if (userWithContext.orgMemberships.length === 0) {
+    throw new BadRequestException('User has no organization. Onboarding required.');
+  }
+  // Cas C : 1 seule org → tenant-mode direct
+  else if (userWithContext.orgMemberships.length === 1) {
+    const orgId = userWithContext.orgMemberships[0].org_id;
+    tokenResult = await this.generateJwtForOrg(user.id, orgId);
+  }
+  // Cas D : Multi-org → chercher default ou renvoyer tenant-no-org
+  else {
+    const defaultMembership = userWithContext.orgMemberships.find(
+      (m) => m.is_default,
+    );
+    const orgId = defaultMembership?.org_id || null;
+    tokenResult = await this.generateJwtForOrg(user.id, orgId);
+  }
+
   const refreshToken = await this.generateRefreshToken(user.id);
 
   return {
-    access_token: accessToken,
+    access_token: tokenResult.token,
     refresh_token: refreshToken,
+    mode: tokenResult.mode,
+    // Si tenant-no-org, le front affichera le sélecteur
+    requiresOrgSelection: tokenResult.mode === 'tenant' && !tokenResult.token.includes('currentOrgId'),
   };
 }
 ```
@@ -399,6 +521,116 @@ export class AuthController {
       available: orgs,
     };
   }
+
+  /**
+   * GET /auth/me/ability
+   * Retourne les permissions de l'utilisateur pour l'org active
+   * ⚠️ À appeler après login ou switch-org
+   */
+  @Get('me/ability')
+  @UseGuards(JwtAuthGuard)
+  async getMyAbility(@CurrentUser() user: JwtPayload) {
+    // Mode platform : pas de permissions org-specific
+    if (user.mode === 'platform') {
+      return {
+        orgId: null,
+        modules: ['platform'], // Accès aux routes platform
+        grants: [
+          { key: 'platform.orgs.read', scope: 'any' },
+          { key: 'platform.users.read', scope: 'any' },
+          // ... permissions platform
+        ],
+      };
+    }
+
+    // Mode tenant sans org → erreur
+    if (!user.currentOrgId) {
+      throw new BadRequestException(
+        'No organization context. Please switch to an organization.',
+      );
+    }
+
+    // Charger les permissions pour l'org active
+    return this.authService.getUserAbility(user.sub, user.currentOrgId);
+  }
+}
+```
+
+#### Méthode : `getUserAbility(userId: string, orgId: string)`
+
+```typescript
+/**
+ * Retourne les permissions de l'utilisateur pour une org donnée
+ * Appelé par GET /me/ability
+ */
+async getUserAbility(userId: string, orgId: string): Promise<UserAbility> {
+  // 1. Trouver le rôle de l'user dans cette org
+  const tenantRole = await this.prisma.tenant_user_role.findFirst({
+    where: {
+      user_id: userId,
+      org_id: orgId,
+    },
+    include: {
+      role: {
+        include: {
+          rolePermissions: {
+            include: {
+              permission: true,
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!tenantRole) {
+    throw new NotFoundException('User has no role in this organization');
+  }
+
+  // 2. Extraire les permissions avec leurs scopes
+  const grants: Grant[] = tenantRole.role.rolePermissions.map((rp) => ({
+    key: rp.permission.key,
+    scope: rp.scope_limit as 'any' | 'org' | 'own',
+  }));
+
+  // 3. Déterminer les modules accessibles
+  const modules = await this.getEnabledModules(orgId);
+
+  return {
+    orgId,
+    modules,
+    grants,
+  };
+}
+
+/**
+ * Retourne les modules activés pour une org
+ */
+private async getEnabledModules(orgId: string): Promise<string[]> {
+  const org = await this.prisma.organization.findUnique({
+    where: { id: orgId },
+    include: {
+      subscription: {
+        include: {
+          plan: {
+            include: {
+              planModules: {
+                include: {
+                  module: true,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  if (!org?.subscription?.plan) {
+    return [];
+  }
+
+  return org.subscription.plan.planModules.map((pm) => pm.module.key);
 }
 ```
 
@@ -437,7 +669,8 @@ export class TenantContextGuard implements CanActivate {
       throw new BadRequestException('No user in request');
     }
 
-    if (!user.currentOrgId) {
+    // Vérifier le mode et la présence de l'org
+    if (user.mode !== 'tenant' || !user.currentOrgId) {
       throw new BadRequestException(
         'No organization context. Please switch to an organization first.',
       );
@@ -463,19 +696,45 @@ export const TenantRequired = () => SetMetadata(TENANT_REQUIRED_KEY, true);
 
 ## 🧪 Tests à Écrire
 
-### Test 1 : Login avec org par défaut
+### Test 1 : Login avec détection automatique du mode
 
 ```typescript
 describe('POST /auth/login', () => {
-  it('should return JWT with currentOrgId set to first available org', async () => {
+  it('should return tenant-mode JWT for single-org user', async () => {
     const response = await request(app.getHttpServer())
       .post('/auth/login')
       .send({ email: 'user@example.com', password: 'password' })
       .expect(200);
 
     const decoded = jwt.decode(response.body.access_token) as JwtPayload;
+    expect(decoded.mode).toBe('tenant');
     expect(decoded.currentOrgId).toBeDefined();
-    expect(decoded.availableOrgs).toHaveLength(2); // user has 2 orgs
+    expect(decoded.sub).toBeDefined();
+    // Pas de permissions dans le JWT
+    expect(decoded).not.toHaveProperty('permissions');
+  });
+
+  it('should return platform-mode JWT for support user', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email: 'support@platform.com', password: 'password' })
+      .expect(200);
+
+    const decoded = jwt.decode(response.body.access_token) as JwtPayload;
+    expect(decoded.mode).toBe('platform');
+    expect(decoded.currentOrgId).toBeUndefined();
+  });
+
+  it('should return tenant-no-org for multi-org user without default', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email: 'multi@example.com', password: 'password' })
+      .expect(200);
+
+    expect(response.body.requiresOrgSelection).toBe(true);
+    const decoded = jwt.decode(response.body.access_token) as JwtPayload;
+    expect(decoded.mode).toBe('tenant');
+    expect(decoded.currentOrgId).toBeUndefined();
   });
 });
 ```
@@ -484,7 +743,7 @@ describe('POST /auth/login', () => {
 
 ```typescript
 describe('POST /auth/switch-org', () => {
-  it('should return new JWT with updated currentOrgId', async () => {
+  it('should return new tenant-mode JWT with updated currentOrgId', async () => {
     const loginResponse = await request(app.getHttpServer())
       .post('/auth/login')
       .send({ email: 'user@example.com', password: 'password' });
@@ -495,8 +754,10 @@ describe('POST /auth/switch-org', () => {
       .send({ orgId: 'org-2-id' })
       .expect(200);
 
-    const decoded = jwt.decode(switchResponse.body.access_token) as JwtPayload;
+    const decoded = jwt.decode(switchResponse.body.accessToken) as JwtPayload;
+    expect(decoded.mode).toBe('tenant');
     expect(decoded.currentOrgId).toBe('org-2-id');
+    expect(switchResponse.body.mode).toBe('tenant');
   });
 
   it('should reject switch to org without access', async () => {
@@ -533,22 +794,77 @@ describe('GET /auth/me/orgs', () => {
 });
 ```
 
-### Test 4 : Platform user with global scope
+### Test 4 : GET /me/ability (NOUVEAU)
 
 ```typescript
-describe('Platform user with ROOT role', () => {
-  it('should have access to all orgs', async () => {
+describe('GET /auth/me/ability', () => {
+  it('should return permissions for current org', async () => {
     const loginResponse = await request(app.getHttpServer())
       .post('/auth/login')
-      .send({ email: 'root@system.com', password: 'rootpassword' });
+      .send({ email: 'manager@example.com', password: 'password' });
 
     const response = await request(app.getHttpServer())
-      .get('/auth/me/orgs')
+      .get('/auth/me/ability')
       .set('Authorization', `Bearer ${loginResponse.body.access_token}`)
       .expect(200);
 
-    // ROOT a accès à toutes les orgs
-    expect(response.body.available.length).toBeGreaterThan(5);
+    expect(response.body.orgId).toBe('org-1-id');
+    expect(response.body.modules).toContain('events');
+    expect(response.body.grants).toEqual(
+      expect.arrayContaining([
+        { key: 'event.read', scope: 'any' },
+        { key: 'event.create', scope: 'org' },
+      ]),
+    );
+  });
+
+  it('should fail if no org context', async () => {
+    // User avec tenant-no-org
+    const loginResponse = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email: 'multi@example.com', password: 'password' });
+
+    await request(app.getHttpServer())
+      .get('/auth/me/ability')
+      .set('Authorization', `Bearer ${loginResponse.body.access_token}`)
+      .expect(400);
+  });
+
+  it('should return platform permissions for platform user', async () => {
+    const loginResponse = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email: 'support@platform.com', password: 'password' });
+
+    const response = await request(app.getHttpServer())
+      .get('/auth/me/ability')
+      .set('Authorization', `Bearer ${loginResponse.body.access_token}`)
+      .expect(200);
+
+    expect(response.body.orgId).toBeNull();
+    expect(response.body.modules).toContain('platform');
+  });
+});
+```
+
+### Test 5 : Platform user avec scope global
+
+```typescript
+describe('Platform user with ROOT role', () => {
+  it('should switch to any org', async () => {
+    const loginResponse = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email: 'root@platform.com', password: 'rootpassword' });
+
+    // ROOT peut switcher vers n'importe quelle org
+    const switchResponse = await request(app.getHttpServer())
+      .post('/auth/switch-org')
+      .set('Authorization', `Bearer ${loginResponse.body.access_token}`)
+      .send({ orgId: 'any-org-id' })
+      .expect(200);
+
+    const decoded = jwt.decode(switchResponse.body.accessToken) as JwtPayload;
+    expect(decoded.mode).toBe('tenant');
+    expect(decoded.currentOrgId).toBe('any-org-id');
   });
 });
 ```
@@ -570,39 +886,64 @@ export class EventsController {
 }
 ```
 
-### Après STEP 2 (✅ Nouveau pattern)
+### Après STEP 2 (✅ Nouveau pattern avec JWT minimal)
 
 ```typescript
 @Controller('events')
-@UseGuards(JwtAuthGuard, TenantContextGuard) // Vérifie currentOrgId
+@UseGuards(JwtAuthGuard, TenantContextGuard) // Vérifie mode=tenant ET currentOrgId
 export class EventsController {
   @Get()
   async findAll(@CurrentUser() user: JwtPayload) {
-    const orgId = user.currentOrgId; // ✅ Depuis le JWT
+    // ✅ JWT minimal : juste sub + mode + currentOrgId
+    const orgId = user.currentOrgId; 
     return this.eventsService.findAll(orgId);
   }
 }
 ```
 
+> **🔑 Note importante** : Les permissions ne sont PAS dans le JWT.  
+> Elles sont vérifiées dynamiquement par le `RequirePermissionGuard` (STEP 3)  
+> qui appelle `AuthorizationService.can()` qui lit en DB.
+
 ---
 
 ## 📊 Checklist d'Exécution
 
-- [ ] Créer `jwt-payload.interface.ts`
+### Phase 1 : Interfaces & Types
+- [ ] Créer `jwt-payload.interface.ts` (JWT minimal)
+- [ ] Créer `user-ability.interface.ts` (réponse de /me/ability)
 - [ ] Créer `switch-org.dto.ts`
-- [ ] Ajouter méthodes dans `AuthService` :
-  - [ ] `getAvailableOrgs()`
-  - [ ] `generateJwtForOrg()`
-  - [ ] `switchOrg()`
-- [ ] Mettre à jour `login()` pour utiliser `generateJwtForOrg()`
-- [ ] Ajouter endpoints dans `AuthController` :
-  - [ ] `POST /auth/switch-org`
-  - [ ] `GET /auth/me/orgs`
-- [ ] Créer `TenantContextGuard`
+
+### Phase 2 : AuthService (JWT minimal)
+- [ ] Ajouter `verifyOrgAccess()` (helper pour vérifier accès)
+- [ ] Ajouter `generateJwtForOrg()` (JWT minimal sans permissions)
+- [ ] Ajouter `getUserAbility()` (charge permissions depuis DB)
+- [ ] Ajouter `getAvailableOrgs()` (pour UI uniquement)
+- [ ] Ajouter `switchOrg()`
+- [ ] Mettre à jour `login()` avec logique tenant/platform
+- [ ] Ajouter `getEnabledModules()` (pour /me/ability)
+
+### Phase 3 : AuthController (Nouveaux endpoints)
+- [ ] Endpoint `POST /auth/switch-org`
+- [ ] Endpoint `GET /auth/me/orgs`
+- [ ] Endpoint `GET /auth/me/ability` (⚠️ CLÉ)
+
+### Phase 4 : Guards & Decorators
+- [ ] Mettre à jour `TenantContextGuard` (vérifier mode=tenant)
 - [ ] Créer `@TenantRequired` decorator
-- [ ] Écrire les tests E2E
-- [ ] Tester le flow complet (login → switch → requête)
-- [ ] Mettre à jour la documentation Postman/Swagger
+
+### Phase 5 : Tests E2E
+- [ ] Test login (tenant-mode, platform-mode, tenant-no-org)
+- [ ] Test switch-org
+- [ ] Test GET /me/orgs
+- [ ] Test GET /me/ability (⚠️ Important)
+- [ ] Test platform user avec scope global
+
+### Phase 6 : Intégration Frontend (suggestions)
+- [ ] Stocker JWT minimal dans localStorage
+- [ ] Appeler GET /me/ability après login/switch
+- [ ] Implémenter `can(permissionKey)` helper
+- [ ] Afficher sélecteur d'org si requiresOrgSelection=true
 
 ---
 

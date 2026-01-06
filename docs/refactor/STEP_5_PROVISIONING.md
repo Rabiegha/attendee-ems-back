@@ -24,6 +24,10 @@ Automatiser la **gestion des rôles et permissions à grande échelle** :
 - ✅ Nouvelle permission → propagée à toutes les orgs en 1 commande
 - ✅ Templates réutilisables (preset "Events Only", "Full Access", etc.)
 
+### 🔑 Compatibilité JWT Minimal
+
+Le provisioning travaille directement avec la DB (pas d'accès au JWT), donc **aucun impact** du JWT minimal. Tout fonctionne tel quel ! ✅
+
 ---
 
 ## 📐 Architecture

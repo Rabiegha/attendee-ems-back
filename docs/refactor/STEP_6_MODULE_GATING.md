@@ -16,6 +16,10 @@ Restreindre l'accès aux **modules/features** en fonction du **plan** de l'organ
 - **RBAC** : "L'utilisateur a-t-il la permission ?"
 - **Module Gating** : "L'organisation a-t-elle accès au module ?"
 
+### 🔑 Compatibilité JWT Minimal
+
+Le module gating utilise uniquement `user.currentOrgId` depuis le JWT, donc **aucun impact** du JWT minimal. Tout fonctionne tel quel ! ✅
+
 ---
 
 ## 📐 Architecture

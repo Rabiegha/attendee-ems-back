@@ -9,6 +9,29 @@
 
 Adapter **tous les services, controllers et middlewares** pour utiliser le nouveau modèle multi-tenant et le core RBAC hexagonal.
 
+### 🔑 Note sur JWT Minimal (STEP 2)
+
+Avec le JWT minimal, `JwtPayload` contient uniquement :
+```typescript
+{ sub, mode, currentOrgId?, iat, exp }
+```
+
+**Conséquence** : Si vous avez besoin de `isPlatform` ou `isRoot` dans un controller, vous devez :
+1. **Option A** : Utiliser `RequirePermissionGuard` qui construit `AuthContext` automatiquement
+2. **Option B** : Injecter `AuthContextPort` et appeler `buildAuthContext(user)` manuellement
+
+```typescript
+// ❌ Ne fonctionne plus
+if (user.isPlatform) { ... }
+
+// ✅ Utiliser le guard (recommandé)
+@RequirePermission('platform.action')  // Le guard gère isPlatform
+
+// ✅ OU construire AuthContext manuellement
+const authContext = await this.authContextPort.buildAuthContext(user);
+if (authContext.isPlatform) { ... }
+```
+
 ## ❓ Pourquoi maintenant ?
 
 Le nouveau système est prêt mais **pas utilisé** :

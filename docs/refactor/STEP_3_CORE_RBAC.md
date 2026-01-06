@@ -12,6 +12,18 @@ Construire un **moteur d'autorisation RBAC** pur, indépendant de NestJS/Prisma,
 - **Ports** : Interfaces (SPI) dont le core dépend
 - **Adapters** : Implémentations concrètes (DB, HTTP, etc.)
 
+### 🔑 Adaptation au JWT Minimal (STEP 2)
+
+Avec le JWT minimal de STEP 2 (`{ sub, mode, currentOrgId }`), on n'a plus `isPlatform` ni `isRoot` dans le JWT.  
+**Solution** : Créer un port `AuthContextPort` qui construit un `AuthContext` complet depuis le JWT minimal + une requête DB.
+
+```
+JWT minimal          AuthContextPort.buildAuthContext()           AuthContext complet
+{ sub, mode }   →      + requête DB                    →   { userId, mode, isPlatform, isRoot }
+```
+
+Ceci garantit que le **core RBAC reste pur** (pas de dépendance au JWT) tout en s'adaptant au JWT minimal.
+
 ## ❓ Pourquoi Hexagonal ?
 
 ✅ **Testabilité** : Le core est testable sans DB/HTTP  
@@ -36,13 +48,15 @@ src/platform/authz/
 ├── ports/                          # 🔌 INTERFACES (SPI)
 │   ├── rbac-query.port.ts         # getRoleForUserInOrg, getGrantsForRole
 │   ├── membership.port.ts         # isMemberOfOrg, getPlatformOrgAccess
-│   └── module-gating.port.ts      # isModuleEnabledForOrg (MVP)
+│   ├── module-gating.port.ts      # isModuleEnabledForOrg (MVP)
+│   └── auth-context.port.ts       # 🆕 buildAuthContext (JWT minimal → AuthContext)
 │
 ├── adapters/                       # 🔧 IMPLÉMENTATIONS
 │   ├── db/
 │   │   ├── prisma-rbac-query.adapter.ts
 │   │   ├── prisma-membership.adapter.ts
-│   │   └── prisma-module-gating.adapter.ts
+│   │   ├── prisma-module-gating.adapter.ts
+│   │   └── prisma-auth-context.adapter.ts  # 🆕 Nouveau
 │   └── http/
 │       ├── guards/
 │       │   ├── require-permission.guard.ts
@@ -67,11 +81,14 @@ src/platform/authz/
 
 ```typescript
 // Contexte d'autorisation (qui demande ?)
+// 🔑 Construit à partir du JWT minimal + requête DB
 export interface AuthContext {
-  userId: string;
-  currentOrgId: string | null;
-  isPlatform: boolean;
-  isRoot: boolean;
+  userId: string;              // Depuis JWT.sub
+  mode: 'tenant' | 'platform'; // Depuis JWT.mode
+  currentOrgId: string | null; // Depuis JWT.currentOrgId (si tenant)
+  // Les champs ci-dessous sont chargés depuis la DB (pas dans le JWT)
+  isPlatform: boolean;         // True si mode='platform' OU a un platform role
+  isRoot: boolean;             // True si role platform is_root=true
 }
 
 // Contexte RBAC (sur quoi ?)
@@ -470,6 +487,27 @@ export abstract class ModuleGatingPort {
 }
 ```
 
+### 4. AuthContextPort (NOUVEAU - nécessaire pour JWT minimal)
+
+**`ports/auth-context.port.ts`**
+
+```typescript
+import { AuthContext } from '../core/types';
+import { JwtPayload } from '@/auth/interfaces/jwt-payload.interface';
+
+/**
+ * Port pour construire un AuthContext complet depuis un JWT minimal
+ * Le JWT ne contient que : sub, mode, currentOrgId (optionnel)
+ * Ce port charge les infos manquantes depuis la DB
+ */
+export abstract class AuthContextPort {
+  /**
+   * Construire AuthContext depuis JWT minimal
+   */
+  abstract buildAuthContext(jwtPayload: JwtPayload): Promise<AuthContext>;
+}
+```
+
 ---
 
 ## 🔧 Adapters DB (Prisma)
@@ -619,6 +657,75 @@ export class PrismaModuleGatingAdapter implements ModuleGatingPort {
 }
 ```
 
+### 4. PrismaAuthContextAdapter (NOUVEAU - pour JWT minimal)
+
+**`adapters/db/prisma-auth-context.adapter.ts`**
+
+```typescript
+import { Injectable } from '@nestjs/common';
+import { PrismaService } from '@/prisma/prisma.service';
+import { AuthContextPort } from '../../ports/auth-context.port';
+import { AuthContext } from '../../core/types';
+import { JwtPayload } from '@/auth/interfaces/jwt-payload.interface';
+
+/**
+ * Construit un AuthContext complet depuis un JWT minimal
+ * Le JWT minimal contient : { sub, mode, currentOrgId? }
+ * Cet adapter charge isPlatform et isRoot depuis la DB
+ */
+@Injectable()
+export class PrismaAuthContextAdapter implements AuthContextPort {
+  constructor(private prisma: PrismaService) {}
+
+  async buildAuthContext(jwtPayload: JwtPayload): Promise<AuthContext> {
+    const userId = jwtPayload.sub;
+    const mode = jwtPayload.mode;
+    const currentOrgId = jwtPayload.currentOrgId || null;
+
+    // Par défaut
+    let isPlatform = mode === 'platform';
+    let isRoot = false;
+
+    // Si mode platform, charger le rôle platform pour vérifier isRoot
+    if (mode === 'platform') {
+      const platformRole = await this.prisma.platformUserRole.findUnique({
+        where: { user_id: userId },
+        include: {
+          role: true,
+        },
+      });
+
+      if (platformRole) {
+        isPlatform = true;
+        isRoot = platformRole.role.is_root || false;
+      }
+    }
+    // Si mode tenant, vérifier si le user a aussi un rôle platform
+    else {
+      const platformRole = await this.prisma.platformUserRole.findUnique({
+        where: { user_id: userId },
+        include: {
+          role: true,
+        },
+      });
+
+      if (platformRole) {
+        isPlatform = true;
+        isRoot = platformRole.role.is_root || false;
+      }
+    }
+
+    return {
+      userId,
+      mode,
+      currentOrgId,
+      isPlatform,
+      isRoot,
+    };
+  }
+}
+```
+
 ---
 
 ## 🎨 Adapters HTTP
@@ -628,17 +735,20 @@ export class PrismaModuleGatingAdapter implements ModuleGatingPort {
 **`adapters/http/guards/require-permission.guard.ts`**
 
 ```typescript
-import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AuthorizationService } from '../../../core/authorization.service';
 import { AuthContext, RbacContext } from '../../../core/types';
+import { AuthContextPort } from '../../../ports/auth-context.port';
 import { PERMISSION_KEY, RBAC_CONTEXT_KEY } from '../decorators/require-permission.decorator';
+import { JwtPayload } from '@/auth/interfaces/jwt-payload.interface';
 
 @Injectable()
 export class RequirePermissionGuard implements CanActivate {
   constructor(
     private reflector: Reflector,
     private authz: AuthorizationService,
+    private authContextPort: AuthContextPort, // 🆕 Injecter le port
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -648,17 +758,17 @@ export class RequirePermissionGuard implements CanActivate {
     }
 
     const request = context.switchToHttp().getRequest();
-    const user = request.user; // JwtPayload (depuis STEP 2)
+    const jwtPayload: JwtPayload = request.user; // JWT minimal
 
-    const authContext: AuthContext = {
-      userId: user.sub,
-      currentOrgId: user.currentOrgId,
-      isPlatform: user.isPlatform,
-      isRoot: user.isRoot,
-    };
+    if (!jwtPayload) {
+      throw new UnauthorizedException('No JWT payload');
+    }
+
+    // 🔑 Construire AuthContext depuis JWT minimal + DB
+    const authContext: AuthContext = await this.authContextPort.buildAuthContext(jwtPayload);
 
     // RbacContext optionnel (ex: resourceOwnerId)
-    const rbacContext: RbacContext = request.rbacContext || {};
+    const rbacContext: RbacContext = this.reflector.get<RbacContext>(RBAC_CONTEXT_KEY, context.getHandler()) || {};
 
     // Appeler le core RBAC (throw si refusé)
     await this.authz.assert(permissionKey, authContext, rbacContext);
@@ -751,44 +861,8 @@ export class RbacAdminController {
 }
 ```
 
-### 4. Controller Me Ability (pour CASL frontend)
-
-**`adapters/http/controllers/me-ability.controller.ts`**
-
-```typescript
-import { Controller, Get, UseGuards } from '@nestjs/common';
-import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
-import { TenantContextGuard } from '@/common/guards/tenant-context.guard';
-import { CurrentUser } from '@/common/decorators/current-user.decorator';
-import { JwtPayload } from '@/auth/interfaces/jwt-payload.interface';
-import { PermissionResolver } from '../../../core/permission-resolver';
-
-@Controller('me')
-@UseGuards(JwtAuthGuard, TenantContextGuard)
-export class MeAbilityController {
-  constructor(private permissionResolver: PermissionResolver) {}
-
-  /**
-   * Retourner les permissions du user pour le frontend (CASL)
-   */
-  @Get('ability')
-  async getMyAbility(@CurrentUser() user: JwtPayload) {
-    const grants = await this.permissionResolver.resolveGrants(
-      user.sub,
-      user.currentOrgId,
-    );
-
-    // Format compatible CASL
-    return {
-      rules: grants.map((grant) => ({
-        action: grant.key,
-        subject: grant.moduleKey || 'all',
-        conditions: { scope: grant.scopeLimit },
-      })),
-    };
-  }
-}
-```
+> **⚠️ Note** : L'endpoint `GET /me/ability` est déjà implémenté dans **STEP 2** (`AuthController.getMyAbility()`).  
+> Pas besoin de le dupliquer ici. Ce controller RBAC Admin gère uniquement la gestion des rôles.
 
 ---
 
@@ -925,19 +999,34 @@ describe('AuthorizationService (Unit)', () => {
 
 ## 📊 Checklist d'Exécution
 
-- [ ] Créer `core/types.ts`
+### Core (Logique métier pure)
+- [ ] Créer `core/types.ts` (avec note JWT minimal)
 - [ ] Créer `core/decision.ts`
 - [ ] Créer `core/scope-evaluator.ts`
 - [ ] Créer `core/permission-resolver.ts`
 - [ ] Créer `core/authorization.service.ts`
-- [ ] Créer les 3 ports (RbacQuery, Membership, ModuleGating)
-- [ ] Créer les 3 adapters DB Prisma
-- [ ] Créer `RequirePermissionGuard`
+
+### Ports (Interfaces SPI)
+- [ ] Créer `ports/rbac-query.port.ts`
+- [ ] Créer `ports/membership.port.ts`
+- [ ] Créer `ports/module-gating.port.ts`
+- [ ] Créer `ports/auth-context.port.ts` (🆕 Nouveau pour JWT minimal)
+
+### Adapters DB
+- [ ] Créer `adapters/db/prisma-rbac-query.adapter.ts`
+- [ ] Créer `adapters/db/prisma-membership.adapter.ts`
+- [ ] Créer `adapters/db/prisma-module-gating.adapter.ts`
+- [ ] Créer `adapters/db/prisma-auth-context.adapter.ts` (🆕 Nouveau)
+
+### Adapters HTTP
+- [ ] Créer `RequirePermissionGuard` (avec injection AuthContextPort)
 - [ ] Créer `@RequirePermission` decorator
 - [ ] Créer `RbacAdminController` (minimal)
-- [ ] Créer `MeAbilityController`
+- [ ] ⚠️ `GET /me/ability` déjà dans STEP 2 (AuthController)
+
+### Autres
 - [ ] Créer `permission-registry.ts`
-- [ ] Créer `authz.module.ts`
+- [ ] Créer `authz.module.ts` (avec tous les providers)
 - [ ] Écrire tests unitaires du core (sans DB)
 - [ ] Écrire tests d'intégration (avec DB)
 - [ ] Tester avec un controller exemple
