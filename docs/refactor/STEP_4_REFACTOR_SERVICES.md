@@ -140,7 +140,7 @@ async validateUserById(userId: string) {
 
 **Avant ❌**
 ```typescript
-async create(createUserDto: CreateUserDto, orgId: string) {
+async create(createUserDto: Plan Complet : Ce qui Manque + Roadmap, orgId: string) {
   return this.prisma.user.create({
     data: {
       email: createUserDto.email,
