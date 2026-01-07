@@ -28,6 +28,12 @@ Automatiser la **gestion des rôles et permissions à grande échelle** :
 
 Le provisioning travaille directement avec la DB (pas d'accès au JWT), donc **aucun impact** du JWT minimal. Tout fonctionne tel quel ! ✅
 
+**Contexte d'exécution** :
+- CLI commands : accès direct à Prisma (pas de JWT)
+- Endpoints RBAC Admin : utilisent le JWT minimal standard
+
+Les CLI commands de provisioning n'ont pas besoin de `isPlatform` ou `isRoot` car ils sont exécutés en mode admin direct (avec accès complet à la DB).
+
 ---
 
 ## 📐 Architecture
@@ -116,31 +122,31 @@ export const DEFAULT_ROLES: RoleTemplate[] = [
     level: 1,
     permissions: [
       // Events
-      { key: PERMISSIONS.EVENT_CREATE, scopeLimit: ScopeLimit.ORG },
-      { key: PERMISSIONS.EVENT_READ, scopeLimit: ScopeLimit.ORG },
-      { key: PERMISSIONS.EVENT_UPDATE, scopeLimit: ScopeLimit.ORG },
-      { key: PERMISSIONS.EVENT_DELETE, scopeLimit: ScopeLimit.ORG },
+      { key: PERMISSIONS.EVENT_CREATE, scopeLimit: ScopeLimit.ANY },
+      { key: PERMISSIONS.EVENT_READ, scopeLimit: ScopeLimit.ANY },
+      { key: PERMISSIONS.EVENT_UPDATE, scopeLimit: ScopeLimit.ANY },
+      { key: PERMISSIONS.EVENT_DELETE, scopeLimit: ScopeLimit.ANY },
       
       // Attendees
-      { key: PERMISSIONS.ATTENDEE_CREATE, scopeLimit: ScopeLimit.ORG },
-      { key: PERMISSIONS.ATTENDEE_READ, scopeLimit: ScopeLimit.ORG },
-      { key: PERMISSIONS.ATTENDEE_UPDATE, scopeLimit: ScopeLimit.ORG },
-      { key: PERMISSIONS.ATTENDEE_DELETE, scopeLimit: ScopeLimit.ORG },
+      { key: PERMISSIONS.ATTENDEE_CREATE, scopeLimit: ScopeLimit.ANY },
+      { key: PERMISSIONS.ATTENDEE_READ, scopeLimit: ScopeLimit.ANY },
+      { key: PERMISSIONS.ATTENDEE_UPDATE, scopeLimit: ScopeLimit.ANY },
+      { key: PERMISSIONS.ATTENDEE_DELETE, scopeLimit: ScopeLimit.ANY },
       
       // Users
-      { key: PERMISSIONS.USER_CREATE, scopeLimit: ScopeLimit.ORG },
-      { key: PERMISSIONS.USER_READ, scopeLimit: ScopeLimit.ORG },
-      { key: PERMISSIONS.USER_UPDATE, scopeLimit: ScopeLimit.ORG },
-      { key: PERMISSIONS.USER_DELETE, scopeLimit: ScopeLimit.ORG },
+      { key: PERMISSIONS.USER_CREATE, scopeLimit: ScopeLimit.ANY },
+      { key: PERMISSIONS.USER_READ, scopeLimit: ScopeLimit.ANY },
+      { key: PERMISSIONS.USER_UPDATE, scopeLimit: ScopeLimit.ANY },
+      { key: PERMISSIONS.USER_DELETE, scopeLimit: ScopeLimit.ANY },
       
       // RBAC
-      { key: PERMISSIONS.RBAC_ROLE_READ, scopeLimit: ScopeLimit.ORG },
-      { key: PERMISSIONS.RBAC_ROLE_ASSIGN, scopeLimit: ScopeLimit.ORG },
+      { key: PERMISSIONS.RBAC_ROLE_READ, scopeLimit: ScopeLimit.ANY },
+      { key: PERMISSIONS.RBAC_ROLE_ASSIGN, scopeLimit: ScopeLimit.ANY },
       
       // Badges
-      { key: PERMISSIONS.BADGE_CREATE, scopeLimit: ScopeLimit.ORG },
-      { key: PERMISSIONS.BADGE_READ, scopeLimit: ScopeLimit.ORG },
-      { key: PERMISSIONS.BADGE_PRINT, scopeLimit: ScopeLimit.ORG },
+      { key: PERMISSIONS.BADGE_CREATE, scopeLimit: ScopeLimit.ANY },
+      { key: PERMISSIONS.BADGE_READ, scopeLimit: ScopeLimit.ANY },
+      { key: PERMISSIONS.BADGE_PRINT, scopeLimit: ScopeLimit.ANY },
     ],
   },
   {
@@ -150,17 +156,17 @@ export const DEFAULT_ROLES: RoleTemplate[] = [
     permissions: [
       // Events
       { key: PERMISSIONS.EVENT_CREATE, scopeLimit: ScopeLimit.OWN },
-      { key: PERMISSIONS.EVENT_READ, scopeLimit: ScopeLimit.ORG },
+      { key: PERMISSIONS.EVENT_READ, scopeLimit: ScopeLimit.ANY },
       { key: PERMISSIONS.EVENT_UPDATE, scopeLimit: ScopeLimit.OWN },
       { key: PERMISSIONS.EVENT_DELETE, scopeLimit: ScopeLimit.OWN },
       
       // Attendees
-      { key: PERMISSIONS.ATTENDEE_CREATE, scopeLimit: ScopeLimit.ORG },
-      { key: PERMISSIONS.ATTENDEE_READ, scopeLimit: ScopeLimit.ORG },
-      { key: PERMISSIONS.ATTENDEE_UPDATE, scopeLimit: ScopeLimit.ORG },
+      { key: PERMISSIONS.ATTENDEE_CREATE, scopeLimit: ScopeLimit.ANY },
+      { key: PERMISSIONS.ATTENDEE_READ, scopeLimit: ScopeLimit.ANY },
+      { key: PERMISSIONS.ATTENDEE_UPDATE, scopeLimit: ScopeLimit.ANY },
       
       // Badges
-      { key: PERMISSIONS.BADGE_READ, scopeLimit: ScopeLimit.ORG },
+      { key: PERMISSIONS.BADGE_READ, scopeLimit: ScopeLimit.ANY },
       { key: PERMISSIONS.BADGE_PRINT, scopeLimit: ScopeLimit.ASSIGNED },
     ],
   },
@@ -169,9 +175,9 @@ export const DEFAULT_ROLES: RoleTemplate[] = [
     name: 'Viewer',
     level: 5,
     permissions: [
-      { key: PERMISSIONS.EVENT_READ, scopeLimit: ScopeLimit.ORG },
-      { key: PERMISSIONS.ATTENDEE_READ, scopeLimit: ScopeLimit.ORG },
-      { key: PERMISSIONS.BADGE_READ, scopeLimit: ScopeLimit.ORG },
+      { key: PERMISSIONS.EVENT_READ, scopeLimit: ScopeLimit.ANY },
+      { key: PERMISSIONS.ATTENDEE_READ, scopeLimit: ScopeLimit.ANY },
+      { key: PERMISSIONS.BADGE_READ, scopeLimit: ScopeLimit.ANY },
     ],
   },
 ];
@@ -594,8 +600,8 @@ interface PropagateOptions {
 
 **Usage :**
 ```bash
-# Propager une nouvelle permission aux rôles ADMIN et MANAGER
-npm run cli propagate-permission analytics.view --roles ADMIN,MANAGER --scope org
+# Propager une nouvelle permission aux rôles ADMIN et MANAGER avec scope ANY
+npm run cli propagate-permission analytics.view --roles ADMIN,MANAGER --scope any
 ```
 
 ---
@@ -634,8 +640,8 @@ npm run cli propagate-permission analytics.view --roles ADMIN --scope org
 ### Cas 3 : Changement de Scope
 
 ```bash
-# Passer event.update de 'own' à 'org' pour tous les MANAGER
-npm run cli update-scope event.update --roles MANAGER --scope org
+# Passer event.update de 'own' à 'any' pour tous les MANAGER
+npm run cli update-scope event.update --roles MANAGER --scope any
 ```
 
 ---

@@ -16,21 +16,31 @@ Avec le JWT minimal, `JwtPayload` contient uniquement :
 { sub, mode, currentOrgId?, iat, exp }
 ```
 
-**Conséquence** : Si vous avez besoin de `isPlatform` ou `isRoot` dans un controller, vous devez :
-1. **Option A** : Utiliser `RequirePermissionGuard` qui construit `AuthContext` automatiquement
+**Conséquence** : Si vous avez besoin de `isPlatform` ou `isRoot` dans un controller/service, vous devez :
+
+1. **Option A (Recommandée)** : Utiliser `RequirePermissionGuard` qui construit `AuthContext` automatiquement via `AuthContextPort`
 2. **Option B** : Injecter `AuthContextPort` et appeler `buildAuthContext(user)` manuellement
 
 ```typescript
 // ❌ Ne fonctionne plus
 if (user.isPlatform) { ... }
 
-// ✅ Utiliser le guard (recommandé)
-@RequirePermission('platform.action')  // Le guard gère isPlatform
+// ✅ Option A : Utiliser le guard (recommandé)
+@RequirePermission('platform.action')  
+// Le guard appelle authContextPort.buildAuthContext() automatiquement
 
-// ✅ OU construire AuthContext manuellement
-const authContext = await this.authContextPort.buildAuthContext(user);
-if (authContext.isPlatform) { ... }
+// ✅ Option B : Construire AuthContext manuellement
+constructor(private authContextPort: AuthContextPort) {}
+
+async someMethod(user: JwtPayload) {
+  const authContext = await this.authContextPort.buildAuthContext(user);
+  if (authContext.isPlatform) { 
+    // Logique spécifique platform
+  }
+}
 ```
+
+**Important** : N'utilisez l'Option B que si vous avez besoin de `isPlatform`/`isRoot` en dehors d'une vérification de permission. Dans la majorité des cas, l'Option A (guard) est suffisante.
 
 ## ❓ Pourquoi maintenant ?
 
@@ -371,232 +381,205 @@ async assignRoleToUser(userId: string, orgId: string, roleId: string) {
 }
 ```
 
----
+### Méthode 6 : `assignRoleToUser()` (avec hiérarchie) ⭐
 
-## 📁 Phase 3 : Services Métier
-
-### Template de Migration
-
-Pour chaque service (`EventsService`, `RegistrationsService`, etc.) :
-
-#### 1. Identifier les patterns problématiques
-
-```bash
-# Rechercher les utilisations de l'ancien modèle
-grep -r "org_id:" src/modules/
-grep -r "user.role" src/modules/
-grep -r "req.user.org_id" src/modules/
-```
-
-#### 2. Adapter les méthodes
-
-**Pattern général :**
+**Nouvelle méthode avec vérification de la hiérarchie**
 ```typescript
-// Avant
-where: { org_id: orgId }
+async assignRoleToUser(
+  managerId: string,
+  targetUserId: string,
+  roleId: string,
+  orgId: string,
+) {
+  // 1. Vérifier que le user est membre de l'org
+  const membership = await this.prisma.orgUser.findUnique({
+    where: {
+      user_id_org_id: { user_id: targetUserId, org_id: orgId },
+    },
+  });
 
-// Après
-where: { org_id: orgId } // ✅ OK pour les modèles qui ont org_id
-```
+  if (!membership) {
+    throw new BadRequestException('User is not a member of this organization');
+  }
 
-**Note** : Les modèles métier (`Event`, `Attendee`, `Badge`) **gardent** leur `org_id` direct ! Seul `User` a changé.
+  // 2. Vérifier que le rôle appartient à l'org
+  const role = await this.prisma.role.findFirst({
+    where: { id: roleId, org_id: orgId },
+  });
 
-#### 3. Vérifier les relations
+  if (!role) {
+    throw new NotFoundException('Role not found in this organization');
+  }
 
-```typescript
-// Exemple : EventsService
-async findAll(orgId: string) {
-  return this.prisma.event.findMany({
-    where: { org_id: orgId }, // ✅ OK (Event a toujours org_id)
-    include: {
-      organization: true,
-      // ... autres relations
+  // 3. Vérifier permission RBAC
+  await this.authz.assert('user.role.assign', {
+    userId: managerId,
+    currentOrgId: orgId,
+    mode: 'tenant',
+    isPlatform: false,
+    isRoot: false,
+  });
+
+  // 4. ⭐ Vérifier hiérarchie : le manager peut-il gérer ce user ?
+  await this.authz.assertDecision(
+    await this.authz.canManageUser(managerId, targetUserId, orgId)
+  );
+
+  // 5. ⭐ Vérifier hiérarchie : le manager peut-il assigner ce rôle ?
+  await this.authz.assertDecision(
+    await this.authz.canAssignRole(managerId, roleId, orgId)
+  );
+
+  // 6. Upsert le rôle tenant
+  return this.prisma.tenantUserRole.upsert({
+    where: {
+      user_id_org_id: { user_id: targetUserId, org_id: orgId },
+    },
+    create: {
+      user_id: targetUserId,
+      org_id: orgId,
+      role_id: roleId,
+    },
+    update: {
+      role_id: roleId,
     },
   });
 }
 ```
 
-### Services à Migrer (par ordre de priorité)
-
-1. **EventsService** (critique)
-   - Peu de changements (Event garde org_id)
-   - Vérifier les relations avec User (created_by)
-
-2. **RegistrationsService** (critique)
-   - Peu de changements
-   - Vérifier les snapshots user
-
-3. **BadgesService** (moyen)
-   - Relation avec User (generated_by)
-   - Adapter les queries
-
-4. **OrganizationsService** (faible)
-   - Surtout les relations avec users
-
-5. **InvitationsService** (faible)
-   - Relation avec User (sent_by)
+**Résultat** :
+- ✅ Admin (level=1) peut assigner Manager (level=2) à un Staff (level=3)
+- ❌ Manager (level=2) CANNOT assigner Admin (level=1) à quelqu'un
+- ❌ Manager (level=2) CANNOT modifier un autre Manager (level=2)
 
 ---
 
-## 📁 Phase 4 : Controllers & Guards
+## 🔝 Utilisation de la Hiérarchie (Nouveauté STEP 3)
 
-### Remplacer les Guards Existants
+### Flux Complet : Assignation de Rôle
 
-**Avant ❌**
-```typescript
-@Controller('events')
-@UseGuards(JwtAuthGuard, RoleGuard) // ❌ Ancien système
-export class EventsController {
-  @Get()
-  @Roles('ADMIN', 'MANAGER') // ❌ Decorator custom
-  async findAll(@Req() req) {
-    const orgId = req.user.org_id; // ❌ N'existe plus
-    return this.eventsService.findAll(orgId);
-  }
-}
+```
+1. UsersController reçoit la requête
+   ├─ @RequirePermission('user.role.assign')
+   └─ Appelle UsersService.assignRoleToUser()
+       ↓
+2. UsersService vérifie la hiérarchie
+   ├─ authz.canManageUser(managerId, targetUserId, orgId)
+   │  → Vérifie : managerLevel < targetLevel ?
+   │
+   └─ authz.canAssignRole(managerId, roleId, orgId)
+      → Vérifie : managerLevel < roleLevel ?
+       ↓
+3. Si OK → Assigner le rôle
+   Si KO → ForbiddenException avec HIERARCHY_VIOLATION
 ```
 
-**Après ✅**
+### Exemple : Controller avec Hiérarchie
+
 ```typescript
-@Controller('events')
-@UseGuards(JwtAuthGuard, TenantContextGuard, RequirePermissionGuard) // ✅ Nouveau système
-export class EventsController {
-  @Get()
-  @RequirePermission('event.read') // ✅ Permission-based
-  async findAll(@CurrentUser() user: JwtPayload) {
-    const orgId = user.currentOrgId; // ✅ Depuis JWT
-    return this.eventsService.findAll(orgId);
-  }
+@Controller('users')
+@UseGuards(JwtAuthGuard, TenantContextGuard, RequirePermissionGuard)
+export class UsersController {
+  constructor(
+    private usersService: UsersService,
+  ) {}
 
-  @Post()
-  @RequirePermission('event.create')
-  async create(
+  /**
+   * Assigner un rôle à un user
+   * Permission RBAC : user.role.assign
+   * Hiérarchie : vérifiée dans le service
+   */
+  @Patch(':id/role')
+  @RequirePermission('user.role.assign')
+  async assignRole(
     @CurrentUser() user: JwtPayload,
-    @Body() createEventDto: CreateEventDto,
+    @Param('id') targetUserId: string,
+    @Body() dto: AssignRoleDto,
   ) {
-    return this.eventsService.create(createEventDto, user.currentOrgId);
+    // Le service gère automatiquement :
+    // 1. Permission RBAC
+    // 2. Hiérarchie (canManageUser + canAssignRole)
+    return this.usersService.assignRoleToUser(
+      user.sub,           // Manager ID
+      targetUserId,       // Target User ID
+      dto.roleId,         // New Role ID
+      user.currentOrgId,  // Org context
+    );
   }
 
+  /**
+   * Mettre à jour un user
+   * Permission RBAC : user.update
+   * Hiérarchie : vérifiée avant modification
+   */
   @Patch(':id')
-  @RequirePermission('event.update')
+  @RequirePermission('user.update')
   async update(
     @CurrentUser() user: JwtPayload,
-    @Param('id') id: string,
-    @Body() updateEventDto: UpdateEventDto,
+    @Param('id') targetUserId: string,
+    @Body() dto: UpdateUserDto,
   ) {
-    // Charger la ressource pour vérifier le scope
-    const event = await this.eventsService.findOne(id);
-    
-    // Injecter le RBAC context (pour scope 'own')
-    const req = /* récupérer req depuis context */;
-    req.rbacContext = {
-      resourceOwnerId: event.created_by,
-      resourceOrgId: event.org_id,
-    };
+    // Vérifier la hiérarchie avant toute modification
+    await this.authz.assertDecision(
+      await this.authz.canManageUser(user.sub, targetUserId, user.currentOrgId)
+    );
 
-    return this.eventsService.update(id, updateEventDto);
+    return this.usersService.update(targetUserId, user.currentOrgId, dto);
+  }
+
+  /**
+   * Supprimer un user
+   * Permission RBAC : user.delete
+   * Hiérarchie : vérifiée avant suppression
+   */
+  @Delete(':id')
+  @RequirePermission('user.delete')
+  async remove(
+    @CurrentUser() user: JwtPayload,
+    @Param('id') targetUserId: string,
+  ) {
+    // Vérifier la hiérarchie avant suppression
+    await this.authz.assertDecision(
+      await this.authz.canManageUser(user.sub, targetUserId, user.currentOrgId)
+    );
+
+    return this.usersService.remove(targetUserId, user.currentOrgId);
   }
 }
 ```
 
-### Pattern de Vérification Scope
-
-Pour les permissions avec scope `own` ou `assigned` :
+### Gestion des Erreurs Hiérarchiques
 
 ```typescript
-@Patch(':id')
-@RequirePermission('event.update')
-async update(
-  @CurrentUser() user: JwtPayload,
-  @Param('id') id: string,
-  @Body() dto: UpdateEventDto,
-  @Req() req: Request,
-) {
-  // 1. Charger la ressource
-  const event = await this.eventsService.findOne(id);
-
-  if (!event) {
-    throw new NotFoundException('Event not found');
+// Dans le service
+try {
+  await this.authz.assertDecision(
+    await this.authz.canManageUser(managerId, targetUserId, orgId)
+  );
+} catch (error) {
+  if (error.message.includes('HIERARCHY_VIOLATION')) {
+    throw new ForbiddenException(
+      'You cannot manage a user with equal or higher role level than yours.'
+    );
   }
-
-  // 2. Injecter le RBAC context (pour que le guard puisse vérifier le scope)
-  req['rbacContext'] = {
-    resourceOwnerId: event.created_by,
-    resourceOrgId: event.org_id,
-  };
-
-  // 3. Le guard RequirePermissionGuard va vérifier automatiquement
-  //    si le user a le droit selon son scope (own/org/assigned/any)
-
-  return this.eventsService.update(id, dto);
+  throw error;
 }
 ```
 
----
+### Frontend : Affichage Conditionnel
 
-## 🧪 Tests à Adapter
-
-### Tests Unitaires
-
-**Avant ❌**
 ```typescript
-describe('UsersService', () => {
-  it('should find all users in org', async () => {
-    const users = await service.findAll('org-id');
-    expect(users).toHaveLength(5);
-  });
-});
+// Le frontend peut désactiver les boutons pour les users "non gérable"
+const canManageUser = (managerLevel: number, targetLevel: number) => {
+  return managerLevel < targetLevel;
+};
+
+// Exemple : Admin (level=1) voit tous les boutons
+// Manager (level=2) ne voit pas les boutons pour Admin (level=1)
+<button disabled={!canManageUser(currentUser.level, targetUser.level)}>
+  Modifier le rôle
+</button>
 ```
-
-**Après ✅**
-```typescript
-describe('UsersService', () => {
-  beforeEach(async () => {
-    // Setup: Créer users avec memberships
-    await prisma.user.create({ ... });
-    await prisma.orgUser.create({ ... });
-    await prisma.tenantUserRole.create({ ... });
-  });
-
-  it('should find all users in org', async () => {
-    const users = await service.findAll('org-id');
-    expect(users).toHaveLength(5);
-    expect(users[0].tenantRoles).toBeDefined();
-  });
-});
-```
-
-### Tests E2E
-
-**Avant ❌**
-```typescript
-it('GET /users should return users of org', () => {
-  return request(app.getHttpServer())
-    .get('/users')
-    .set('Authorization', `Bearer ${token}`)
-    .expect(200);
-});
-```
-
-**Après ✅**
-```typescript
-it('GET /users should return users of current org', async () => {
-  // Login pour obtenir JWT avec currentOrgId
-  const loginRes = await request(app.getHttpServer())
-    .post('/auth/login')
-    .send({ email: 'admin@org1.com', password: 'password' });
-
-  const response = await request(app.getHttpServer())
-    .get('/users')
-    .set('Authorization', `Bearer ${loginRes.body.access_token}`)
-    .expect(200);
-
-  expect(response.body).toHaveLength(3); // 3 users dans org1
-  expect(response.body[0].tenantRoles).toBeDefined();
-});
-```
-
----
 
 ## 📊 Checklist Globale
 
@@ -612,9 +595,10 @@ it('GET /users should return users of current org', async () => {
 - [ ] Adapter `findAll()` (jointure org_users)
 - [ ] Adapter `findOne()` (include relations)
 - [ ] Adapter `update()` (mise à jour TenantUserRole)
-- [ ] Créer `assignRoleToUser()`
+- [ ] Créer `assignRoleToUser()` (avec hiérarchie) ⭐
 - [ ] Tests unitaires adaptés
 - [ ] Tests E2E adaptés
+- [ ] Tests de hiérarchie ⭐
 
 ### Phase 3 : Services Métier
 - [ ] EventsService migré
@@ -649,7 +633,7 @@ Avant de passer à STEP 5 :
 - [ ] **Login fonctionne** : JWT contient `currentOrgId`
 - [ ] **Switch org fonctionne** : Nouveau JWT généré
 - [ ] **Permissions fonctionnent** : `@RequirePermission` bloque correctement
-- [ ] **Scopes fonctionnent** : `own` vs `org` vs `any` bien testés
+- [ ] **Scopes fonctionnent** : `own` vs `any` vs `assigned` bien testés
 - [ ] **Aucune régression** : Features existantes fonctionnent
 
 ---

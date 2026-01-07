@@ -18,7 +18,19 @@ Restreindre l'accès aux **modules/features** en fonction du **plan** de l'organ
 
 ### 🔑 Compatibilité JWT Minimal
 
-Le module gating utilise uniquement `user.currentOrgId` depuis le JWT, donc **aucun impact** du JWT minimal. Tout fonctionne tel quel ! ✅
+Le module gating utilise uniquement `user.currentOrgId` depuis le JWT minimal, donc **aucun impact** du JWT minimal. Tout fonctionne tel quel ! ✅
+
+**JWT utilisé** :
+```typescript
+{
+  sub: string;              // userId
+  mode: 'tenant';           // Mode tenant (requis pour module gating)
+  currentOrgId: string;     // Org active (requis)
+  iat, exp
+}
+```
+
+Le guard `RequireModuleGuard` n'a besoin que de `currentOrgId` pour vérifier l'accès aux modules. Les champs `isPlatform` et `isRoot` ne sont pas nécessaires pour le module gating.
 
 ---
 
