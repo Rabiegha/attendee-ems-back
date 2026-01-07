@@ -353,6 +353,44 @@ export class RegistrationsController {
 
     return this.registrationsService.undoCheckIn(id, orgId, req.user.id, checkinDto);
   }
+
+  @Post(':id/check-out')
+  @Permissions('registrations.checkin')
+  @ApiOperation({ summary: 'Check-out a registration (when participant leaves event)' })
+  @ApiResponse({ status: 200, description: 'Registration checked-out successfully' })
+  @ApiResponse({ status: 400, description: 'Already checked-out, not checked-in, or invalid status' })
+  @ApiResponse({ status: 404, description: 'Registration not found' })
+  async checkOut(
+    @Param('id') id: string,
+    @Body() checkoutDto: { eventId: string; checkoutLocation?: any },
+    @Request() req,
+  ) {
+    const allowAny = req.user.permissions?.some((p: string) =>
+      p.startsWith('registrations.') && p.endsWith(':any'),
+    );
+    const orgId = allowAny ? null : req.user.org_id;
+
+    return this.registrationsService.checkOut(id, orgId, req.user.id, checkoutDto);
+  }
+
+  @Post(':id/undo-check-out')
+  @Permissions('registrations.checkin')
+  @ApiOperation({ summary: 'Undo check-out of a registration' })
+  @ApiResponse({ status: 200, description: 'Registration check-out undone successfully' })
+  @ApiResponse({ status: 400, description: 'Not checked-out or invalid status' })
+  @ApiResponse({ status: 404, description: 'Registration not found' })
+  async undoCheckOut(
+    @Param('id') id: string,
+    @Body() checkoutDto: { eventId: string },
+    @Request() req,
+  ) {
+    const allowAny = req.user.permissions?.some((p: string) =>
+      p.startsWith('registrations.') && p.endsWith(':any'),
+    );
+    const orgId = allowAny ? null : req.user.org_id;
+
+    return this.registrationsService.undoCheckOut(id, orgId, req.user.id, checkoutDto);
+  }
 }
 
 // Routes pour la génération de badges (doivent être dans le EventsController ou un module dédié)

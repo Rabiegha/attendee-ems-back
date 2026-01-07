@@ -1937,6 +1937,185 @@ export class RegistrationsService {
   }
 
   /**
+   * Check-out a registration (when participant leaves the event)
+   * Validates eventId and ensures participant is checked-in first
+   */
+  async checkOut(
+    registrationId: string,
+    orgId: string | null,
+    userId: string,
+    dto: { eventId: string; checkoutLocation?: any },
+  ): Promise<any> {
+    // Fetch registration with event and attendee
+    const where: any = { id: registrationId };
+    if (orgId) {
+      where.org_id = orgId;
+    }
+
+    const registration = await this.prisma.registration.findFirst({
+      where,
+      include: {
+        event: {
+          include: { settings: true },
+        },
+        attendee: true,
+      },
+    });
+
+    if (!registration) {
+      throw new NotFoundException('Registration not found');
+    }
+
+    // CRITICAL: Validate eventId matches
+    if (dto.eventId !== registration.event_id) {
+      throw new BadRequestException(
+        `Event mismatch: This attendee is registered for a different event. ` +
+        `Expected event ${dto.eventId}, but registration is for event ${registration.event_id}.`
+      );
+    }
+
+    // Validate registration status
+    if (registration.status === 'refused') {
+      throw new BadRequestException(
+        `Cannot check-out: Registration was refused`
+      );
+    }
+
+    if (registration.status === 'cancelled') {
+      throw new BadRequestException(
+        `Cannot check-out: Registration was cancelled`
+      );
+    }
+
+    // Validate event settings allow check-in/out
+    if (!registration.event.settings?.allow_checkin_out) {
+      throw new BadRequestException(
+        `Check-out is disabled for this event`
+      );
+    }
+
+    // Validate participant is checked-in first
+    if (!registration.checked_in_at) {
+      throw new BadRequestException(
+        `Cannot check-out: Participant is not checked-in`
+      );
+    }
+
+    // Validate not already checked-out
+    if (registration.checked_out_at) {
+      throw new BadRequestException(
+        `Already checked-out at ${new Date(registration.checked_out_at).toLocaleString()}`
+      );
+    }
+
+    // Perform check-out
+    const updated = await this.prisma.registration.update({
+      where: { id: registrationId },
+      data: {
+        checked_out_at: new Date(),
+        checked_out_by: userId,
+        checkout_location: dto.checkoutLocation as any,
+      },
+      include: {
+        attendee: true,
+        event: true,
+      },
+    });
+
+    return {
+      success: true,
+      message: `${updated.attendee.first_name} ${updated.attendee.last_name} checked-out successfully`,
+      registration: updated,
+    };
+  }
+
+  /**
+   * Undo check-out of a registration
+   * Validates eventId and ensures participant is checked-out
+   */
+  async undoCheckOut(
+    registrationId: string,
+    orgId: string | null,
+    userId: string,
+    dto: { eventId: string },
+  ): Promise<any> {
+    // Fetch registration with event and attendee
+    const where: any = { id: registrationId };
+    if (orgId) {
+      where.org_id = orgId;
+    }
+
+    const registration = await this.prisma.registration.findFirst({
+      where,
+      include: {
+        event: {
+          include: { settings: true },
+        },
+        attendee: true,
+      },
+    });
+
+    if (!registration) {
+      throw new NotFoundException('Registration not found');
+    }
+
+    // CRITICAL: Validate eventId matches
+    if (dto.eventId !== registration.event_id) {
+      throw new BadRequestException(
+        `Event mismatch: Cannot undo check-out for different event. ` +
+        `Expected event ${dto.eventId}, but registration is for event ${registration.event_id}.`
+      );
+    }
+
+    // Validate registration status
+    if (registration.status === 'refused') {
+      throw new BadRequestException(
+        `Cannot undo check-out: Registration was refused`
+      );
+    }
+
+    if (registration.status === 'cancelled') {
+      throw new BadRequestException(
+        `Cannot undo check-out: Registration was cancelled`
+      );
+    }
+
+    // Validate event settings allow check-in/out
+    if (!registration.event.settings?.allow_checkin_out) {
+      throw new BadRequestException(
+        `Check-out is disabled for this event`
+      );
+    }
+
+    // Validate currently checked-out
+    if (!registration.checked_out_at) {
+      throw new BadRequestException(
+        `Cannot undo: Not currently checked-out`
+      );
+    }
+
+    // Perform undo check-out
+    const updated = await this.prisma.registration.update({
+      where: { id: registrationId },
+      data: {
+        checked_out_at: null,
+        checked_out_by: null,
+        checkout_location: null,
+      },
+      include: {
+        attendee: true,
+        event: true,
+      },
+    });
+
+    return {
+      success: true,
+      message: `${updated.attendee.first_name} ${updated.attendee.last_name} check-out undone successfully`,
+      registration: updated,
+    };
+  }
+
+  /**
    * Get event statistics (total, checked-in, percentage)
    */
   async getEventStats(eventId: string, orgId: string | null): Promise<{
