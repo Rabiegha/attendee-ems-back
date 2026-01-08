@@ -49,7 +49,7 @@ describe('STEP 2: JWT Multi-org + Switch Context (E2E)', () => {
       adminOrg1Token = response.body.access_token;
     });
 
-    it('should return tenant-mode JWT with currentOrgId for multi-org user', async () => {
+    it('should return tenant-mode JWT WITHOUT org for multi-org user', async () => {
       const response = await request(app.getHttpServer())
         .post('/login')
         .send({
@@ -60,6 +60,7 @@ describe('STEP 2: JWT Multi-org + Switch Context (E2E)', () => {
 
       expect(response.body).toHaveProperty('access_token');
       expect(response.body).toHaveProperty('mode', 'tenant');
+      expect(response.body).toHaveProperty('requiresOrgSelection', true);
       
       // Sauvegarder le token
       multiToken = response.body.access_token;
@@ -82,16 +83,16 @@ describe('STEP 2: JWT Multi-org + Switch Context (E2E)', () => {
   });
 
   describe('GET /me/orgs - Liste des organisations', () => {
-    it('should return available orgs for multi-org user', async () => {
+    it('should return available orgs with NULL current for multi-org user before selection', async () => {
       const response = await request(app.getHttpServer())
         .get('/me/orgs')
         .set('Authorization', `Bearer ${multiToken}`)
         .expect(200);
 
-      expect(response.body).toHaveProperty('current');
+      expect(response.body).toHaveProperty('current', null);  // ← Pas d'org sélectionnée
       expect(response.body).toHaveProperty('available');
       expect(Array.isArray(response.body.available)).toBe(true);
-      expect(response.body.available.length).toBeGreaterThan(0);
+      expect(response.body.available.length).toBeGreaterThanOrEqual(2);  // multi@test.com a 2 orgs
 
       // Vérifier la structure d'une org
       const org = response.body.available[0];
@@ -123,7 +124,7 @@ describe('STEP 2: JWT Multi-org + Switch Context (E2E)', () => {
         const grant = response.body.grants[0];
         expect(grant).toHaveProperty('key');
         expect(grant).toHaveProperty('scope');
-        expect(['any', 'org', 'own']).toContain(grant.scope);
+        expect(['any', 'assigned', 'own', 'none']).toContain(grant.scope);
       }
     });
 
@@ -136,6 +137,13 @@ describe('STEP 2: JWT Multi-org + Switch Context (E2E)', () => {
       expect(response.body).toHaveProperty('orgId', null);
       expect(response.body).toHaveProperty('modules');
       expect(response.body.modules).toContain('platform');
+    });
+
+    it('should reject ability request for multi-org user without org selection', async () => {
+      await request(app.getHttpServer())
+        .get('/me/ability')
+        .set('Authorization', `Bearer ${multiToken}`)
+        .expect(401);  // Unauthorized: pas d'org sélectionnée
     });
   });
 

@@ -67,7 +67,7 @@ src/platform/authz/
 │   └── permission-resolver.ts     # Résolution grants (V1: role, V2: overrides)
 │
 ├── ports/                          # 🔌 INTERFACES (SPI)
-│   ├── rbac-query.port.ts         # getRoleForUserInOrg, getGrantsForRole
+│   ├── rbac-query.port.ts         # getTenantRoleForUserInOrg, getPlatformRoleForUser, getGrantsForTenantRole, getGrantsForPlatformRole
 │   ├── membership.port.ts         # isMemberOfOrg, getPlatformOrgAccess
 │   ├── module-gating.port.ts      # isModuleEnabledForOrg (MVP)
 │   └── auth-context.port.ts       # 🆕 buildAuthContext (JWT minimal → AuthContext)
@@ -92,6 +92,49 @@ src/platform/authz/
 └── authz.module.ts                 # Module NestJS
 ```
 
+### 🎨 Principes Architecturaux : Séparation Explicite Tenant/Platform
+
+**Décision architecturale clé** : Les méthodes du port `RbacQueryPort` sont séparées explicitement entre tenant et platform, plutôt qu'une méthode unique avec paramètres optionnels.
+
+**Avant (approche ambiguë)** :
+```typescript
+// ❌ Pas clair : orgId optionnel = tenant OU platform ?
+resolveGrants(userId: string, orgId?: string): Promise<Grant[]>
+```
+
+**Après (approche explicite)** :
+```typescript
+// ✅ Clair : Deux flux distincts
+getTenantRoleForUserInOrg(userId: string, orgId: string): Promise<TenantRole | null>
+getPlatformRoleForUser(userId: string): Promise<PlatformRole | null>
+getGrantsForTenantRole(roleId: string): Promise<Grant[]>
+getGrantsForPlatformRole(roleId: string): Promise<Grant[]>
+```
+
+**Bénéfices** :
+1. **Type Safety** : Impossible de confondre tenant role et platform role
+2. **Clarté** : Le code auto-documente l'intention (tenant vs platform)
+3. **Cache** : Clés différentes selon le contexte (userId:orgId vs userId)
+4. **Sécurité** : Impossible de mélanger les contextes accidentellement
+5. **Testabilité** : Tests plus explicites sur les deux flux
+
+**Architecture du PermissionResolver** :
+```
+resolveGrantsForContext(authContext)
+  ├── if mode='tenant' → resolveTenantGrants(userId, orgId)
+  │     ├── getTenantRoleForUserInOrg() → { roleId, level }
+  │     └── getGrantsForTenantRole(roleId) → [grants]
+  │
+  └── if mode='platform' → resolvePlatformGrants(userId)
+        ├── getPlatformRoleForUser() → { roleId, tenantAccessScope }
+        └── getGrantsForPlatformRole(roleId) → [grants]
+```
+
+**Intégration avec JWT minimal de STEP 2** :
+- JWT contient : `{ sub, mode, currentOrgId? }`
+- `AuthContextPort.buildAuthContext()` enrichit avec `isPlatform`, `isRoot` depuis DB
+- `PermissionResolver` route vers tenant ou platform selon `authContext.mode`
+
 ---
 
 ## 🧠 Core : Logique Métier Pure
@@ -111,6 +154,34 @@ export interface AuthContext {
   isPlatform: boolean;         // True si mode='platform' OU a un platform role
   isRoot: boolean;             // True si role platform is_root=true
 }
+
+/**
+ * Types dérivés pour type safety
+ * 
+ * TenantContext : User en mode tenant avec une org sélectionnée
+ * - Utilise un tenant_user_role (manager, admin, member, etc.)
+ * - Peut avoir aussi un platform role en parallèle
+ * - currentOrgId toujours défini
+ * 
+ * PlatformContext : User en mode platform sans org spécifique
+ * - Utilise un platform_user_role (root, super_admin, support, etc.)
+ * - Peut agir sur plusieurs orgs selon tenantAccessScope
+ * - currentOrgId peut être null ou défini selon l'action
+ * 
+ * Exemple de flux:
+ * 1. User multi-org login → JWT mode=tenant, currentOrgId=null → Doit appeler /switch-org
+ * 2. User platform login → JWT mode=platform, currentOrgId=null → Peut agir directement
+ * 3. User single-org login → JWT mode=tenant, currentOrgId='org1' → Peut agir directement
+ */
+export type TenantContext = AuthContext & {
+  mode: 'tenant';
+  currentOrgId: string; // TOUJOURS défini pour tenant
+};
+
+export type PlatformContext = AuthContext & {
+  mode: 'platform';
+  currentOrgId?: string; // Optionnel pour platform
+};
 
 // Contexte RBAC (sur quoi ?)
 export interface RbacContext {
@@ -228,10 +299,10 @@ export class AuthorizationService {
     authContext: AuthContext,
     rbacContext: RbacContext = {},
   ): Promise<Decision> {
-    // STEP 1: Vérifier le contexte tenant (si nécessaire)
-    if (!authContext.currentOrgId) {
+    // STEP 1: Vérifier le contexte tenant (si mode tenant)
+    if (authContext.mode === 'tenant' && !authContext.currentOrgId) {
       return DecisionHelper.deny(DecisionCode.NO_TENANT_CONTEXT, {
-        reason: 'No organization context provided',
+        reason: 'No organization context provided - user must select org via /switch-org',
       });
     }
 
@@ -241,11 +312,8 @@ export class AuthorizationService {
       return membershipCheck;
     }
 
-    // STEP 3: Résoudre les grants (permissions + scopes)
-    const grants = await this.permissionResolver.resolveGrants(
-      authContext.userId,
-      authContext.currentOrgId,
-    );
+    // STEP 3: Résoudre les grants selon le contexte (tenant ou platform)
+    const grants = await this.permissionResolver.resolveGrantsForContext(authContext);
 
     // STEP 4: Trouver le grant correspondant
     const grant = grants.find((g) => g.key === permissionKey);
@@ -330,14 +398,22 @@ export class AuthorizationService {
       return DecisionHelper.allow();
     }
 
-    // Platform user : vérifier tenant access
-    const tenantAccessScope = await this.rbacQuery.getPlatformTenantAccessScope(userId);
+    // Platform user : vérifier tenant access via getPlatformRoleForUser
+    const platformRole = await this.rbacQuery.getPlatformRoleForUser(userId);
+    
+    if (!platformRole) {
+      return DecisionHelper.deny(DecisionCode.PLATFORM_TENANT_ACCESS_DENIED, {
+        reason: 'User does not have a platform role',
+      });
+    }
 
-    if (tenantAccessScope === TenantAccessScope.TENANT_ANY) {
+    // tenant_any : accès à toutes les orgs (ROOT, SUPER_ADMIN)
+    if (platformRole.tenantAccessScope === TenantAccessScope.TENANT_ANY) {
       return DecisionHelper.allow();
     }
 
-    if (tenantAccessScope === TenantAccessScope.TENANT_ASSIGNED) {
+    // tenant_assigned : vérifier platform_user_org_access (SUPPORT)
+    if (platformRole.tenantAccessScope === TenantAccessScope.TENANT_ASSIGNED) {
       const hasAccess = await this.membership.hasPlatformAccessToOrg(userId, currentOrgId!);
       if (!hasAccess) {
         return DecisionHelper.deny(DecisionCode.PLATFORM_TENANT_ACCESS_DENIED, {
@@ -450,25 +526,101 @@ export class AuthorizationService {
 ```typescript
 import { Injectable } from '@nestjs/common';
 import { RbacQueryPort } from '../ports/rbac-query.port';
-import { Grant } from './types';
+import { Grant, AuthContext } from './types';
 
 /**
- * Résout les grants (permissions + scopes) d'un user dans une org
- * V1: Lecture depuis role_permissions
+ * Résout les grants (permissions + scopes) selon le contexte JWT
+ * 
+ * Architecture:
+ * - resolveGrantsForContext() : Méthode publique qui route vers tenant ou platform
+ * - resolveTenantGrants() : Logique privée pour les tenants
+ * - resolvePlatformGrants() : Logique privée pour les platforms
+ * 
+ * Intégration avec JWT minimal de STEP 2:
+ * - JWT contient: { sub, mode, currentOrgId?, iat, exp }
+ * - Si mode='tenant' + currentOrgId: tenant grants
+ * - Si mode='platform': platform grants
+ * - Si mode='tenant' sans currentOrgId: requiert sélection d'org (/switch-org)
+ * 
+ * V1: Lecture depuis role_permissions (tenant + platform)
  * V2: Ajout des overrides (user_permissions)
  */
 @Injectable()
 export class PermissionResolver {
   constructor(private rbacQuery: RbacQueryPort) {}
 
-  async resolveGrants(userId: string, orgId: string): Promise<Grant[]> {
-    // V1: Charger les grants depuis le rôle
-    const roleGrants = await this.rbacQuery.getGrantsForRole(userId, orgId);
+  /**
+   * Méthode publique : Résout les grants selon le contexte JWT
+   * Route vers tenant ou platform selon authContext.mode
+   */
+  async resolveGrantsForContext(authContext: AuthContext): Promise<Grant[]> {
+    if (authContext.mode === 'tenant' && authContext.currentOrgId) {
+      return this.resolveTenantGrants(authContext.userId, authContext.currentOrgId);
+    }
 
-    // V2 (futur): Merger avec les overrides
+    if (authContext.mode === 'platform') {
+      return this.resolvePlatformGrants(authContext.userId);
+    }
+
+    // Mode tenant sans currentOrgId: utilisateur multi-org sans sélection
+    // L'AuthorizationService doit rejeter la requête avant d'arriver ici
+    return [];
+  }
+
+  /**
+   * Logique privée : Résolution des grants TENANT
+   * 1. Récupérer le tenant role du user dans l'org
+   * 2. Charger les permissions du role
+   */
+  private async resolveTenantGrants(userId: string, orgId: string): Promise<Grant[]> {
+    // 1. Charger le tenant role
+    const tenantRole = await this.rbacQuery.getTenantRoleForUserInOrg(userId, orgId);
+    if (!tenantRole) {
+      return []; // User pas membre de cette org
+    }
+
+    // 2. Charger les grants du role
+    const roleGrants = await this.rbacQuery.getGrantsForTenantRole(tenantRole.roleId);
+
+    // V2 (futur): Merger avec les overrides user_permissions
     // const overrides = await this.rbacQuery.getUserOverrides(userId, orgId);
     // return this.mergeGrants(roleGrants, overrides);
 
+    return roleGrants;
+  }
+
+  /**
+   * Logique privée : Résolution des grants PLATFORM
+   * 1. Récupérer le platform role du user
+   * 2. Charger les permissions du role
+   * 3. Si tenantAccessScope='tenant_any': accès à TOUTES les orgs
+   * 4. Si tenantAccessScope='tenant_assigned': vérifier platform_user_org_access
+   */
+  private async resolvePlatformGrants(userId: string): Promise<Grant[]> {
+    // 1. Charger le platform role
+    const platformRole = await this.rbacQuery.getPlatformRoleForUser(userId);
+    if (!platformRole) {
+      return []; // User n'a pas de rôle platform
+    }
+
+    // 2. Charger les grants du role
+    const roleGrants = await this.rbacQuery.getGrantsForPlatformRole(platformRole.roleId);
+
+    // Note: Le tenantAccessScope est utilisé plus tard dans AuthorizationService
+    // pour vérifier si le platform user peut agir sur une org spécifique
+    // - tenant_any: accès à toutes les orgs (ROOT, SUPER_ADMIN)
+    // - tenant_assigned: accès uniquement aux orgs dans platform_user_org_access (SUPPORT)
+
+    return roleGrants;
+  }
+
+  /**
+   * V2 (futur): Merger les grants du role avec les overrides user_permissions
+   * Exemple: Admin avec permission events:delete=none (override pour enlever)
+   */
+  private mergeGrants(roleGrants: Grant[], overrides: Grant[]): Grant[] {
+    // TODO STEP 4: Implémenter la logique de merge
+    // Pour l'instant, on retourne juste les grants du rôle
     return roleGrants;
   }
 }
@@ -549,20 +701,60 @@ export class ScopeEvaluator {
 ```typescript
 import { Grant, TenantAccessScope } from '../core/types';
 
+/**
+ * Port pour les requêtes RBAC
+ * 
+ * Conception avec séparation explicite tenant/platform:
+ * - getTenantRoleForUserInOrg() : Récupérer le rôle TENANT d'un user dans une org
+ * - getPlatformRoleForUser() : Récupérer le rôle PLATFORM global d'un user
+ * - getGrantsForTenantRole() : Récupérer les permissions d'un tenant role
+ * - getGrantsForPlatformRole() : Récupérer les permissions d'un platform role
+ * 
+ * Cette séparation permet:
+ * 1. Type safety: Pas d'ambiguïté sur le type de rôle retourné
+ * 2. Clarté: Deux flux distincts (tenant vs platform)
+ * 3. Cache: Clés différentes (userId:orgId vs userId)
+ * 4. Sécurité: Impossible de mélanger les contextes
+ */
 export abstract class RbacQueryPort {
   /**
-   * Récupérer les grants (permissions + scopes) d'un user dans une org
+   * Récupérer le rôle TENANT d'un user dans une org spécifique
+   * @returns TenantUserRole avec le roleId, level, etc. ou null si pas membre
    */
-  abstract getGrantsForRole(userId: string, orgId: string): Promise<Grant[]>;
+  abstract getTenantRoleForUserInOrg(
+    userId: string,
+    orgId: string,
+  ): Promise<{
+    roleId: string;
+    roleName: string;
+    level: number;
+  } | null>;
 
   /**
-   * Récupérer le tenant access scope d'un platform user
+   * Récupérer le rôle PLATFORM global d'un user
+   * @returns PlatformUserRole avec le roleId, tenantAccessScope, etc. ou null si pas de rôle platform
    */
-  abstract getPlatformTenantAccessScope(userId: string): Promise<TenantAccessScope | null>;
+  abstract getPlatformRoleForUser(userId: string): Promise<{
+    roleId: string;
+    roleName: string;
+    tenantAccessScope: TenantAccessScope;
+  } | null>;
+
+  /**
+   * Récupérer les grants (permissions + scopes) d'un TENANT role
+   * @param roleId L'ID du tenant role (depuis tenant_user_roles)
+   */
+  abstract getGrantsForTenantRole(roleId: string): Promise<Grant[]>;
+
+  /**
+   * Récupérer les grants (permissions + scopes) d'un PLATFORM role
+   * @param roleId L'ID du platform role (depuis platform_user_roles)
+   */
+  abstract getGrantsForPlatformRole(roleId: string): Promise<Grant[]>;
 
   /**
    * Récupérer le level d'un rôle dans une org
-   * Utilisé pour vérifier la hiérarchie
+   * Utilisé pour vérifier la hiérarchie (ex: empêcher un manager d'assigner un rôle égal/supérieur)
    */
   abstract getRoleLevel(userId: string, orgId: string): Promise<number | null>;
 }
@@ -649,88 +841,136 @@ import { Grant, ScopeLimit, TenantAccessScope } from '../../core/types';
 export class PrismaRbacQueryAdapter implements RbacQueryPort {
   constructor(private prisma: PrismaService) {}
 
-  async getGrantsForRole(userId: string, orgId: string): Promise<Grant[]> {
-    // 1. Récupérer le rôle tenant
+  /**
+   * Récupérer le rôle TENANT d'un user dans une org
+   * Implémentation avec Prisma via tenant_user_roles
+   */
+  async getTenantRoleForUserInOrg(
+    userId: string,
+    orgId: string,
+  ): Promise<{ roleId: string; roleName: string; level: number } | null> {
     const tenantRole = await this.prisma.tenantUserRole.findUnique({
       where: {
         user_id_org_id: { user_id: userId, org_id: orgId },
       },
       include: {
         role: {
-          include: {
-            rolePermissions: {
-              include: {
-                permission: true,
-              },
-            },
+          select: {
+            id: true,
+            name: true,
+            level: true,
           },
         },
       },
     });
 
-    if (tenantRole) {
-      return tenantRole.role.rolePermissions.map((rp) => ({
-        key: rp.permission.key,
-        scopeLimit: rp.scope_limit as ScopeLimit,
-        moduleKey: rp.permission.module_key || undefined,
-      }));
+    if (!tenantRole) {
+      return null;
     }
 
-    // 2. Fallback sur platform role (si pas de tenant role)
+    return {
+      roleId: tenantRole.role.id,
+      roleName: tenantRole.role.name,
+      level: tenantRole.role.level,
+    };
+  }
+
+  /**
+   * Récupérer le rôle PLATFORM global d'un user
+   * Implémentation avec Prisma via platform_user_roles
+   */
+  async getPlatformRoleForUser(userId: string): Promise<{
+    roleId: string;
+    roleName: string;
+    tenantAccessScope: TenantAccessScope;
+  } | null> {
     const platformRole = await this.prisma.platformUserRole.findUnique({
       where: { user_id: userId },
       include: {
         role: {
-          include: {
-            rolePermissions: {
-              include: {
-                permission: true,
-              },
-            },
+          select: {
+            id: true,
+            name: true,
+            tenant_access_scope: true,
           },
         },
       },
-    });
-
-    if (platformRole) {
-      return platformRole.role.rolePermissions.map((rp) => ({
-        key: rp.permission.key,
-        scopeLimit: rp.scope_limit as ScopeLimit,
-        moduleKey: rp.permission.module_key || undefined,
-      }));
-    }
-
-    return [];
-  }
-
-  async getPlatformTenantAccessScope(userId: string): Promise<TenantAccessScope | null> {
-    const platformRole = await this.prisma.platformUserRole.findUnique({
-      where: { user_id: userId },
-      select: { scope: true },
     });
 
     if (!platformRole) {
       return null;
     }
 
-    return platformRole.scope === 'global'
-      ? TenantAccessScope.TENANT_ANY
-      : TenantAccessScope.TENANT_ASSIGNED;
+    return {
+      roleId: platformRole.role.id,
+      roleName: platformRole.role.name,
+      tenantAccessScope: platformRole.role.tenant_access_scope as TenantAccessScope,
+    };
   }
 
-  async getRoleLevel(userId: string, orgId: string): Promise<number | null> {
-    const tenantRole = await this.prisma.tenantUserRole.findUnique({
-      where: {
-        user_id_org_id: { user_id: userId, org_id: orgId },
-      },
+  /**
+   * Récupérer les grants d'un TENANT role
+   * Implémentation avec Prisma via role_permissions
+   */
+  async getGrantsForTenantRole(roleId: string): Promise<Grant[]> {
+    const rolePermissions = await this.prisma.rolePermission.findMany({
+      where: { role_id: roleId },
       include: {
-        role: {
-          select: { level: true },
-        },
+        permission: true,
       },
     });
 
-    return tenantRole?.role.level ?? null;
+    return rolePermissions.map((rp) => ({
+      key: rp.permission.key,
+      scopeLimit: rp.scope_limit as ScopeLimit,
+      moduleKey: rp.permission.module_key || undefined,
+    }));
+  }
+
+  /**
+   * Récupérer les grants d'un PLATFORM role
+   * Implémentation identique à tenant (même table role_permissions)
+   */
+  async getGrantsForPlatformRole(roleId: string): Promise<Grant[]> {
+    // Note: Les platform roles et tenant roles utilisent la même table role_permissions
+    // La différence est dans la table de liaison (platform_user_roles vs tenant_user_roles)
+    return this.getGrantsForTenantRole(roleId);
+  }
+
+  /**
+   * Récupérer le level d'un user dans une org (pour la hiérarchie)
+   */
+  async getRoleLevel(userId: string, orgId: string): Promise<number | null> {
+    const tenantRole = await this.getTenantRoleForUserInOrg(userId, orgId);
+    return tenantRole?.level ?? null;
+  }
+}
+              },
+    });
+
+    return rolePermissions.map((rp) => ({
+      key: rp.permission.key,
+      scopeLimit: rp.scope_limit as ScopeLimit,
+      moduleKey: rp.permission.module_key || undefined,
+    }));
+  }
+
+  /**
+   * Récupérer les grants d'un PLATFORM role
+   * Implémentation identique à tenant (même table role_permissions)
+   */
+  async getGrantsForPlatformRole(roleId: string): Promise<Grant[]> {
+    // Note: Les platform roles et tenant roles utilisent la même table role_permissions
+    // La différence est dans la table de liaison (platform_user_roles vs tenant_user_roles)
+    return this.getGrantsForTenantRole(roleId);
+  }
+
+  /**
+   * Récupérer le level d'un user dans une org (pour la hiérarchie)
+   */
+  async getRoleLevel(userId: string, orgId: string): Promise<number | null> {
+    const tenantRole = await this.getTenantRoleForUserInOrg(userId, orgId);
+    return tenantRole?.level ?? null;
   }
 }
 ```
@@ -1298,6 +1538,54 @@ Temps moyen buildAuthContext :
 Load DB platform_user_roles : ~10-50 queries/s (99% reduction)
 P99 latency : ~10ms
 ```
+
+---
+
+## 📝 Notes de Mise à Jour (Janvier 2025)
+
+### Décision Architecturale : Séparation Explicite Tenant/Platform
+
+Suite à une revue architecturale, les méthodes du `RbacQueryPort` ont été refactorisées pour séparer explicitement les flux tenant et platform :
+
+**Changements dans RbacQueryPort** :
+- ❌ Supprimé : `getGrantsForRole(userId, orgId?)` (ambiguë)
+- ❌ Supprimé : `getPlatformTenantAccessScope(userId)` (remplacé)
+- ✅ Ajouté : `getTenantRoleForUserInOrg(userId, orgId)` (explicite)
+- ✅ Ajouté : `getPlatformRoleForUser(userId)` (explicite)
+- ✅ Ajouté : `getGrantsForTenantRole(roleId)` (séparé)
+- ✅ Ajouté : `getGrantsForPlatformRole(roleId)` (séparé)
+
+**Changements dans PermissionResolver** :
+- ❌ Supprimé : `resolveGrants(userId, orgId)` (ancienne API)
+- ✅ Ajouté : `resolveGrantsForContext(authContext)` (nouvelle API)
+- ✅ Ajouté : `resolveTenantGrants(userId, orgId)` (privé)
+- ✅ Ajouté : `resolvePlatformGrants(userId)` (privé)
+
+**Changements dans AuthorizationService** :
+- ✅ `can()` : Utilise maintenant `permissionResolver.resolveGrantsForContext(authContext)`
+- ✅ `checkMembership()` : Utilise `getPlatformRoleForUser()` au lieu de `getPlatformTenantAccessScope()`
+
+**Changements dans types.ts** :
+- ✅ Ajouté : `TenantContext` (type dérivé pour type safety)
+- ✅ Ajouté : `PlatformContext` (type dérivé pour type safety)
+
+**Bénéfices** :
+1. **Type Safety** : Les types `TenantContext` et `PlatformContext` garantissent l'utilisation correcte
+2. **Clarté** : Le code auto-documente les flux tenant vs platform
+3. **Cache** : Clés de cache différentes selon le contexte (userId:orgId vs userId)
+4. **Testabilité** : Tests plus explicites et moins de cas limites
+5. **Évolutivité** : Facilite l'ajout de nouvelles fonctionnalités tenant/platform
+
+**Intégration avec STEP 2 (JWT Minimal)** :
+- JWT minimal : `{ sub, mode, currentOrgId? }`
+- AuthContextPort enrichit avec `isPlatform`, `isRoot` depuis DB
+- PermissionResolver route vers tenant ou platform selon `authContext.mode`
+- Cache AuthContext avec TTL 5min pour éviter stale data
+
+**Références** :
+- Discussion : ChatGPT feedback sur la séparation tenant/platform
+- Document de progression : [PROGRESS_STEP1_STEP2.md](./PROGRESS_STEP1_STEP2.md)
+- Tests E2E : `test/step2-jwt-multi-org.e2e-spec.ts` (9/9 passing)
 
 ---
 

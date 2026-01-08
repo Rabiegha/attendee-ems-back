@@ -65,15 +65,11 @@ export class AuthService {
       const orgId = userWithContext.orgMemberships[0].org_id;
       tokenResult = { ...(await this.generateJwtForOrg(user.id, orgId)), hasOrgContext: true };
     }
-    // Cas D : Multi-org → chercher default ou renvoyer tenant-no-org
+    // Cas D : Multi-org → PAS d'org par défaut, user doit choisir
     else {
-      // TODO: Implémenter is_default dans la migration
-      // const defaultMembership = userWithContext.orgMemberships.find(
-      //   (m) => m.is_default,
-      // );
-      // Pour l'instant, utiliser la première org
-      const orgId = userWithContext.orgMemberships[0]?.org_id || null;
-      tokenResult = { ...(await this.generateJwtForOrg(user.id, orgId)), hasOrgContext: !!orgId };
+      // Générer JWT tenant-mode SANS currentOrgId
+      // Le front devra appeler /switch-org pour sélectionner une org
+      tokenResult = { ...(await this.generateJwtForOrg(user.id, null)), hasOrgContext: false };
     }
 
     return {
