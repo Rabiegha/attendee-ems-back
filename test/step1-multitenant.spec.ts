@@ -352,13 +352,13 @@ describe('STEP 1 - Multi-tenant Model', () => {
         data: {
           user_id: testUserId,
           role_id: testRoleSupport,
-          scope: 'assigned',
+          scope: 'tenant_assigned',
         },
       });
 
       expect(assignment.user_id).toBe(testUserId);
       expect(assignment.role_id).toBe(testRoleSupport);
-      expect(assignment.scope).toBe('assigned');
+      expect(assignment.scope).toBe('tenant_assigned');
     });
 
     it('devrait permettre 1 seul rôle platform par user (UNIQUE)', async () => {
@@ -505,7 +505,7 @@ describe('STEP 1 - Multi-tenant Model', () => {
         data: {
           user_id: bob.id,
           role_id: testRoleSupport,
-          scope: 'assigned',
+          scope: 'tenant_assigned',
         },
       });
 
@@ -528,7 +528,7 @@ describe('STEP 1 - Multi-tenant Model', () => {
       });
 
       expect(platformRole?.role.code).toBe('SUPPORT');
-      expect(platformRole?.scope).toBe('assigned');
+      expect(platformRole?.scope).toBe('tenant_assigned');
       expect(accesses).toHaveLength(2);
     });
 
@@ -545,7 +545,7 @@ describe('STEP 1 - Multi-tenant Model', () => {
         data: {
           user_id: charlie.id,
           role_id: testRoleRoot,
-          scope: 'all',
+          scope: 'tenant_any',
         },
       });
 
@@ -557,7 +557,7 @@ describe('STEP 1 - Multi-tenant Model', () => {
 
       expect(platformRole?.role.code).toBe('ROOT');
       expect(platformRole?.role.is_root).toBe(true);
-      expect(platformRole?.scope).toBe('all');
+      expect(platformRole?.scope).toBe('tenant_any');
     });
   });
 });

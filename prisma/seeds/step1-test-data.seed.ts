@@ -269,12 +269,12 @@ async function main() {
     },
     update: {
       role_id: roleSupport.id,
-      scope: 'assigned',
+      scope: 'tenant_assigned',
     },
     create: {
       user_id: support.id,
       role_id: roleSupport.id,
-      scope: 'assigned',
+      scope: 'tenant_assigned',
     },
   });
 
@@ -319,12 +319,12 @@ async function main() {
     },
     update: {
       role_id: roleRoot.id,
-      scope: 'all',
+      scope: 'tenant_any',
     },
     create: {
       user_id: root.id,
       role_id: roleRoot.id,
-      scope: 'all',
+      scope: 'tenant_any',
     },
   });
 
