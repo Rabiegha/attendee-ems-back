@@ -127,7 +127,10 @@ export class PublicService {
 
     // Fetch attendee types linked to this event
     const eventAttendeeTypes = await this.prisma.eventAttendeeType.findMany({
-      where: { event_id: eventId },
+      where: { 
+        event_id: eventId,
+        is_active: true, // Filtrer uniquement les types actifs
+      },
       include: {
         attendeeType: {
           select: {
