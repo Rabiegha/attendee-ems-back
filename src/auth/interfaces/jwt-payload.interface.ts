@@ -4,14 +4,16 @@
  * Les permissions ne sont PAS dans le JWT.
  * Elles sont chargées dynamiquement via GET /auth/me/ability
  * 
+ * iat et exp sont gérés automatiquement par JwtModule
+ * 
  * @see https://datatracker.ietf.org/doc/html/rfc8725
  */
 export interface JwtPayload {
   sub: string;                      // userId
   mode: 'tenant' | 'platform';      // Mode utilisateur
   currentOrgId?: string;            // Org active (seulement si mode=tenant)
-  iat: number;                      // Issued at (timestamp Unix)
-  exp: number;                      // Expiration (timestamp Unix)
+  iat?: number;                     // Issued at (timestamp Unix) - géré par JwtModule
+  exp?: number;                     // Expiration (timestamp Unix) - géré par JwtModule
 }
 
 /**

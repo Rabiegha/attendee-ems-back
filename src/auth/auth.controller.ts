@@ -1,10 +1,12 @@
 import { Controller, Post, Body, UnauthorizedException, Req, Res, HttpCode, HttpStatus, Get, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiCookieAuth, ApiBearerAuth } from '@nestjs/swagger';
 import { Request, Response } from 'express';
+import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { SwitchOrgDto } from './dto/switch-org.dto';
 import { ConfigService } from '../config/config.service';
+import { PrismaService } from '../infra/db/prisma.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { JwtPayload } from './interfaces/jwt-payload.interface';
@@ -15,9 +17,11 @@ export class AuthController {
   constructor(
     private authService: AuthService,
     private configService: ConfigService,
+    private prisma: PrismaService,
   ) {}
 
   @Post('login')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Connexion utilisateur',
     description: 'Authentifie un utilisateur et retourne un token JWT avec refresh token en cookie'
@@ -60,72 +64,33 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const user = await this.authService.validateUser(
-      loginDto.email,
-      loginDto.password,
-    );
-
-    if (!user) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
-
-    const ctx = {
-      ip: req.ip || req.connection.remoteAddress,
-      userAgent: req.get('User-Agent'),
-    };
-
-    const result = await this.authService.loginWithRefreshToken(user, ctx);
-
-    // Set refresh token as HttpOnly cookie
-    const cookieOptions = {
-      httpOnly: true,
-      secure: this.configService.authCookieSecure,
-      sameSite: this.configService.authCookieSameSite as 'strict' | 'lax' | 'none',
-      path: '/',
-      maxAge: this.secondsFromTtl(this.configService.jwtRefreshTtl) * 1000,
-    };
-
-    if (this.configService.authCookieDomain) {
-      (cookieOptions as any).domain = this.configService.authCookieDomain;
-    }
-
-    // Detect if request is from mobile app (via custom header)
-    const isMobileApp = req.headers['x-client-type'] === 'mobile';
-    
-    console.log('[AuthController.login] Client type:', {
-      isMobileApp,
-      header: req.headers['x-client-type'],
-      userAgent: req.get('User-Agent'),
-    });
-
-    if (!isMobileApp) {
-      // Web: Set refresh token as HttpOnly cookie
-      res.cookie(this.configService.authCookieName, result.refresh_token, cookieOptions);
-    }
-
-    // Return access token, user info, and organization
-    const response: any = {
-      access_token: result.access_token,
-      expires_in: result.expires_in,
-      user: result.user,
-    };
-
-    // Include organization if present
-    if (result.organization) {
-      response.organization = result.organization;
-    }
-
-    // Mobile: Include refresh token in response body
-    if (isMobileApp) {
-      response.refresh_token = result.refresh_token;
-      console.log('[AuthController.login] Mobile response includes refresh_token:', {
-        hasRefreshToken: !!response.refresh_token,
-        refreshTokenType: typeof response.refresh_token,
-        refreshTokenLength: response.refresh_token?.length,
+    try {
+      // Valider les credentials (vérification basique)
+      const user = await this.prisma.user.findUnique({
+        where: { email: loginDto.email, is_active: true },
       });
-    }
 
-    return response;
+      if (!user) {
+        throw new UnauthorizedException('Invalid credentials');
+      }
+
+      const isPasswordValid = await bcrypt.compare(
+        loginDto.password,
+        user.password_hash,
+      );
+
+      if (!isPasswordValid) {
+        throw new UnauthorizedException('Invalid credentials');
+      }
+
+      // Appeler la nouvelle méthode login() (STEP 2)
+      const result = await this.authService.login(user);
+
+      return result;
+    } catch (error) {
+      console.error('[AuthController.login] Error:', error);
+      throw error;
+    }
   }
 
   @Post('refresh')
@@ -284,6 +249,7 @@ export class AuthController {
   // ============================================
 
   @Post('switch-org')
+  @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @ApiOperation({

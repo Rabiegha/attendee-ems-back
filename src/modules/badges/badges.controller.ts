@@ -2,7 +2,7 @@ import { Controller, Get, Post, Put, Delete, Param, Body, UseGuards, Query, Requ
 import { BadgesService } from './badges.service';
 import { CreateBadgeTemplateDto, UpdateBadgeTemplateDto, DuplicateBadgeTemplateDto } from './dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { OrgScopeGuard } from '../../common/guards/tenant-context.guard';
+import { TenantContextGuard } from '../../common/guards/tenant-context.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { Permissions } from '../../common/decorators/permissions.decorator';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
@@ -10,7 +10,7 @@ import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 @ApiTags('badges')
 @ApiBearerAuth()
 @Controller('badges')
-@UseGuards(JwtAuthGuard, OrgScopeGuard, PermissionsGuard)
+@UseGuards(JwtAuthGuard, TenantContextGuard, PermissionsGuard)
 export class BadgesController {
   constructor(private readonly badgesService: BadgesService) {}
 
