@@ -183,7 +183,7 @@ export interface UserAbility {
 
 export interface Grant {
   key: string;                      // ex: 'event.create'
-  scope: 'any' | 'org' | 'own';     // Portée de la permission
+  scope: 'any' | 'own' | 'assigned'; // Portée de la permission
 }
 ```
 
@@ -813,7 +813,7 @@ describe('GET /auth/me/ability', () => {
     expect(response.body.grants).toEqual(
       expect.arrayContaining([
         { key: 'event.read', scope: 'any' },
-        { key: 'event.create', scope: 'org' },
+        { key: 'event.create', scope: 'own' },
       ]),
     );
   });

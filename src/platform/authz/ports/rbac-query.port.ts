@@ -130,8 +130,9 @@ export interface Grant {
 // Scope limit (restrictions sur les ressources)
 export enum ScopeLimit {
   OWN = 'own',           // Seulement ses propres ressources
+  ORG = 'org',           // Toutes les ressources de l'org
   ASSIGNED = 'assigned', // Ressources assignées
-  ANY = 'any',           // Toutes les ressources du tenant
+  ANY = 'any',           // Toutes les ressources (multi-org)
 }
 
 // Tenant Access Scope (pour platform users)
@@ -161,9 +162,6 @@ export enum DecisionCode {
 
   // Module gating
   MODULE_DISABLED = 'MODULE_DISABLED',                 // Module désactivé pour l'org
-
-  // Hierarchy errors
-  HIERARCHY_VIOLATION = 'HIERARCHY_VIOLATION', // Cannot manage user with equal/higher role
 }
 
 export interface Decision {
@@ -281,6 +279,7 @@ export class AuthorizationService {
       return DecisionHelper.deny(DecisionCode.SCOPE_DENIED, {
         reason: scopeCheck.reason,
         actualScope: grant.scopeLimit,
+        requiredScope: grant.scopeLimit,
         resourceOwnerId: rbacContext.resourceOwnerId,
       });
     }
@@ -350,96 +349,6 @@ export class AuthorizationService {
     // Cas par défaut : refusé
     return DecisionHelper.deny(DecisionCode.PLATFORM_TENANT_ACCESS_DENIED);
   }
-
-  /**
-   * Vérifier si un user peut gérer un autre user (hiérarchie)
-   * @returns Decision
-   */
-  async canManageUser(
-    managerId: string,
-    targetUserId: string,
-    orgId: string,
-  ): Promise<Decision> {
-    // 1. Charger le level du manager
-    const managerLevel = await this.rbacQuery.getRoleLevel(managerId, orgId);
-    if (managerLevel === null) {
-      return DecisionHelper.deny(DecisionCode.MISSING_PERMISSION, {
-        reason: 'Manager has no role in this organization',
-      });
-    }
-
-    // 2. Charger le level du target
-    const targetLevel = await this.rbacQuery.getRoleLevel(targetUserId, orgId);
-    if (targetLevel === null) {
-      return DecisionHelper.deny(DecisionCode.MISSING_PERMISSION, {
-        reason: 'Target user has no role in this organization',
-      });
-    }
-
-    // 3. Vérifier la hiérarchie (level plus petit = plus haut)
-    if (managerLevel >= targetLevel) {
-      return DecisionHelper.deny(DecisionCode.HIERARCHY_VIOLATION, {
-        reason: 'Cannot manage a user with equal or higher role level',
-        managerLevel,
-        targetLevel,
-      });
-    }
-
-    return DecisionHelper.allow();
-  }
-
-  /**
-   * Vérifier si un user peut assigner un rôle (hiérarchie)
-   */
-  async canAssignRole(
-    managerId: string,
-    targetRoleId: string,
-    orgId: string,
-  ): Promise<Decision> {
-    // 1. Charger le level du manager
-    const managerLevel = await this.rbacQuery.getRoleLevel(managerId, orgId);
-    if (managerLevel === null) {
-      return DecisionHelper.deny(DecisionCode.MISSING_PERMISSION, {
-        reason: 'Manager has no role in this organization',
-      });
-    }
-
-    // 2. Charger le level du rôle cible
-    const targetRole = await this.prisma.role.findUnique({
-      where: { id: targetRoleId },
-      select: { level: true, org_id: true },
-    });
-
-    if (!targetRole || targetRole.org_id !== orgId) {
-      return DecisionHelper.deny(DecisionCode.MISSING_PERMISSION, {
-        reason: 'Target role not found in this organization',
-      });
-    }
-
-    // 3. Vérifier la hiérarchie
-    if (managerLevel >= targetRole.level) {
-      return DecisionHelper.deny(DecisionCode.HIERARCHY_VIOLATION, {
-        reason: 'Cannot assign a role equal or higher than yours',
-        managerLevel,
-        targetLevel: targetRole.level,
-      });
-    }
-
-    return DecisionHelper.allow();
-  }
-
-  /**
-   * Wrapper : évalue et throw si refusé (pour la hiérarchie)
-   */
-  async assertDecision(decision: Decision): Promise<void> {
-    if (!decision.allowed) {
-      throw new ForbiddenException({
-        message: 'Access denied',
-        code: decision.code,
-        details: decision.details,
-      });
-    }
-  }
 }
 ```
 
@@ -499,7 +408,12 @@ export class ScopeEvaluator {
   ): ScopeEvaluation {
     switch (scopeLimit) {
       case ScopeLimit.ANY:
-        // Accès à TOUTES les ressources du tenant actuel
+        // Accès à toutes les ressources (multi-org)
+        return { allowed: true };
+
+      case ScopeLimit.ORG:
+        // Accès à toutes les ressources de l'org
+        // (vérification déjà faite dans checkMembership)
         return { allowed: true };
 
       case ScopeLimit.OWN:
@@ -562,7 +476,6 @@ export abstract class RbacQueryPort {
 
   /**
    * Récupérer le level d'un rôle dans une org
-   * Utilisé pour vérifier la hiérarchie
    */
   abstract getRoleLevel(userId: string, orgId: string): Promise<number | null>;
 }
@@ -633,7 +546,7 @@ export abstract class AuthContextPort {
 
 ---
 
-## 🔧 Adapters DB (Prisma)
+## 🎧 Adapters DB (Prisma)
 
 ### 1. PrismaRbacQueryAdapter
 
@@ -723,14 +636,16 @@ export class PrismaRbacQueryAdapter implements RbacQueryPort {
       where: {
         user_id_org_id: { user_id: userId, org_id: orgId },
       },
-      include: {
+      select: {
         role: {
-          select: { level: true },
+          select: {
+            level: true,
+          },
         },
       },
     });
 
-    return tenantRole?.role.level ?? null;
+    return tenantRole?.role.level || null;
   }
 }
 ```
@@ -809,11 +724,13 @@ import { JwtPayload } from '@/auth/interfaces/jwt-payload.interface';
 /**
  * Construit un AuthContext complet depuis un JWT minimal
  * 
- * Le JWT minimal contient : { sub, mode, currentOrgId? }
+ * Le JWT minimal contient : { sub, mode, currentOrgId }
  * Cet adapter charge isPlatform et isRoot depuis la DB
  * 
- * ⚠️ IMPORTANT : Cet adapter est wrappé par CachedAuthContextAdapter
- * Ne pas utiliser directement - toujours passer par le cache
+ * Pourquoi un port ?
+ * - Le core RBAC ne doit pas dépendre de Prisma
+ * - Permet de cacher les résultats (1 requête DB par user par TTL)
+ * - Testable avec un mock simple
  */
 @Injectable()
 export class PrismaAuthContextAdapter implements AuthContextPort {
@@ -829,7 +746,7 @@ export class PrismaAuthContextAdapter implements AuthContextPort {
     let isRoot = false;
 
     // Charger le rôle platform (si existe)
-    // Note: Cette requête est cachée par CachedAuthContextAdapter
+    // Note: Cette requête est cacheable (user_id est stable)
     const platformRole = await this.prisma.platformUserRole.findUnique({
       where: { user_id: userId },
       include: {
@@ -853,466 +770,398 @@ export class PrismaAuthContextAdapter implements AuthContextPort {
 }
 ```
 
-### 5. CachedAuthContextAdapter (✅ IMPLÉMENTÉ EN STEP 3)
+**Optimisation future (V2)** :
+```typescript
+// Ajouter un cache Redis
+@Injectable()
+export class CachedAuthContextAdapter implements AuthContextPort {
+  constructor(
+    private prismaAdapter: PrismaAuthContextAdapter,
+    private cache: CacheService,
+  ) {}
 
-**`adapters/cache/cached-auth-context.adapter.ts`** (NOUVEAU)
+  async buildAuthContext(jwtPayload: JwtPayload): Promise<AuthContext> {
+    const cacheKey = `auth_context:${jwtPayload.sub}`;
+    
+    // Essayer le cache (TTL: 5 min)
+    const cached = await this.cache.get<AuthContext>(cacheKey);
+    if (cached) return cached;
 
-> **🔑 AMÉLIORATION STEP 3** : Cache Redis implémenté dès maintenant (pas en V2)  
-> Réduit la charge DB de ~1000 requêtes/min à ~10 requêtes/min (99% cache hit)
+    // Charger depuis DB
+    const context = await this.prismaAdapter.buildAuthContext(jwtPayload);
+    
+    // Mettre en cache
+    await this.cache.set(cacheKey, context, 300); // 5 min TTL
+    
+    return context;
+  }
+}
+```
+
+---
+
+## 🎧 Adapters HTTP
+
+### 1. RequirePermissionGuard
+
+**`adapters/http/guards/require-permission.guard.ts`**
 
 ```typescript
-import { Injectable, Inject } from '@nestjs/common';
-import { CACHE_MANAGER } from '@nestjs/cache-manager';
-import { Cache } from 'cache-manager';
-import { AuthContextPort } from '../../ports/auth-context.port';
-import { AuthContext } from '../../core/types';
+import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { AuthorizationService } from '../../../core/authorization.service';
+import { AuthContext, RbacContext } from '../../../core/types';
+import { AuthContextPort } from '../../../ports/auth-context.port';
+import { PERMISSION_KEY, RBAC_CONTEXT_KEY } from '../decorators/require-permission.decorator';
 import { JwtPayload } from '@/auth/interfaces/jwt-payload.interface';
-import { PrismaAuthContextAdapter } from '../db/prisma-auth-context.adapter';
 
 /**
- * Adapter avec cache Redis pour buildAuthContext
+ * Guard NestJS pour vérifier les permissions RBAC
  * 
- * Stratégie de cache :
- * - Clé: `auth_context:${userId}`
- * - TTL: 5 minutes (300s)
- * - Invalidation: Lors de changements de rôle (voir invalidateAuthContext)
- * 
- * Performance attendue :
- * - Cache hit rate: 95-99% (la plupart des requêtes utilisent le cache)
- * - P99 latency: <5ms (cache) vs ~50ms (DB)
- * - Réduction DB load: ~99% sur les requêtes buildAuthContext
+ * Flux :
+ * 1. Extrait le JWT minimal depuis request.user
+ * 2. Appelle authContextPort.buildAuthContext() pour obtenir AuthContext complet
+ * 3. Extrait RbacContext depuis metadata ou request
+ * 4. Appelle authorizationService.can() pour évaluer la permission
+ * 5. Lance une exception si refusé
  */
 @Injectable()
-export class CachedAuthContextAdapter implements AuthContextPort {
+export class RequirePermissionGuard implements CanActivate {
   constructor(
-    private prismaAdapter: PrismaAuthContextAdapter,
-    @Inject(CACHE_MANAGER) private cacheManager: Cache,
+    private reflector: Reflector,
+    private authz: AuthorizationService,
+    private authContextPort: AuthContextPort, // 🆕 Injecter le port
   ) {}
 
-  async buildAuthContext(jwtPayload: JwtPayload): Promise<AuthContext> {
-    const cacheKey = this.getCacheKey(jwtPayload.sub);
-    
-    // 1. Essayer le cache (TTL: 5 min)
-    const cached = await this.cacheManager.get<AuthContext>(cacheKey);
-    if (cached) {
-      return cached;
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const permissionKey = this.reflector.get<string>(PERMISSION_KEY, context.getHandler());
+    if (!permissionKey) {
+      return true; // Pas de restriction
     }
 
-    // 2. Cache miss → charger depuis DB
-    const context = await this.prismaAdapter.buildAuthContext(jwtPayload);
-    
-    // 3. Mettre en cache avec TTL 5 minutes
-    await this.cacheManager.set(cacheKey, context, 300_000); // 300 secondes = 5 min
-    
-    return context;
-  }
+    const request = context.switchToHttp().getRequest();
+    const jwtPayload: JwtPayload = request.user; // JWT minimal
 
-  /**
-   * Invalider le cache pour un user spécifique
-   * À appeler lors de changements de rôle platform
-   */
-  async invalidateAuthContext(userId: string): Promise<void> {
-    const cacheKey = this.getCacheKey(userId);
-    await this.cacheManager.del(cacheKey);
-  }
-
-  /**
-   * Invalider le cache pour plusieurs users
-   * À appeler lors de propagations de rôles en masse
-   */
-  async invalidateMultiple(userIds: string[]): Promise<void> {
-    const keys = userIds.map((id) => this.getCacheKey(id));
-    await Promise.all(keys.map((key) => this.cacheManager.del(key)));
-  }
-
-  private getCacheKey(userId: string): string {
-    return `auth_context:${userId}`;
-  }
-}
-```
-
-### 6. Configuration du Cache Module
-
-**`src/platform/authz/authz.module.ts`** (MODIFIER)
-
-```typescript
-import { Module } from '@nestjs/common';
-import { CacheModule } from '@nestjs/cache-manager';
-import { redisStore } from 'cache-manager-redis-yet';
-
-// Core
-import { AuthorizationService } from './core/authorization.service';
-import { PermissionResolver } from './core/permission-resolver';
-import { ScopeEvaluator } from './core/scope-evaluator';
-
-// Ports
-import { RbacQueryPort } from './ports/rbac-query.port';
-import { MembershipPort } from './ports/membership.port';
-import { ModuleGatingPort } from './ports/module-gating.port';
-import { AuthContextPort } from './ports/auth-context.port';
-
-// Adapters DB
-import { PrismaRbacQueryAdapter } from './adapters/db/prisma-rbac-query.adapter';
-import { PrismaMembershipAdapter } from './adapters/db/prisma-membership.adapter';
-import { PrismaModuleGatingAdapter } from './adapters/db/prisma-module-gating.adapter';
-import { PrismaAuthContextAdapter } from './adapters/db/prisma-auth-context.adapter';
-
-// Adapters Cache
-import { CachedAuthContextAdapter } from './adapters/cache/cached-auth-context.adapter';
-
-// Adapters HTTP
-import { RequirePermissionGuard } from './adapters/http/guards/require-permission.guard';
-import { RbacAdminController } from './adapters/http/controllers/rbac-admin.controller';
-
-@Module({
-  imports: [
-    // Configuration du cache Redis
-    CacheModule.registerAsync({
-      isGlobal: false, // Localisé au module authz
-      useFactory: async () => ({
-        store: await redisStore({
-          socket: {
-            host: process.env.REDIS_HOST || 'localhost',
-            port: parseInt(process.env.REDIS_PORT || '6379'),
-          },
-          password: process.env.REDIS_PASSWORD,
-          ttl: 300_000, // TTL par défaut 5 min (peut être overridé par adapter)
-        }),
-      }),
-    }),
-  ],
-  providers: [
-    // Core services
-    AuthorizationService,
-    PermissionResolver,
-    ScopeEvaluator,
-
-    // Adapters DB
-    PrismaRbacQueryAdapter,
-    PrismaMembershipAdapter,
-    PrismaModuleGatingAdapter,
-    PrismaAuthContextAdapter, // Adapter DB brut
-
-    // Adapters Cache
-    CachedAuthContextAdapter, // Wrapper avec cache
-
-    // Bindings des ports
-    {
-      provide: RbacQueryPort,
-      useClass: PrismaRbacQueryAdapter,
-    },
-    {
-      provide: MembershipPort,
-      useClass: PrismaMembershipAdapter,
-    },
-    {
-      provide: ModuleGatingPort,
-      useClass: PrismaModuleGatingAdapter,
-    },
-    {
-      provide: AuthContextPort,
-      useClass: CachedAuthContextAdapter, // ✅ Utilise la version cachée
-    },
-
-    // Guards
-    RequirePermissionGuard,
-  ],
-  controllers: [RbacAdminController],
-  exports: [
-    AuthorizationService,
-    RequirePermissionGuard,
-    AuthContextPort, // Export pour utilisation externe
-    CachedAuthContextAdapter, // Export pour invalidation manuelle
-  ],
-})
-export class AuthzModule {}
-```
-
-### 7. Variables d'Environnement
-
-**`.env`** (AJOUTER)
-
-```bash
-# Redis Configuration (pour cache AuthContext)
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=your_redis_password_here
-```
-
-**`.env.example`** (AJOUTER)
-
-```bash
-# Redis Configuration
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_PASSWORD=
-```
-
-### 8. Installation des Dépendances
-
-**`package.json`** (AJOUTER)
-
-```bash
-npm install cache-manager cache-manager-redis-yet redis
-npm install --save-dev @types/cache-manager
-```
-
----
-
-## 🔍 Utilisation de l'Invalidation du Cache
-
-### Cas 1 : Changement de Rôle Platform
-
-Lorsqu'un user se voit assigner ou retirer un rôle platform, invalider son cache :
-
-```typescript
-@Injectable()
-export class RbacAdminService {
-  constructor(
-    private prisma: PrismaService,
-    private cachedAuthContext: CachedAuthContextAdapter,
-  ) {}
-
-  async assignPlatformRole(userId: string, roleId: string) {
-    // 1. Assigner le rôle
-    await this.prisma.platformUserRole.upsert({
-      where: { user_id: userId },
-      create: { user_id: userId, role_id: roleId },
-      update: { role_id: roleId },
-    });
-
-    // 2. ✅ Invalider le cache AuthContext
-    await this.cachedAuthContext.invalidateAuthContext(userId);
-  }
-
-  async revokePlatformRole(userId: string) {
-    // 1. Supprimer le rôle
-    await this.prisma.platformUserRole.delete({
-      where: { user_id: userId },
-    });
-
-    // 2. ✅ Invalider le cache AuthContext
-    await this.cachedAuthContext.invalidateAuthContext(userId);
-  }
-}
-```
-
-### Cas 2 : Propagation en Masse (STEP 5)
-
-Lors de la propagation de rôles platform à plusieurs users :
-
-```typescript
-@Injectable()
-export class PropagationService {
-  constructor(
-    private prisma: PrismaService,
-    private cachedAuthContext: CachedAuthContextAdapter,
-  ) {}
-
-  async propagatePlatformRole(userIds: string[], roleId: string) {
-    // 1. Assigner les rôles en masse
-    await this.prisma.platformUserRole.createMany({
-      data: userIds.map((userId) => ({
-        user_id: userId,
-        role_id: roleId,
-      })),
-      skipDuplicates: true,
-    });
-
-    // 2. ✅ Invalider le cache pour tous les users affectés
-    await this.cachedAuthContext.invalidateMultiple(userIds);
-  }
-}
-```
-
-### Cas 3 : Auto-Invalidation par TTL
-
-Pour les changements de rôle qui ne nécessitent pas d'invalidation immédiate (ex: changements rarement critiques), le TTL de 5 minutes garantit une cohérence éventuelle automatique.
-
----
-
-## 📊 Monitoring du Cache
-
-### Métriques à Suivre
-
-**`src/platform/authz/adapters/cache/cached-auth-context.adapter.ts`** (AJOUTER)
-
-```typescript
-// ...existing code...
-
-/**
- * Adapter avec cache Redis + métriques
- */
-@Injectable()
-export class CachedAuthContextAdapter implements AuthContextPort {
-  // Compteurs pour monitoring
-  private cacheHits = 0;
-  private cacheMisses = 0;
-  
-  constructor(
-    private prismaAdapter: PrismaAuthContextAdapter,
-    @Inject(CACHE_MANAGER) private cacheManager: Cache,
-  ) {}
-
-  async buildAuthContext(jwtPayload: JwtPayload): Promise<AuthContext> {
-    const cacheKey = this.getCacheKey(jwtPayload.sub);
-    
-    const cached = await this.cacheManager.get<AuthContext>(cacheKey);
-    if (cached) {
-      this.cacheHits++;
-      return cached;
+    if (!jwtPayload) {
+      throw new UnauthorizedException('No JWT payload');
     }
 
-    this.cacheMisses++;
-    const context = await this.prismaAdapter.buildAuthContext(jwtPayload);
-    await this.cacheManager.set(cacheKey, context, 300_000);
-    
-    return context;
-  }
+    // 🔑 Construire AuthContext depuis JWT minimal + DB
+    // Cette ligne fait 1 requête DB (cacheable)
+    const authContext: AuthContext = await this.authContextPort.buildAuthContext(jwtPayload);
 
-  /**
-   * Récupérer les métriques de cache (pour health check / monitoring)
-   */
-  getMetrics() {
-    const total = this.cacheHits + this.cacheMisses;
-    const hitRate = total > 0 ? (this.cacheHits / total) * 100 : 0;
+    // RbacContext optionnel (ex: resourceOwnerId injecté par le controller)
+    const rbacContext: RbacContext = this.reflector.get<RbacContext>(
+      RBAC_CONTEXT_KEY, 
+      context.getHandler()
+    ) || request['rbacContext'] || {};
 
-    return {
-      hits: this.cacheHits,
-      misses: this.cacheMisses,
-      total,
-      hitRate: `${hitRate.toFixed(2)}%`,
-    };
-  }
+    // Appeler le core RBAC (throw si refusé)
+    await this.authz.assert(permissionKey, authContext, rbacContext);
 
-  /**
-   * Reset des métriques (pour tests ou monitoring périodique)
-   */
-  resetMetrics() {
-    this.cacheHits = 0;
-    this.cacheMisses = 0;
-  }
-
-  private getCacheKey(userId: string): string {
-    return `auth_context:${userId}`;
+    return true;
   }
 }
 ```
 
-### Endpoint de Monitoring
+**Performance** :
+- 1 requête DB par requête HTTP (pour charger `isPlatform`/`isRoot`)
+- Cacheable avec Redis (TTL 5 min) → 0 requête DB pour 99% des cas
+- Index DB sur `platform_user_roles.user_id` → requête < 1ms
 
-**`src/platform/authz/adapters/http/controllers/rbac-admin.controller.ts`** (AJOUTER)
+### 2. Decorator RequirePermission
+
+**`adapters/http/decorators/require-permission.decorator.ts`**
 
 ```typescript
-// filepath: /Users/rabiegharghar/Desktop/ems/attendee-ems-back/src/platform/authz/adapters/http/controllers/rbac-admin.controller.ts
-// ...existing code...
+import { SetMetadata } from '@nestjs/common';
+
+export const PERMISSION_KEY = 'permission';
+export const RBAC_CONTEXT_KEY = 'rbacContext';
+
+export const RequirePermission = (key: string) => SetMetadata(PERMISSION_KEY, key);
+```
+
+### 3. Controller RBAC Admin (Minimal)
+
+**`adapters/http/controllers/rbac-admin.controller.ts`**
+
+```typescript
+import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '@/auth/guards/jwt-auth.guard';
+import { RequirePermission } from '../decorators/require-permission.decorator';
+import { RequirePermissionGuard } from '../guards/require-permission.guard';
+import { PrismaService } from '@/prisma/prisma.service';
+import { CurrentUser } from '@/common/decorators/current-user.decorator';
+import { JwtPayload } from '@/auth/interfaces/jwt-payload.interface';
 
 @Controller('rbac')
 @UseGuards(JwtAuthGuard, RequirePermissionGuard)
 export class RbacAdminController {
-  constructor(
-    private prisma: PrismaService,
-    private cachedAuthContext: CachedAuthContextAdapter, // ✅ Injecter
-  ) {}
-
-  // ...existing code...
+  constructor(private prisma: PrismaService) {}
 
   /**
-   * Métriques du cache AuthContext
-   * Nécessite permission platform (ROOT uniquement)
+   * Lister les rôles de l'org
    */
-  @Get('cache/metrics')
-  @RequirePermission('platform.monitoring')
-  async getCacheMetrics() {
-    return this.cachedAuthContext.getMetrics();
+  @Get('roles')
+  @RequirePermission('rbac.role.read')
+  async getRoles(@CurrentUser() user: JwtPayload) {
+    return this.prisma.role.findMany({
+      where: { org_id: user.currentOrgId },
+      include: {
+        rolePermissions: {
+          include: { permission: true },
+        },
+      },
+    });
   }
 
   /**
-   * Invalider le cache d'un user spécifique
-   * Utile après modification manuelle en DB
+   * Assigner un rôle à un user (minimal)
    */
-  @Post('cache/invalidate/:userId')
-  @RequirePermission('platform.cache.invalidate')
-  async invalidateUserCache(@Param('userId') userId: string) {
-    await this.cachedAuthContext.invalidateAuthContext(userId);
-    return { message: 'Cache invalidated for user', userId };
+  @Post('assign-role')
+  @RequirePermission('rbac.role.assign')
+  async assignRole(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: { userId: string; roleId: string },
+  ) {
+    // Vérifier que le rôle appartient à l'org
+    const role = await this.prisma.role.findFirst({
+      where: { id: dto.roleId, org_id: user.currentOrgId },
+    });
+
+    if (!role) {
+      throw new NotFoundException('Role not found in this organization');
+    }
+
+    // Upsert le rôle tenant
+    return this.prisma.tenantUserRole.upsert({
+      where: {
+        user_id_org_id: { user_id: dto.userId, org_id: user.currentOrgId },
+      },
+      create: {
+        user_id: dto.userId,
+        org_id: user.currentOrgId,
+        role_id: dto.roleId,
+      },
+      update: {
+        role_id: dto.roleId,
+      },
+    });
   }
 }
 ```
 
----
-
-## 🎯 Checklist Mise à Jour
-
-### Phase 1 : Infrastructure Cache
-- [ ] Installer dépendances Redis (`cache-manager`, `cache-manager-redis-yet`)
-- [ ] Configurer variables d'environnement Redis (`.env`)
-- [ ] Setup Redis local (Docker ou installation native)
-- [ ] Tester connexion Redis
-
-### Phase 2 : Implémentation Adapters
-- [ ] Créer `PrismaAuthContextAdapter` (adapter DB brut)
-- [ ] Créer `CachedAuthContextAdapter` (wrapper avec cache)
-- [ ] Configurer `AuthzModule` avec `CacheModule`
-- [ ] Binder `AuthContextPort` sur `CachedAuthContextAdapter`
-
-### Phase 3 : Monitoring
-- [ ] Ajouter métriques dans `CachedAuthContextAdapter`
-- [ ] Créer endpoint `GET /rbac/cache/metrics`
-- [ ] Créer endpoint `POST /rbac/cache/invalidate/:userId`
-
-### Phase 4 : Invalidation
-- [ ] Implémenter `invalidateAuthContext()` dans les services
-- [ ] Appeler lors d'assignation de rôle platform
-- [ ] Appeler lors de révocation de rôle platform
-- [ ] Appeler lors de propagations en masse (STEP 5)
-
-### Phase 5 : Tests
-- [ ] Test unitaire `CachedAuthContextAdapter`
-- [ ] Test invalidation manuelle
-- [ ] Test TTL automatique (attendre 5 min)
-- [ ] Test métriques cache hit/miss
-- [ ] Load test (vérifier 95%+ hit rate)
+> **⚠️ Note** : L'endpoint `GET /me/ability` est déjà implémenté dans **STEP 2** (`AuthController.getMyAbility()`).  
+> Pas besoin de le dupliquer ici. Ce controller RBAC Admin gère uniquement la gestion des rôles.
 
 ---
 
-## 📈 Performance Attendue
+## 📝 Permission Registry
 
-### Avant Cache (DB direct)
+**`permission-registry.ts`**
 
-```
-Requêtes /me/ability par seconde : 1000
-Temps moyen buildAuthContext : 50ms
-Load DB platform_user_roles : ~1000 queries/s
-P99 latency : ~150ms
+```typescript
+/**
+ * Registry centralisé de toutes les permissions
+ * À synchroniser avec la table permissions
+ */
+export const PERMISSIONS = {
+  // Events
+  EVENT_CREATE: 'event.create',
+  EVENT_READ: 'event.read',
+  EVENT_UPDATE: 'event.update',
+  EVENT_DELETE: 'event.delete',
+
+  // Attendees
+  ATTENDEE_CREATE: 'attendee.create',
+  ATTENDEE_READ: 'attendee.read',
+  ATTENDEE_UPDATE: 'attendee.update',
+  ATTENDEE_DELETE: 'attendee.delete',
+
+  // Users
+  USER_CREATE: 'user.create',
+  USER_READ: 'user.read',
+  USER_UPDATE: 'user.update',
+  USER_DELETE: 'user.delete',
+
+  // RBAC
+  RBAC_ROLE_READ: 'rbac.role.read',
+  RBAC_ROLE_CREATE: 'rbac.role.create',
+  RBAC_ROLE_ASSIGN: 'rbac.role.assign',
+
+  // Badges
+  BADGE_CREATE: 'badge.create',
+  BADGE_READ: 'badge.read',
+  BADGE_PRINT: 'badge.print',
+
+  // ... etc.
+} as const;
+
+export type PermissionKey = typeof PERMISSIONS[keyof typeof PERMISSIONS];
 ```
 
-### Après Cache Redis (STEP 3)
+---
 
+## 🧪 Tests
+
+### Test Core (Pur, sans DB)
+
+```typescript
+describe('AuthorizationService (Unit)', () => {
+  let service: AuthorizationService;
+  let mockRbacQuery: jest.Mocked<RbacQueryPort>;
+  let mockMembership: jest.Mocked<MembershipPort>;
+
+  beforeEach(() => {
+    mockRbacQuery = {
+      getGrantsForRole: jest.fn(),
+      getPlatformTenantAccessScope: jest.fn(),
+    };
+    mockMembership = {
+      isMemberOfOrg: jest.fn(),
+      hasPlatformAccessToOrg: jest.fn(),
+    };
+
+    service = new AuthorizationService(
+      mockRbacQuery,
+      mockMembership,
+      new PrismaModuleGatingAdapter(), // Mock
+      new PermissionResolver(mockRbacQuery),
+      new ScopeEvaluator(),
+    );
+  });
+
+  it('should allow if user has permission with org scope', async () => {
+    mockMembership.isMemberOfOrg.mockResolvedValue(true);
+    mockRbacQuery.getGrantsForRole.mockResolvedValue([
+      { key: 'event.create', scopeLimit: ScopeLimit.ORG },
+    ]);
+
+    const decision = await service.can('event.create', {
+      userId: 'user-1',
+      currentOrgId: 'org-1',
+      isPlatform: false,
+      isRoot: false,
+    });
+
+    expect(decision.allowed).toBe(true);
+    expect(decision.code).toBe(DecisionCode.OK);
+  });
+
+  it('should deny if user not member of org', async () => {
+    mockMembership.isMemberOfOrg.mockResolvedValue(false);
+
+    const decision = await service.can('event.create', {
+      userId: 'user-1',
+      currentOrgId: 'org-1',
+      isPlatform: false,
+      isRoot: false,
+    });
+
+    expect(decision.allowed).toBe(false);
+    expect(decision.code).toBe(DecisionCode.NOT_TENANT_MEMBER);
+  });
+
+  it('should deny if scope is own but user is not owner', async () => {
+    mockMembership.isMemberOfOrg.mockResolvedValue(true);
+    mockRbacQuery.getGrantsForRole.mockResolvedValue([
+      { key: 'event.update', scopeLimit: ScopeLimit.OWN },
+    ]);
+
+    const decision = await service.can(
+      'event.update',
+      {
+        userId: 'user-1',
+        currentOrgId: 'org-1',
+        isPlatform: false,
+        isRoot: false,
+      },
+      { resourceOwnerId: 'user-2' }, // Resource owned by someone else
+    );
+
+    expect(decision.allowed).toBe(false);
+    expect(decision.code).toBe(DecisionCode.SCOPE_DENIED);
+  });
+});
 ```
-Requêtes /me/ability par seconde : 1000
-Cache hit rate : 95-99%
-Temps moyen buildAuthContext :
-  - Cache hit : <5ms
-  - Cache miss : ~50ms (DB)
-Load DB platform_user_roles : ~10-50 queries/s (99% reduction)
-P99 latency : ~10ms
-```
+
+---
+
+## 📊 Checklist d'Exécution
+
+### Core (Logique métier pure)
+- [ ] Créer `core/types.ts` (AuthContext avec note JWT minimal)
+- [ ] Créer `core/decision.ts`
+- [ ] Créer `core/scope-evaluator.ts`
+- [ ] Créer `core/permission-resolver.ts`
+- [ ] Créer `core/authorization.service.ts`
+
+### Ports (Interfaces SPI)
+- [ ] Créer `ports/rbac-query.port.ts`
+- [ ] Créer `ports/membership.port.ts`
+- [ ] Créer `ports/module-gating.port.ts`
+- [ ] Créer `ports/auth-context.port.ts` (🆕 **CRITIQUE** pour JWT minimal)
+
+### Adapters DB
+- [ ] Créer `adapters/db/prisma-rbac-query.adapter.ts`
+- [ ] Créer `adapters/db/prisma-membership.adapter.ts`
+- [ ] Créer `adapters/db/prisma-module-gating.adapter.ts`
+- [ ] Créer `adapters/db/prisma-auth-context.adapter.ts` (🆕 **CRITIQUE**)
+
+### Adapters HTTP
+- [ ] Créer `RequirePermissionGuard` (avec injection AuthContextPort)
+- [ ] Créer `@RequirePermission` decorator
+- [ ] Créer `RbacAdminController` (minimal)
+- [ ] ⚠️ `GET /me/ability` déjà dans STEP 2 (AuthController)
+
+### Module NestJS
+- [ ] Créer `authz.module.ts` avec tous les providers :
+  ```typescript
+  @Module({
+    providers: [
+      // Core
+      AuthorizationService,
+      PermissionResolver,
+      ScopeEvaluator,
+      
+      // Ports → Adapters
+      { provide: RbacQueryPort, useClass: PrismaRbacQueryAdapter },
+      { provide: MembershipPort, useClass: PrismaMembershipAdapter },
+      { provide: ModuleGatingPort, useClass: PrismaModuleGatingAdapter },
+      { provide: AuthContextPort, useClass: PrismaAuthContextAdapter }, // 🆕
+      
+      // Guards
+      RequirePermissionGuard,
+    ],
+    exports: [
+      AuthorizationService,
+      AuthContextPort, // Exporter pour usage dans services
+      RequirePermissionGuard,
+    ],
+  })
+  export class AuthzModule {}
+  ```
+
+### Tests
+- [ ] Tests unitaires du core (sans DB, mocks des ports)
+- [ ] Tests d'intégration (avec DB)
+- [ ] Tests E2E (avec JWT minimal)
+- [ ] Vérifier performance (avec/sans cache)
 
 ---
 
 ## ➡️ Prochaine Étape
 
-**STEP 4** : Refactor Services & Application Layer  
+**STEP 4** : Refactor Services  
 → Voir [STEP_4_REFACTOR_SERVICES.md](./STEP_4_REFACTOR_SERVICES.md)
 
-Le cache AuthContext est opérationnel → on peut utiliser le core RBAC dans tous les services ! 🎯
+Le core RBAC est prêt → on peut adapter tous les services/controllers ! 🎯
 
 ---
 
 ## 📚 Références
 
-- [NestJS Cache Module](https://docs.nestjs.com/techniques/caching)
-- [cache-manager](https://www.npmjs.com/package/cache-manager)
-- [cache-manager-redis-yet](https://www.npmjs.com/package/cache-manager-redis-yet)
-- [Redis Best Practices](https://redis.io/docs/manual/patterns/)
+- [Hexagonal Architecture](https://herbertograca.com/2017/11/16/explicit-architecture-01-ddd-hexagonal-onion-clean-cqrs-how-i-put-it-all-together/)
+- [Ports & Adapters](https://alistair.cockburn.us/hexagonal-architecture/)
+- [RBAC Wikipedia](https://en.wikipedia.org/wiki/Role-based_access_control)

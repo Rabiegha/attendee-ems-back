@@ -4,6 +4,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { AuthService } from '../../auth/auth.service';
 import { User, Prisma } from '@prisma/client';
 import { UserScope } from '../../common/utils/resolve-user-scope.util';
+import { AuthorizationService } from '../../authz/authorization.service';
 
 interface UserQueryContext {
   scope: UserScope;
@@ -17,6 +18,7 @@ export class UsersService {
   constructor(
     private prisma: PrismaService,
     private authService: AuthService,
+    private authz: AuthorizationService, // ← Injecter
   ) {}
 
   async create(createUserDto: CreateUserDto, orgId: string, creatorRoleLevel?: number): Promise<User> {
@@ -303,5 +305,36 @@ export class UsersService {
 
     // TODO: Implémenter l'export Excel si nécessaire
     throw new BadRequestException('Format Excel non encore supporté');
+  }
+
+  async assignRole(
+    managerId: string,
+    targetUserId: string,
+    roleId: string,
+    orgId: string,
+  ) {
+    // 1. Vérifier permission RBAC
+    await this.authz.assert('user.role.assign', {
+      userId: managerId,
+      currentOrgId: orgId,
+      // ... autres champs AuthContext
+    });
+
+    // 2. Vérifier hiérarchie ⭐ NOUVEAU
+    await this.authz.assertDecision(
+      await this.authz.canManageUser(managerId, targetUserId, orgId)
+    );
+
+    await this.authz.assertDecision(
+      await this.authz.canAssignRole(managerId, roleId, orgId)
+    );
+
+    // 3. Assigner le rôle
+    return this.prisma.tenantUserRole.update({
+      where: {
+        user_id_org_id: { user_id: targetUserId, org_id: orgId },
+      },
+      data: { role_id: roleId },
+    });
   }
 }

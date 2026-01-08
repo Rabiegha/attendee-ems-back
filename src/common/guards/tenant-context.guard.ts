@@ -1,29 +1,25 @@
-import { RbacContext } from "@/authorization/rbac.service";
-import { CanActivate, ExecutionContext, ForbiddenException, Injectable } from "@nestjs/common";
+import { Injectable, CanActivate, ExecutionContext, BadRequestException } from '@nestjs/common';
 
+/**
+ * Guard qui vérifie que currentOrgId est présent dans le JWT
+ * À utiliser sur les routes qui nécessitent un contexte tenant
+ */
 @Injectable()
 export class TenantContextGuard implements CanActivate {
   canActivate(context: ExecutionContext): boolean {
-    const request = context.switchToHttp().getRequest<any>();
-    const user = request.user;
+    const request = context.switchToHttp().getRequest();
+    const user = request.user; // JwtPayload injecté par JwtAuthGuard
 
     if (!user) {
-      throw new ForbiddenException('User not authenticated');
+      throw new BadRequestException('No user in request');
     }
 
-    // MVP : orgId = user.org_id comme aujourd’hui
-    const orgId = user.org_id;
-    if (!orgId) {
-      throw new ForbiddenException('Organization scope required');
+    // Vérifier le mode et la présence de l'org
+    if (user.mode !== 'tenant' || !user.currentOrgId) {
+      throw new BadRequestException(
+        'No organization context. Please switch to an organization first.',
+      );
     }
-
-    const rbacContext: RbacContext = {
-      accountType: user.account_type || 'tenant',
-      orgId,
-      bypass: user.is_root || user.role === 'SUPER_ADMIN',
-    };
-
-    request.rbacContext = rbacContext;
 
     return true;
   }
