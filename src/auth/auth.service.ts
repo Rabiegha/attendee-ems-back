@@ -1,10 +1,11 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../infra/db/prisma.service';
 import { ConfigService } from '../config/config.service';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
+import { JwtPayload, UserAbility, Grant, AvailableOrg } from './interfaces/jwt-payload.interface';
 
 @Injectable()
 export class AuthService {
@@ -67,20 +68,58 @@ export class AuthService {
     return user;
   }
 
+  /**
+   * Login avec logique multi-org (STEP 2)
+   * Décide automatiquement du type de JWT à générer
+   */
   async login(user: any) {
-    const permissions = user.role?.rolePermissions?.map(
-      (rp: any) => `${rp.permission.code}:${rp.permission.scope}`,
-    ) || [];
+    // Charger contexte utilisateur complet
+    const userWithContext = await this.prisma.user.findUnique({
+      where: { id: user.id },
+      include: {
+        platformRole: true,
+        orgMemberships: {
+          include: {
+            organization: true,
+          },
+        },
+      },
+    });
 
-    const payload = {
-      sub: user.id,
-      org_id: user.org_id,
-      role: user.role?.code,
-      permissions,
-    };
+    if (!userWithContext) {
+      throw new UnauthorizedException('User not found');
+    }
+
+    // DÉCISION : quel type de token ?
+    let tokenResult: { token: string; mode: 'tenant' | 'platform' };
+
+    // Cas A : Platform user → mode platform
+    if (userWithContext.platformRole) {
+      tokenResult = await this.generateJwtForOrg(user.id, null);
+    }
+    // Cas B : Aucune org → erreur
+    else if (userWithContext.orgMemberships.length === 0) {
+      throw new BadRequestException('User has no organization. Onboarding required.');
+    }
+    // Cas C : 1 seule org → tenant-mode direct
+    else if (userWithContext.orgMemberships.length === 1) {
+      const orgId = userWithContext.orgMemberships[0].org_id;
+      tokenResult = await this.generateJwtForOrg(user.id, orgId);
+    }
+    // Cas D : Multi-org → chercher default ou renvoyer tenant-no-org
+    else {
+      const defaultMembership = userWithContext.orgMemberships.find(
+        (m) => m.is_default,
+      );
+      const orgId = defaultMembership?.org_id || null;
+      tokenResult = await this.generateJwtForOrg(user.id, orgId);
+    }
 
     return {
-      access_token: this.jwtService.sign(payload),
+      access_token: tokenResult.token,
+      mode: tokenResult.mode,
+      // Si tenant-no-org, le front affichera le sélecteur
+      requiresOrgSelection: tokenResult.mode === 'tenant' && !tokenResult.token.includes('currentOrgId'),
     };
   }
 
@@ -484,5 +523,308 @@ export class AuthService {
     // pour éviter le traitement inutile des permissions
 
     return rules;
+  }
+
+  // ============================================
+  // STEP 2: JWT Multi-org + Switch Context
+  // ============================================
+
+  /**
+   * Vérifie que le user a accès à une organisation
+   * (membership tenant OU accès platform)
+   */
+  private async verifyOrgAccess(userId: string, orgId: string): Promise<boolean> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        orgMemberships: true,
+        platformRole: true,
+        platformOrgAccess: true,
+      },
+    });
+
+    if (!user) return false;
+
+    // 1. Membership tenant direct
+    if (user.orgMemberships.some((m) => m.org_id === orgId)) {
+      return true;
+    }
+
+    // 2. Platform user avec scope approprié
+    if (user.platformRole) {
+      const scope = user.platformRole.scope;
+      // Scope global = accès à toutes les orgs
+      if (scope === 'global') return true;
+      // Scope assigned = vérifier accès spécifique
+      if (scope === 'assigned') {
+        return user.platformOrgAccess.some((a) => a.org_id === orgId);
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Génère un JWT minimal (pas de permissions, pas de liste d'orgs)
+   * Le client appellera GET /me/ability pour obtenir les permissions
+   */
+  async generateJwtForOrg(
+    userId: string,
+    orgId: string | null,
+  ): Promise<{ token: string; mode: 'tenant' | 'platform' }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        platformRole: true,
+        orgMemberships: true,
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Déterminer le mode
+    const isPlatformUser = !!user.platformRole;
+
+    // Si platform user ET pas d'org spécifiée → mode platform
+    if (isPlatformUser && !orgId) {
+      const payload: JwtPayload = {
+        sub: user.id,
+        mode: 'platform',
+        iat: Math.floor(Date.now() / 1000),
+        exp: Math.floor(Date.now() / 1000) + 3600 * 24 * 7, // 7 jours
+      };
+      return {
+        token: this.jwtService.sign(payload),
+        mode: 'platform',
+      };
+    }
+
+    // Mode tenant : vérifier accès à l'org
+    if (orgId) {
+      const hasAccess = await this.verifyOrgAccess(userId, orgId);
+      if (!hasAccess) {
+        throw new ForbiddenException('Access to this organization denied');
+      }
+    }
+
+    // Générer token tenant-mode
+    const payload: JwtPayload = {
+      sub: user.id,
+      mode: 'tenant',
+      ...(orgId && { currentOrgId: orgId }), // Seulement si org active
+      iat: Math.floor(Date.now() / 1000),
+      exp: Math.floor(Date.now() / 1000) + 3600 * 24 * 7,
+    };
+
+    return {
+      token: this.jwtService.sign(payload),
+      mode: 'tenant',
+    };
+  }
+
+  /**
+   * Retourne la liste des organisations accessibles par l'utilisateur
+   * (Pour l'UI uniquement, ne charge PAS les permissions)
+   */
+  async getAvailableOrgs(userId: string): Promise<AvailableOrg[]> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        // Orgs tenant
+        orgMemberships: {
+          include: {
+            organization: true,
+          },
+        },
+        // Rôles tenant par org
+        tenantRoles: {
+          include: {
+            role: true,
+            organization: true,
+          },
+        },
+        // Rôle platform
+        platformRole: {
+          include: {
+            role: true,
+          },
+        },
+        // Accès platform assigned
+        platformOrgAccess: {
+          include: {
+            organization: true,
+          },
+        },
+      },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const availableOrgs: AvailableOrg[] = [];
+
+    // 1. Orgs tenant (via membership)
+    for (const membership of user.orgMemberships) {
+      const tenantRole = user.tenantRoles.find(
+        (tr) => tr.org_id === membership.org_id,
+      );
+
+      if (tenantRole) {
+        availableOrgs.push({
+          orgId: membership.org_id,
+          orgSlug: membership.organization.slug,
+          orgName: membership.organization.name,
+          role: tenantRole.role.name,
+          roleLevel: tenantRole.role.level,
+          isPlatform: false,
+        });
+      }
+    }
+
+    // 2. Orgs platform (si rôle platform)
+    if (user.platformRole) {
+      const platformRole = user.platformRole.role;
+
+      // Scope global → accès à toutes les orgs
+      if (user.platformRole.scope === 'global') {
+        const allOrgs = await this.prisma.organization.findMany({
+          select: { id: true, slug: true, name: true },
+        });
+
+        for (const org of allOrgs) {
+          // Éviter doublons avec orgs tenant
+          if (!availableOrgs.some((o) => o.orgId === org.id)) {
+            availableOrgs.push({
+              orgId: org.id,
+              orgSlug: org.slug,
+              orgName: org.name,
+              role: platformRole.name,
+              roleLevel: platformRole.level,
+              isPlatform: true,
+            });
+          }
+        }
+      }
+      // Scope assigned → accès aux orgs assignées
+      else if (user.platformRole.scope === 'assigned') {
+        for (const access of user.platformOrgAccess) {
+          if (!availableOrgs.some((o) => o.orgId === access.org_id)) {
+            availableOrgs.push({
+              orgId: access.org_id,
+              orgSlug: access.organization.slug,
+              orgName: access.organization.name,
+              role: platformRole.name,
+              roleLevel: platformRole.level,
+              isPlatform: true,
+            });
+          }
+        }
+      }
+    }
+
+    // Tri par nom d'org
+    return availableOrgs.sort((a, b) => a.orgName.localeCompare(b.orgName));
+  }
+
+  /**
+   * Switch vers une autre organisation
+   * Génère un nouveau JWT tenant-mode avec la nouvelle org
+   */
+  async switchOrg(
+    userId: string,
+    orgId: string,
+  ): Promise<{ accessToken: string; mode: 'tenant' }> {
+    // Vérifier accès
+    const hasAccess = await this.verifyOrgAccess(userId, orgId);
+    if (!hasAccess) {
+      throw new ForbiddenException(
+        'You do not have access to this organization',
+      );
+    }
+
+    // Générer nouveau JWT tenant-mode
+    const result = await this.generateJwtForOrg(userId, orgId);
+    
+    return {
+      accessToken: result.token,
+      mode: result.mode,
+    };
+  }
+
+  /**
+   * Retourne les permissions de l'utilisateur pour une org donnée
+   * Appelé par GET /auth/me/ability
+   */
+  async getUserAbility(userId: string, orgId: string): Promise<UserAbility> {
+    // 1. Trouver le rôle de l'user dans cette org
+    const tenantRole = await this.prisma.tenantUserRole.findFirst({
+      where: {
+        user_id: userId,
+        org_id: orgId,
+      },
+      include: {
+        role: {
+          include: {
+            rolePermissions: {
+              include: {
+                permission: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!tenantRole) {
+      throw new NotFoundException('User has no role in this organization');
+    }
+
+    // 2. Extraire les permissions avec leurs scopes
+    const grants: Grant[] = tenantRole.role.rolePermissions.map((rp) => ({
+      key: rp.permission.key,
+      scope: rp.scope_limit as 'any' | 'org' | 'own',
+    }));
+
+    // 3. Déterminer les modules accessibles
+    const modules = await this.getEnabledModules(orgId);
+
+    return {
+      orgId,
+      modules,
+      grants,
+    };
+  }
+
+  /**
+   * Retourne les modules activés pour une org (basé sur le plan)
+   */
+  private async getEnabledModules(orgId: string): Promise<string[]> {
+    const org = await this.prisma.organization.findUnique({
+      where: { id: orgId },
+      include: {
+        subscription: {
+          include: {
+            plan: {
+              include: {
+                planModules: {
+                  include: {
+                    module: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!org?.subscription?.plan) {
+      return [];
+    }
+
+    return org.subscription.plan.planModules.map((pm) => pm.module.key);
   }
 }

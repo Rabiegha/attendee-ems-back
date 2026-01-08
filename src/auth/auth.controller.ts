@@ -3,8 +3,11 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBody, ApiCookieAuth, ApiBearerAu
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
+import { SwitchOrgDto } from './dto/switch-org.dto';
 import { ConfigService } from '../config/config.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { JwtPayload } from './interfaces/jwt-payload.interface';
 
 @ApiTags('auth')
 @Controller()
@@ -274,6 +277,127 @@ export class AuthController {
   })
   async getPolicy(@Req() req: any) {
     return await this.authService.getPolicyRules(req.user);
+  }
+
+  // ============================================
+  // STEP 2: JWT Multi-org + Switch Context
+  // ============================================
+
+  @Post('switch-org')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Switcher vers une autre organisation',
+    description: 'Génère un nouveau JWT tenant-mode avec l\'organisation spécifiée'
+  })
+  @ApiBody({ type: SwitchOrgDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Nouveau JWT généré avec succès',
+    schema: {
+      type: 'object',
+      properties: {
+        accessToken: { type: 'string', example: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...' },
+        mode: { type: 'string', example: 'tenant', enum: ['tenant'] }
+      }
+    }
+  })
+  @ApiResponse({ status: 403, description: 'Accès refusé à cette organisation' })
+  async switchOrg(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: SwitchOrgDto,
+  ) {
+    const result = await this.authService.switchOrg(user.sub, dto.orgId);
+    return { access_token: result.accessToken, mode: result.mode };
+  }
+
+  @Get('me/orgs')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Obtenir la liste des organisations accessibles',
+    description: 'Retourne toutes les organisations auxquelles l\'utilisateur a accès'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Liste des organisations disponibles',
+    schema: {
+      type: 'object',
+      properties: {
+        current: { type: 'string', example: 'org-uuid', nullable: true },
+        available: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              orgId: { type: 'string' },
+              orgSlug: { type: 'string' },
+              orgName: { type: 'string' },
+              role: { type: 'string' },
+              roleLevel: { type: 'number' },
+              isPlatform: { type: 'boolean' }
+            }
+          }
+        }
+      }
+    }
+  })
+  async getMyOrgs(@CurrentUser() user: JwtPayload) {
+    const orgs = await this.authService.getAvailableOrgs(user.sub);
+    return {
+      current: user.currentOrgId || null,
+      available: orgs,
+    };
+  }
+
+  @Get('me/ability')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Obtenir les permissions pour l\'organisation active',
+    description: 'Retourne les modules accessibles et les permissions (grants) pour l\'org active. À appeler après login ou switch-org.'
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Permissions de l\'utilisateur',
+    schema: {
+      type: 'object',
+      properties: {
+        orgId: { type: 'string', example: 'org-uuid', nullable: true },
+        modules: { type: 'array', items: { type: 'string' }, example: ['events', 'attendees'] },
+        grants: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              key: { type: 'string', example: 'event.create' },
+              scope: { type: 'string', enum: ['any', 'org', 'own'], example: 'org' }
+            }
+          }
+        }
+      }
+    }
+  })
+  @ApiResponse({ status: 400, description: 'Aucun contexte d\'organisation (tenant-no-org)' })
+  async getMyAbility(@CurrentUser() user: JwtPayload) {
+    // Mode platform : pas de permissions org-specific
+    if (user.mode === 'platform') {
+      return {
+        orgId: null,
+        modules: ['platform'],
+        grants: [], // Platform permissions à définir ultérieurement
+      };
+    }
+
+    // Mode tenant sans org → erreur
+    if (!user.currentOrgId) {
+      throw new UnauthorizedException(
+        'No organization context. Please switch to an organization first.',
+      );
+    }
+
+    // Charger les permissions pour l'org active
+    return this.authService.getUserAbility(user.sub, user.currentOrgId);
   }
 
   private secondsFromTtl(ttl: string): number {

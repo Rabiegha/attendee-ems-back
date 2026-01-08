@@ -32,6 +32,7 @@
     "db:seed:minimal": "ts-node scripts/seed-specific.ts minimal",
     "db:seed:event": "ts-node prisma/seeders/seed-specific-event.ts",
     "db:seed:step1": "ts-node prisma/seeds/step1-multitenant.seed.ts",
+    "db:seed:step1-data": "ts-node prisma/seeds/step1-test-data.seed.ts",
     "db:validate:step1": "ts-node scripts/validate-step1-migration.ts",
     "db:studio": "prisma studio",
     "db:migrate:deploy": "dotenv -e .env.prod -- prisma migrate deploy",
@@ -54,8 +55,9 @@
     "docker:install": "docker compose -f docker-compose.dev.yml exec api npm i",
     "docker:restart": "docker compose -f docker-compose.dev.yml restart api",
     "docker:seed:step1": "docker compose -f docker-compose.dev.yml exec api npm run db:seed:step1",
+    "docker:seed:step1-data": "docker compose -f docker-compose.dev.yml exec api npm run db:seed:step1-data",
     "docker:validate:step1": "docker compose -f docker-compose.dev.yml exec api npm run db:validate:step1",
-    "step1:setup": "npm run docker:up && sleep 5 && npm run docker:generate && npm run docker:migrate:deploy && npm run docker:seed:step1 && npm run docker:validate:step1"
+    "step1:setup": "npm run docker:up && sleep 5 && npm run docker:generate && npm run docker:migrate:deploy && npm run docker:seed:step1 && npm run docker:seed:step1-data && npm run docker:validate:step1"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.922.0",
