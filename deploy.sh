@@ -503,41 +503,45 @@ if [ "$SSL_EXISTS" = false ]; then
             echo ""
             echo -e "${YELLOW}Obtaining SSL certificates automatically...${NC}"
             
-            if docker compose -f docker-compose.prod.yml exec -T certbot certbot certonly \
+            # Try to obtain SSL certificates
+            docker compose -f docker-compose.prod.yml exec -T certbot certbot certonly \
                 --webroot -w /var/www/certbot \
                 -d attendee.fr -d www.attendee.fr -d api.attendee.fr \
-                --email fktorza@choyou.fr --agree-tos --non-interactive 2>&1 | tee /tmp/certbot-output.log; then
+                --email fktorza@choyou.fr --agree-tos --non-interactive 2>&1 | tee /tmp/certbot-output.log
+            
+            # Check if certificates were actually obtained
+            if grep -q "Successfully received certificate" /tmp/certbot-output.log || \
+               grep -q "Certificate not yet due for renewal" /tmp/certbot-output.log; then
+                echo -e "${GREEN}✓ SSL certificates obtained successfully${NC}"
                 
-                # Check if certificates were actually obtained (not just renewed)
-                if grep -q "Successfully received certificate" /tmp/certbot-output.log || \
-                   grep -q "Certificate not yet due for renewal" /tmp/certbot-output.log; then
-                    echo -e "${GREEN}✓ SSL certificates obtained successfully${NC}"
-                    
-                    # Restore SSL configs
-                    echo "Switching to HTTPS configuration..."
-                    git checkout nginx/conf.d/attendee.fr.conf nginx/conf.d/api.attendee.fr.conf 2>/dev/null || {
-                        echo -e "${YELLOW}Could not restore SSL configs from git, they may already be in place${NC}"
-                    }
-                    
-                    # Restart Nginx with SSL
-                    echo "Restarting Nginx with SSL..."
-                    docker compose -f docker-compose.prod.yml restart nginx
-                    sleep 3
-                    
-                    if docker ps --filter "name=ems-nginx" --format "{{.Status}}" | grep -q "Up"; then
-                        echo -e "${GREEN}✓ Nginx restarted with SSL successfully${NC}"
-                        SSL_EXISTS=true
-                    else
-                        echo -e "${RED}✗ Nginx failed to start with SSL!${NC}"
-                        docker logs ems-nginx --tail 20
-                    fi
+                # Restore SSL configs
+                echo "Switching to HTTPS configuration..."
+                git checkout nginx/conf.d/attendee.fr.conf nginx/conf.d/api.attendee.fr.conf 2>/dev/null || {
+                    echo -e "${YELLOW}Could not restore SSL configs from git, they may already be in place${NC}"
+                }
+                
+                # Restart Nginx with SSL
+                echo "Restarting Nginx with SSL..."
+                docker compose -f docker-compose.prod.yml restart nginx
+                sleep 3
+                
+                if docker ps --filter "name=ems-nginx" --format "{{.Status}}" | grep -q "Up"; then
+                    echo -e "${GREEN}✓ Nginx restarted with SSL successfully${NC}"
+                    SSL_EXISTS=true
                 else
-                    echo -e "${RED}✗ Failed to obtain SSL certificates${NC}"
-                    cat /tmp/certbot-output.log
+                    echo -e "${RED}✗ Nginx failed to start with SSL!${NC}"
+                    docker logs ems-nginx --tail 20
+                    echo -e "${YELLOW}Reverting to HTTP configuration...${NC}"
+                    cp nginx/conf.d/attendee.fr.conf.http nginx/conf.d/attendee.fr.conf
+                    cp nginx/conf.d/api.attendee.fr.conf.http nginx/conf.d/api.attendee.fr.conf
+                    docker compose -f docker-compose.prod.yml restart nginx
                 fi
             else
-                echo -e "${RED}✗ Certbot command failed${NC}"
+                echo -e "${YELLOW}⚠️  Failed to obtain SSL certificates (likely rate limit)${NC}"
+                echo -e "${YELLOW}Staying in HTTP mode - HTTPS will not be available${NC}"
                 cat /tmp/certbot-output.log
+                echo ""
+                echo -e "${YELLOW}You can obtain SSL manually after $(grep -oP 'retry after \K[^:]+' /tmp/certbot-output.log || echo 'rate limit expires')${NC}"
             fi
             
             rm -f /tmp/certbot-output.log
