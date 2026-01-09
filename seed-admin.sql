@@ -1,3 +1,6 @@
+-- Nettoyer les données existantes
+TRUNCATE TABLE users, organizations, roles CASCADE;
+
 -- Créer le rôle système SUPER_ADMIN
 INSERT INTO roles (id, org_id, code, name, description, level, is_system_role, created_at, updated_at)
 VALUES (
@@ -10,33 +13,30 @@ VALUES (
   true,
   NOW(),
   NOW()
-)
-ON CONFLICT (org_id, code) DO UPDATE 
-SET name = EXCLUDED.name, description = EXCLUDED.description;
+);
 
--- Créer l'organisation admin
+-- Créer l'organisation Choyou
 INSERT INTO organizations (id, name, slug, created_at, updated_at)
 VALUES (
   '00000000-0000-0000-0000-000000000002',
-  'Admin Organization',
-  'admin-org',
+  'Choyou',
+  'choyou',
   NOW(),
   NOW()
-)
-ON CONFLICT (id) DO NOTHING;
+);
 
--- Créer l'utilisateur admin avec le rôle SUPER_ADMIN
+-- Créer l'utilisateur admin@choyou.fr avec mot de passe "admin123"
+-- Hash bcrypt pour "admin123"
 INSERT INTO users (id, org_id, email, password_hash, first_name, last_name, role_id, is_active, created_at, updated_at)
 VALUES (
   '00000000-0000-0000-0000-000000000003',
   '00000000-0000-0000-0000-000000000002',
-  'admin@attendee.fr',
-  '$2b$10$xNeZko5hCVm7VEyPiILOOe5C/ftGAGUM8fCmwoi89D.CEd4PqPa1C',
+  'admin@choyou.fr',
+  '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy',
   'Admin',
-  'User',
+  'Choyou',
   '00000000-0000-0000-0000-000000000001',
   true,
   NOW(),
   NOW()
-)
-ON CONFLICT (email, org_id) DO NOTHING;
+);
