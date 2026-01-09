@@ -483,25 +483,28 @@ if [ "$SSL_EXISTS" = false ]; then
     if [ -f "nginx/conf.d/attendee.fr.conf.http" ] && [ -f "nginx/conf.d/api.attendee.fr.conf.http" ]; then
         echo "Switching to HTTP-only Nginx configuration..."
         
-        # Replace configs on host filesystem (for rebuilds)
+        # Stop Nginx to break any crash loop
+        docker compose -f docker-compose.prod.yml stop nginx 2>/dev/null
+        
+        # Replace SSL configs with HTTP-only versions on host (mounted into container)
         cp nginx/conf.d/attendee.fr.conf.http nginx/conf.d/attendee.fr.conf
         cp nginx/conf.d/api.attendee.fr.conf.http nginx/conf.d/api.attendee.fr.conf
+        echo -e "${GREEN}✓ HTTP-only configs copied${NC}"
         
-        # Copy configs into running container (immediate effect)
-        echo "Copying HTTP-only configs to Nginx container..."
-        docker compose -f docker-compose.prod.yml exec -T nginx sh -c "rm -f /etc/nginx/conf.d/attendee.fr.conf /etc/nginx/conf.d/api.attendee.fr.conf"
-        docker cp nginx/conf.d/attendee.fr.conf.http ems-nginx:/etc/nginx/conf.d/attendee.fr.conf
-        docker cp nginx/conf.d/api.attendee.fr.conf.http ems-nginx:/etc/nginx/conf.d/api.attendee.fr.conf
+        # Start Nginx with new configs
+        echo "Starting Nginx with HTTP-only configuration..."
+        docker compose -f docker-compose.prod.yml start nginx
         
-        # Test config before reloading
-        if docker compose -f docker-compose.prod.yml exec -T nginx nginx -t 2>&1 | grep -q "successful"; then
-            echo -e "${GREEN}✓ Nginx configuration test passed${NC}"
-            # Reload Nginx without restarting container
-            docker compose -f docker-compose.prod.yml exec -T nginx nginx -s reload
-            echo -e "${GREEN}✓ HTTP-only configuration active${NC}"
+        # Wait for startup
+        sleep 3
+        
+        # Verify Nginx started successfully
+        if docker ps --filter "name=ems-nginx" --format "{{.Status}}" | grep -q "Up"; then
+            echo -e "${GREEN}✓ Nginx started successfully with HTTP-only config${NC}"
         else
-            echo -e "${RED}✗ Nginx configuration test failed!${NC}"
-            docker compose -f docker-compose.prod.yml exec -T nginx nginx -t
+            echo -e "${RED}✗ Nginx failed to start!${NC}"
+            echo "Checking logs:"
+            docker logs ems-nginx --tail 20
         fi
     else
         echo -e "${YELLOW}WARNING: HTTP-only config files not found. Nginx may fail to start.${NC}"
@@ -515,43 +518,33 @@ if [ "$SSL_EXISTS" = false ]; then
     echo "    -d attendee.fr -d www.attendee.fr -d api.attendee.fr \\"
     echo "    --email contact@attendee.fr --agree-tos --non-interactive"
     echo ""
-    echo "  Then restore SSL configs and reload Nginx:"
+    echo "  Then restore SSL configs and restart Nginx:"
     echo "  git checkout nginx/conf.d/attendee.fr.conf nginx/conf.d/api.attendee.fr.conf"
-    echo "  docker cp nginx/conf.d/attendee.fr.conf ems-nginx:/etc/nginx/conf.d/"
-    echo "  docker cp nginx/conf.d/api.attendee.fr.conf ems-nginx:/etc/nginx/conf.d/"
-    echo "  docker compose -f docker-compose.prod.yml exec nginx nginx -s reload"
+    echo "  docker compose -f docker-compose.prod.yml restart nginx"
     echo ""
 else
     echo -e "${GREEN}✓ SSL certificates found - using HTTPS configuration${NC}"
 fi
 
-# Check Nginx status
-echo "Checking Nginx status..."
-sleep 2
-
-if docker ps --filter "name=ems-nginx" --format "{{.Status}}" | grep -q "Up"; then
-    echo -e "${GREEN}✓ Nginx is running${NC}"
-    
-    # Show access URLs
-    if [ "$SSL_EXISTS" = true ]; then
-        echo -e "${GREEN}  Frontend: https://attendee.fr${NC}"
-        echo -e "${GREEN}  API: https://api.attendee.fr${NC}"
-    else
-        echo -e "${GREEN}  Frontend: http://attendee.fr${NC}"
-        echo -e "${GREEN}  API: http://api.attendee.fr${NC}"
-        echo -e "${YELLOW}  Note: HTTPS not available yet (no SSL certificates)${NC}"
-    fi
-else
-    echo -e "${RED}✗ Nginx is not running properly!${NC}"
-    echo "Last 20 log lines:"
-    docker logs ems-nginx --tail 20
-fi
-
+echo ""
 echo -e "\n${GREEN}========================================${NC}"
 echo -e "${GREEN}   🎉 Deployment completed successfully!${NC}"
 echo -e "${GREEN}========================================${NC}"
 
 echo -e "\n${YELLOW}Service Status:${NC}"
+docker ps --filter "name=ems" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+
+echo -e "\n${YELLOW}Access URLs:${NC}"
+if [ "$SSL_EXISTS" = true ]; then
+    echo -e "${GREEN}  Frontend: https://attendee.fr${NC}"
+    echo -e "${GREEN}  API: https://api.attendee.fr${NC}"
+else
+    echo -e "${GREEN}  Frontend: http://attendee.fr${NC}"
+    echo -e "${GREEN}  API: http://api.attendee.fr${NC}"
+    echo -e "${YELLOW}  Note: HTTPS not available yet (run SSL setup commands above)${NC}"
+fi
+
+echo ""
 docker ps --filter "name=ems" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
 echo -e "\n${GREEN}🌐 Your application is now available at:${NC}"

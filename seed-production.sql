@@ -60,6 +60,4 @@ VALUES (
   NOW(),
   NOW()
 )
-ON CONFLICT (email) DO UPDATE SET
-  password_hash = EXCLUDED.password_hash,
-  updated_at = NOW();
+ON CONFLICT (id) DO NOTHING;
