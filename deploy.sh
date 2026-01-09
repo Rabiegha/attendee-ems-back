@@ -251,7 +251,52 @@ fi
 # Ensure API is ready
 echo "Ensuring API is ready..."
 docker compose -f docker-compose.prod.yml restart api
-sleep 5
+sleep 10
+
+# Test database connection
+echo "Testing database connection..."
+if docker compose -f docker-compose.prod.yml exec -T api npx prisma db execute --stdin <<< "SELECT 1;" &>/dev/null; then
+    echo -e "${GREEN}✓ Database connection successful${NC}"
+else
+    echo -e "${RED}✗ Database connection failed!${NC}"
+    
+    if [ "$DB_HAS_DATA" = true ]; then
+        echo -e "${YELLOW}Database authentication failed with existing volume${NC}"
+        echo -e "${YELLOW}This usually means the password in .env doesn't match the database${NC}"
+        echo ""
+        echo "Options:"
+        echo "  1. Recreate volumes (WILL DELETE ALL DATA)"
+        echo "  2. Abort and check credentials manually"
+        echo ""
+        read -p "Recreate volumes and start fresh? (yes/no): " -r
+        echo
+        
+        if [[ $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
+            echo "Stopping services and removing volumes..."
+            docker compose -f docker-compose.prod.yml down -v
+            
+            echo "Starting fresh services..."
+            docker compose -f docker-compose.prod.yml up -d --build
+            
+            sleep 15
+            
+            # Set to first install mode to trigger seed
+            FIRST_INSTALL=true
+            DB_HAS_DATA=false
+            
+            echo -e "${GREEN}✓ Fresh database created${NC}"
+        else
+            echo -e "${RED}Deployment aborted. Please check your database credentials.${NC}"
+            echo "The password in /opt/ems-attendee/backend/.env should match the database password."
+            exit 1
+        fi
+    else
+        echo -e "${RED}Fresh install but database connection failed!${NC}"
+        echo "This is unusual. Check Docker logs:"
+        echo "  docker compose -f docker-compose.prod.yml logs postgres"
+        exit 1
+    fi
+fi
 
 # Step 10: Run migrations and seed
 echo -e "\n${YELLOW}[10/10] Managing database...${NC}"
