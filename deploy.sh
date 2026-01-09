@@ -327,8 +327,9 @@ fi
 echo -e "\n${YELLOW}[10/10] Managing database...${NC}"
 
 # Always run migrations (safe, idempotent)
+# IMPORTANT: --skip-seed prevents Prisma from auto-seeding with dev data
 echo "Running Prisma migrations..."
-docker compose -f docker-compose.prod.yml exec -T api npx prisma migrate deploy
+docker compose -f docker-compose.prod.yml exec -T api npx prisma migrate deploy --skip-seed
 echo -e "${GREEN}✓ Migrations applied${NC}"
 
 # Seed logic - intelligent decision
