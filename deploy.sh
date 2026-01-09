@@ -428,34 +428,74 @@ docker ps --filter "name=ems" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}
 # Step 11: Configure SSL certificates automatically
 echo -e "\n${YELLOW}[11/11] Configuring SSL certificates...${NC}"
 
-# Check if SSL certificates exist on host first
+# Check if SSL certificates exist
+SSL_EXISTS=false
+
 if [ -f "/etc/letsencrypt/live/attendee.fr/fullchain.pem" ]; then
     echo -e "${GREEN}✓ SSL certificates found on host${NC}"
+    SSL_EXISTS=true
     
-    # Check if they're already in the Docker volume
-    if docker run --rm -v ems_certbot_conf:/certs alpine test -f /certs/live/attendee.fr/fullchain.pem 2>/dev/null; then
-        echo -e "${GREEN}✓ SSL certificates already copied to Docker volume${NC}"
-    else
+    # Copy to Docker volume if not already there
+    if ! docker run --rm -v ems_certbot_conf:/certs alpine test -f /certs/live/attendee.fr/fullchain.pem 2>/dev/null; then
         echo "Copying SSL certificates from host to Docker volume..."
-        if ! sudo docker run --rm -v /etc/letsencrypt:/source -v ems_certbot_conf:/dest alpine sh -c 'cp -r /source/* /dest/' 2>/dev/null; then
-            echo -e "${YELLOW}WARNING: Could not copy SSL certificates. They may already exist or you may need to run certbot manually.${NC}"
-        else
+        if sudo docker run --rm -v /etc/letsencrypt:/source -v ems_certbot_conf:/dest alpine sh -c 'cp -r /source/* /dest/' 2>/dev/null; then
             echo -e "${GREEN}✓ SSL certificates copied to Docker volume${NC}"
         fi
     fi
-elif docker compose -f docker-compose.prod.yml exec -T certbot ls /etc/letsencrypt/live/attendee.fr/fullchain.pem &>/dev/null; then
+    
+elif docker compose -f docker-compose.prod.yml exec -T certbot test -f /etc/letsencrypt/live/attendee.fr/fullchain.pem &>/dev/null; then
     echo -e "${GREEN}✓ SSL certificates already exist in Docker volume${NC}"
-else
-    echo -e "${YELLOW}SSL certificates not found.${NC}"
-    echo "To obtain SSL certificates, you can run certbot manually after deployment:"
-    echo "  docker compose -f docker-compose.prod.yml exec certbot certbot certonly --webroot -w /var/www/certbot -d attendee.fr -d www.attendee.fr -d api.attendee.fr --email contact@attendee.fr --agree-tos --non-interactive"
-    echo "For now, continuing without SSL (services will be accessible via HTTP)."
+    SSL_EXISTS=true
 fi
 
-# Restart Nginx to ensure it picks up any SSL changes
+# Configure Nginx based on SSL availability
+cd "$DEPLOY_DIR/backend"
+
+if [ "$SSL_EXISTS" = false ]; then
+    echo -e "${YELLOW}No SSL certificates found - configuring HTTP-only mode${NC}"
+    
+    # Use HTTP-only configs
+    if [ -f "nginx/conf.d/attendee.fr.conf.http" ] && [ -f "nginx/conf.d/api.attendee.fr.conf.http" ]; then
+        echo "Switching to HTTP-only Nginx configuration..."
+        cp nginx/conf.d/attendee.fr.conf.http nginx/conf.d/attendee.fr.conf
+        cp nginx/conf.d/api.attendee.fr.conf.http nginx/conf.d/api.attendee.fr.conf
+        echo -e "${GREEN}✓ HTTP-only configuration active${NC}"
+    else
+        echo -e "${YELLOW}WARNING: HTTP-only config files not found. Nginx may fail to start.${NC}"
+    fi
+    
+    echo ""
+    echo -e "${YELLOW}📝 To obtain SSL certificates, run this after deployment:${NC}"
+    echo "  cd /opt/ems-attendee/backend"
+    echo "  docker compose -f docker-compose.prod.yml exec certbot certbot certonly \\"
+    echo "    --webroot -w /var/www/certbot \\"
+    echo "    -d attendee.fr -d www.attendee.fr -d api.attendee.fr \\"
+    echo "    --email contact@attendee.fr --agree-tos --non-interactive"
+    echo ""
+    echo "  Then restore SSL configs and restart Nginx:"
+    echo "  git checkout nginx/conf.d/attendee.fr.conf nginx/conf.d/api.attendee.fr.conf"
+    echo "  docker compose -f docker-compose.prod.yml restart nginx"
+    echo ""
+fi
+
+# Restart Nginx to apply configuration
 echo "Restarting Nginx..."
-if ! docker compose -f docker-compose.prod.yml restart nginx 2>/dev/null; then
-    echo -e "${YELLOW}WARNING: Could not restart Nginx. It may already be running correctly.${NC}"
+if docker compose -f docker-compose.prod.yml restart nginx 2>/dev/null; then
+    sleep 3
+    
+    # Check if Nginx is running properly
+    if docker ps --filter "name=ems-nginx" --format "{{.Status}}" | grep -q "Up"; then
+        echo -e "${GREEN}✓ Nginx started successfully${NC}"
+    else
+        echo -e "${RED}✗ Nginx failed to start!${NC}"
+        echo "Checking logs..."
+        docker logs ems-nginx --tail 20
+        echo ""
+        echo -e "${YELLOW}Nginx is failing. This is usually due to SSL certificate issues.${NC}"
+        echo "The deployment will continue, but you may need to fix Nginx manually."
+    fi
+else
+    echo -e "${YELLOW}WARNING: Could not restart Nginx${NC}"
 fi
 
 echo -e "\n${GREEN}========================================${NC}"
