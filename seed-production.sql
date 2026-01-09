@@ -1,7 +1,7 @@
 -- ========================================
--- SEED PRODUCTION - Environnement vide
+-- SEED PRODUCTION - Environnement vierge
 -- Organisation: Choyou
--- Admin: admin@choyou.fr / admin123
+-- Admin: admin@attendee.fr / admin123
 -- ========================================
 
 -- Vérifier si des données existent déjà
@@ -44,17 +44,17 @@ VALUES (
 )
 ON CONFLICT (id) DO NOTHING;
 
--- Créer l'utilisateur admin@choyou.fr (seulement s'il n'existe pas)
+-- Créer l'utilisateur admin@attendee.fr (seulement s'il n'existe pas)
 -- Le hash sera généré dynamiquement par le script de déploiement
 -- Ce fichier est un template, le hash sera remplacé avant exécution
 INSERT INTO users (id, org_id, email, password_hash, first_name, last_name, role_id, is_active, created_at, updated_at)
 VALUES (
   '00000000-0000-0000-0000-000000000003',
   '00000000-0000-0000-0000-000000000002',
-  'admin@choyou.fr',
+  'admin@attendee.fr',
   '{{ADMIN_PASSWORD_HASH}}',
   'Admin',
-  'Choyou',
+  'Attendee',
   '00000000-0000-0000-0000-000000000001',
   true,
   NOW(),

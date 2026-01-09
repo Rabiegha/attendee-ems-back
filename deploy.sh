@@ -347,7 +347,7 @@ if [ "$FORCE_SEED" = true ]; then
     fi
     
     # Generate fresh bcrypt hash for admin123
-    echo "Generating secure password hash for admin@choyou.fr..."
+    echo "Generating secure password hash for admin@attendee.fr..."
     ADMIN_HASH=$(docker compose -f docker-compose.prod.yml exec -T api node -e "const bcrypt = require('bcrypt'); bcrypt.hash('admin123', 10).then(hash => console.log(hash));" 2>/dev/null | tr -d '\r\n' | grep '^\$2')
     
     if [ -z "$ADMIN_HASH" ]; then
@@ -384,7 +384,7 @@ if [ "$FORCE_SEED" = true ]; then
     
     echo -e "${GREEN}✓ Production seed completed${NC}"
     echo -e "${GREEN}  Organization: Choyou${NC}"
-    echo -e "${GREEN}  Admin: admin@choyou.fr / admin123${NC}"
+    echo -e "${GREEN}  Admin: admin@attendee.fr / admin123${NC}"
     
 elif [ "$FIRST_INSTALL" = true ]; then
     # First install - seed with production data
@@ -401,7 +401,7 @@ elif [ "$FIRST_INSTALL" = true ]; then
     fi
     
     # Generate fresh bcrypt hash for admin123
-    echo "Generating secure password hash for admin@choyou.fr..."
+    echo "Generating secure password hash for admin@attendee.fr..."
     ADMIN_HASH=$(docker compose -f docker-compose.prod.yml exec -T api node -e "const bcrypt = require('bcrypt'); bcrypt.hash('admin123', 10).then(hash => console.log(hash));" 2>/dev/null | tr -d '\r\n' | grep '^\$2')
     
     if [ -z "$ADMIN_HASH" ]; then
@@ -438,7 +438,7 @@ elif [ "$FIRST_INSTALL" = true ]; then
     
     echo -e "${GREEN}✓ Production seed completed${NC}"
     echo -e "${GREEN}  Organization: Choyou${NC}"
-    echo -e "${GREEN}  Admin: admin@choyou.fr / admin123${NC}"
+    echo -e "${GREEN}  Admin: admin@attendee.fr / admin123${NC}"
     
 else
     # Update mode - do NOT seed (preserve data)
@@ -477,7 +477,7 @@ fi
 cd "$DEPLOY_DIR/backend"
 
 if [ "$SSL_EXISTS" = false ]; then
-    echo -e "${YELLOW}No SSL certificates found - configuring HTTP-only mode${NC}"
+    echo -e "${YELLOW}No SSL certificates found - configuring HTTP-only mode first${NC}"
     
     # Use HTTP-only configs
     if [ -f "nginx/conf.d/attendee.fr.conf.http" ] && [ -f "nginx/conf.d/api.attendee.fr.conf.http" ]; then
@@ -493,11 +493,54 @@ if [ "$SSL_EXISTS" = false ]; then
         docker compose -f docker-compose.prod.yml up -d nginx
         
         # Wait for startup
-        sleep 3
+        sleep 5
         
         # Verify Nginx started successfully
         if docker ps --filter "name=ems-nginx" --format "{{.Status}}" | grep -q "Up"; then
             echo -e "${GREEN}✓ Nginx started successfully with HTTP-only config${NC}"
+            
+            # Now automatically obtain SSL certificates
+            echo ""
+            echo -e "${YELLOW}Obtaining SSL certificates automatically...${NC}"
+            
+            if docker compose -f docker-compose.prod.yml exec -T certbot certbot certonly \
+                --webroot -w /var/www/certbot \
+                -d attendee.fr -d www.attendee.fr -d api.attendee.fr \
+                --email fktorza@choyou.fr --agree-tos --non-interactive 2>&1 | tee /tmp/certbot-output.log; then
+                
+                # Check if certificates were actually obtained (not just renewed)
+                if grep -q "Successfully received certificate" /tmp/certbot-output.log || \
+                   grep -q "Certificate not yet due for renewal" /tmp/certbot-output.log; then
+                    echo -e "${GREEN}✓ SSL certificates obtained successfully${NC}"
+                    
+                    # Restore SSL configs
+                    echo "Switching to HTTPS configuration..."
+                    git checkout nginx/conf.d/attendee.fr.conf nginx/conf.d/api.attendee.fr.conf 2>/dev/null || {
+                        echo -e "${YELLOW}Could not restore SSL configs from git, they may already be in place${NC}"
+                    }
+                    
+                    # Restart Nginx with SSL
+                    echo "Restarting Nginx with SSL..."
+                    docker compose -f docker-compose.prod.yml restart nginx
+                    sleep 3
+                    
+                    if docker ps --filter "name=ems-nginx" --format "{{.Status}}" | grep -q "Up"; then
+                        echo -e "${GREEN}✓ Nginx restarted with SSL successfully${NC}"
+                        SSL_EXISTS=true
+                    else
+                        echo -e "${RED}✗ Nginx failed to start with SSL!${NC}"
+                        docker logs ems-nginx --tail 20
+                    fi
+                else
+                    echo -e "${RED}✗ Failed to obtain SSL certificates${NC}"
+                    cat /tmp/certbot-output.log
+                fi
+            else
+                echo -e "${RED}✗ Certbot command failed${NC}"
+                cat /tmp/certbot-output.log
+            fi
+            
+            rm -f /tmp/certbot-output.log
         else
             echo -e "${RED}✗ Nginx failed to start!${NC}"
             echo "Checking logs:"
@@ -506,19 +549,6 @@ if [ "$SSL_EXISTS" = false ]; then
     else
         echo -e "${YELLOW}WARNING: HTTP-only config files not found. Nginx may fail to start.${NC}"
     fi
-    
-    echo ""
-    echo -e "${YELLOW}📝 To obtain SSL certificates, run this after deployment:${NC}"
-    echo "  cd /opt/ems-attendee/backend"
-    echo "  docker compose -f docker-compose.prod.yml exec certbot certbot certonly \\"
-    echo "    --webroot -w /var/www/certbot \\"
-    echo "    -d attendee.fr -d www.attendee.fr -d api.attendee.fr \\"
-    echo "    --email contact@attendee.fr --agree-tos --non-interactive"
-    echo ""
-    echo "  Then restore SSL configs and restart Nginx:"
-    echo "  git checkout nginx/conf.d/attendee.fr.conf nginx/conf.d/api.attendee.fr.conf"
-    echo "  docker compose -f docker-compose.prod.yml restart nginx"
-    echo ""
 else
     echo -e "${GREEN}✓ SSL certificates found - using HTTPS configuration${NC}"
     
@@ -559,13 +589,19 @@ echo ""
 docker ps --filter "name=ems" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
 echo -e "\n${GREEN}🌐 Your application is now available at:${NC}"
-echo "   - Frontend: https://attendee.fr"
-echo "   - API: https://api.attendee.fr"
-echo "   - API Health: https://api.attendee.fr/health"
+if [ "$SSL_EXISTS" = true ]; then
+    echo "   - Frontend: https://attendee.fr"
+    echo "   - API: https://api.attendee.fr"
+    echo "   - API Health: https://api.attendee.fr/health"
+else
+    echo "   - Frontend: http://attendee.fr"
+    echo "   - API: http://api.attendee.fr"
+    echo "   - API Health: http://api.attendee.fr/health"
+fi
 
 if [ "$FIRST_INSTALL" = true ] || [ "$FORCE_SEED" = true ]; then
     echo -e "\n${GREEN}🔑 Admin credentials:${NC}"
-    echo "   - Email: admin@choyou.fr"
+    echo "   - Email: admin@attendee.fr"
     echo "   - Password: admin123"
     echo "   - Organization: Choyou"
 fi
@@ -580,4 +616,6 @@ echo "   - Restart service: cd $DEPLOY_DIR/backend && docker compose -f docker-c
 echo "   - Check status: cd $DEPLOY_DIR/backend && docker compose -f docker-compose.prod.yml ps"
 echo "   - Update again: ./deploy.sh"
 echo "   - Force reseed: ./deploy.sh --force-seed (⚠️  will erase data!)"
+
+
 
