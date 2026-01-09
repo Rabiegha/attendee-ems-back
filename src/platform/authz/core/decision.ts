@@ -1,3 +1,5 @@
+import { Scope } from './types';
+
 export enum DecisionCode {
   // Success
   OK = 'OK',
@@ -24,8 +26,8 @@ export interface Decision {
   details?: {
     reason?: string;
     requiredPermission?: string;
-    actualScope?: ScopeLimit;
-    requiredScope?: ScopeLimit;
+    actualScope?: Scope;
+    requiredScope?: Scope;
     [key: string]: any;
   };
 }
@@ -39,3 +41,44 @@ export class DecisionHelper {
     return { allowed: false, code, details };
   }
 }
+
+/**
+ * Helper compatible avec authorization.service.ts
+ */
+export const Decisions = {
+  allow(): Decision {
+    return DecisionHelper.allow();
+  },
+
+  denyNoPermission(permission: string): Decision {
+    return DecisionHelper.deny(DecisionCode.MISSING_PERMISSION, {
+      reason: `Missing permission: ${permission}`,
+      requiredPermission: permission,
+    });
+  },
+
+  denyScopeMismatch(permission: string, requiredScope: Scope, actualScope: string): Decision {
+    return DecisionHelper.deny(DecisionCode.SCOPE_DENIED, {
+      reason: `Permission ${permission} requires scope ${requiredScope}, but user has ${actualScope}`,
+      requiredPermission: permission,
+    });
+  },
+
+  denyNoRole(): Decision {
+    return DecisionHelper.deny(DecisionCode.NO_TENANT_CONTEXT, {
+      reason: 'User has no role in current context',
+    });
+  },
+
+  denyNoOrgAccess(orgId: string): Decision {
+    return DecisionHelper.deny(DecisionCode.NOT_TENANT_MEMBER, {
+      reason: `User has no access to organization ${orgId}`,
+    });
+  },
+
+  denyModuleDisabled(module: string): Decision {
+    return DecisionHelper.deny(DecisionCode.MODULE_DISABLED, {
+      reason: `Module ${module} is not enabled for this organization`,
+    });
+  },
+};

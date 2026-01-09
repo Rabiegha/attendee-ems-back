@@ -180,13 +180,13 @@ model TenantUserRole {
 // Table d'assignation des rôles platform (support/root)
 // Un user peut avoir au maximum 1 rôle platform actif
 model PlatformUserRole {
-  user_id       String               @db.Uuid
-  role_id       String               @db.Uuid
-  scope         TenantAccessScope    @default(tenant_any)  // ✅ Uniformisé
-  assigned_at   DateTime             @default(now()) @map("assigned_at")
-  assigned_by   String?              @db.Uuid
-  created_at    DateTime             @default(now()) @map("created_at")
-  updated_at    DateTime             @updatedAt @map("updated_at")
+  user_id       String                @db.Uuid
+  role_id       String                @db.Uuid
+  access_level  PlatformAccessLevel   @default(GLOBAL)  // Accès aux organisations
+  assigned_at   DateTime              @default(now()) @map("assigned_at")
+  assigned_by   String?               @db.Uuid
+  created_at    DateTime              @default(now()) @map("created_at")
+  updated_at    DateTime              @updatedAt @map("updated_at")
 
   // Relations
   user          User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
@@ -195,17 +195,17 @@ model PlatformUserRole {
   @@id([user_id])
   @@unique([user_id])
   @@index([role_id])
-  @@index([scope])
+  @@index([access_level])
   @@map("platform_user_roles")
 }
 
-enum TenantAccessScope {
-  tenant_any       // Accès à toutes les orgs (ROOT)
-  tenant_assigned  // Accès uniquement aux orgs spécifiées dans platform_user_org_access (SUPPORT)
+enum PlatformAccessLevel {
+  GLOBAL    // Accès global à toutes les organisations (ROOT)
+  LIMITED   // Accès limité aux organisations assignées (SUPPORT)
 }
 
-// ===== PLATFORM USER ORG ACCESS (pour scope=assigned) =====
-// Indique les orgs accessibles par un user platform avec scope "assigned"
+// ===== PLATFORM USER ORG ACCESS (pour access_level=LIMITED) =====
+// Indique les orgs accessibles par un user platform avec access_level "LIMITED"
 model PlatformUserOrgAccess {
   user_id       String   @db.Uuid
   org_id        String   @db.Uuid

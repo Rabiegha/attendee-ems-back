@@ -269,12 +269,12 @@ async function main() {
     },
     update: {
       role_id: roleSupport.id,
-      scope: 'tenant_assigned',
+      access_level: 'LIMITED',
     },
     create: {
       user_id: support.id,
       role_id: roleSupport.id,
-      scope: 'tenant_assigned',
+      access_level: 'LIMITED',
     },
   });
 
@@ -294,10 +294,10 @@ async function main() {
     },
   });
 
-  console.log(`  ✅ ${support.email} - Support (accès assigned à ${org1.name})`);
+  console.log(`  ✅ ${support.email} - Support (accès LIMITED à ${org1.name})`);
 
   // ================================================================
-  // 5. ROOT ADMINISTRATOR (accès complet, scope=all)
+  // 5. ROOT ADMINISTRATOR (accès complet, access_level=GLOBAL)
   // ================================================================
   console.log('👤 Création root admin...');
   
@@ -319,12 +319,12 @@ async function main() {
     },
     update: {
       role_id: roleRoot.id,
-      scope: 'tenant_any',
+      access_level: 'GLOBAL',
     },
     create: {
       user_id: root.id,
       role_id: roleRoot.id,
-      scope: 'tenant_any',
+      access_level: 'GLOBAL',
     },
   });
 

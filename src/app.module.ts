@@ -3,6 +3,7 @@ import { RouterModule } from '@nestjs/core';
 import { ConfigModule } from './config/config.module';
 import { PrismaModule } from './infra/db/prisma.module';
 import { AuthModule } from './auth/auth.module';
+import { AuthzModule } from './platform/authz/authz.module'; // ✅ STEP 3: Core RBAC Hexagonal
 // import { RbacModule } from './authorization/rbac.module'; // ⚠️ LEGACY
 // import { UsersModule } from './modules/users/users.module'; // ⚠️ LEGACY: à refactorer (STEP 4)
 // import { OrganizationsModule } from './modules/organizations/organizations.module'; // ⚠️ LEGACY
@@ -27,6 +28,7 @@ import { appRoutes } from './router/app.routes';
     ConfigModule,
     PrismaModule,
     AuthModule,
+    AuthzModule, // ✅ STEP 3: Core RBAC Hexagonal
     // RbacModule, // ⚠️ LEGACY
     // UsersModule, // ⚠️ LEGACY: à refactorer (STEP 4)
     // OrganizationsModule, // ⚠️ LEGACY

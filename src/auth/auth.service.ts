@@ -2,7 +2,7 @@ import { Injectable, UnauthorizedException, NotFoundException, ForbiddenExceptio
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../infra/db/prisma.service';
 import { ConfigService } from '../config/config.service';
-import { TenantAccessScope } from '@prisma/client'; // ✅ Import enum Prisma
+import { PlatformAccessLevel } from '@prisma/client'; // ✅ Import enum Prisma
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { v4 as uuidv4 } from 'uuid';
@@ -271,11 +271,11 @@ export class AuthService {
 
     // 2. Platform user avec scope approprié
     if (user.platformRole) {
-      const scope = user.platformRole.scope;
-      // Scope tenant_any = accès à toutes les orgs (ROOT)
-      if (scope === TenantAccessScope.tenant_any) return true;
-      // Scope tenant_assigned = vérifier accès spécifique (SUPPORT)
-      if (scope === TenantAccessScope.tenant_assigned) {
+      const accessLevel = user.platformRole.access_level;
+      // GLOBAL = accès à toutes les orgs (ROOT)
+      if (accessLevel === PlatformAccessLevel.GLOBAL) return true;
+      // LIMITED = vérifier accès spécifique (SUPPORT)
+      if (accessLevel === PlatformAccessLevel.LIMITED) {
         return user.platformOrgAccess.some((a) => a.org_id === orgId);
       }
     }
@@ -403,8 +403,8 @@ export class AuthService {
     if (user.platformRole) {
       const platformRole = user.platformRole.role;
 
-      // Scope tenant_any → accès à toutes les orgs (ROOT)
-      if (user.platformRole.scope === TenantAccessScope.tenant_any) {
+      // GLOBAL → accès à toutes les orgs (ROOT)
+      if (user.platformRole.access_level === PlatformAccessLevel.GLOBAL) {
         const allOrgs = await this.prisma.organization.findMany({
           select: { id: true, slug: true, name: true },
         });
@@ -423,8 +423,8 @@ export class AuthService {
           }
         }
       }
-      // Scope tenant_assigned → accès aux orgs assignées (SUPPORT)
-      else if (user.platformRole.scope === TenantAccessScope.tenant_assigned) {
+      // LIMITED → accès aux orgs assignées (SUPPORT)
+      else if (user.platformRole.access_level === PlatformAccessLevel.LIMITED) {
         for (const access of user.platformOrgAccess) {
           if (!availableOrgs.some((o) => o.orgId === access.org_id)) {
             availableOrgs.push({
