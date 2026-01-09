@@ -243,7 +243,7 @@ else
     
     # Wait for database initialization
     echo "Waiting for PostgreSQL initialization..."
-    sleep 15
+    sleep 20
     
     echo -e "${GREEN}✓ Fresh services started successfully${NC}"
 fi
@@ -253,12 +253,40 @@ echo "Ensuring API is ready..."
 docker compose -f docker-compose.prod.yml restart api
 sleep 10
 
-# Test database connection
+# Test database connection with retries
 echo "Testing database connection..."
-if docker compose -f docker-compose.prod.yml exec -T api npx prisma db execute --stdin <<< "SELECT 1;" &>/dev/null; then
+MAX_RETRIES=5
+RETRY_COUNT=0
+DB_CONNECTED=false
+
+while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+    if docker compose -f docker-compose.prod.yml exec -T api npx prisma db execute --stdin <<< "SELECT 1;" &>/dev/null; then
+        DB_CONNECTED=true
+        break
+    fi
+    
+    RETRY_COUNT=$((RETRY_COUNT + 1))
+    if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+        echo "Connection attempt $RETRY_COUNT failed, retrying in 5 seconds..."
+        sleep 5
+    fi
+done
+
+if [ "$DB_CONNECTED" = true ]; then
     echo -e "${GREEN}✓ Database connection successful${NC}"
 else
-    echo -e "${RED}✗ Database connection failed!${NC}"
+    echo -e "${RED}✗ Database connection failed after $MAX_RETRIES attempts!${NC}"
+    
+    # Show logs automatically
+    echo ""
+    echo "=== PostgreSQL Logs (last 30 lines) ==="
+    docker compose -f docker-compose.prod.yml logs --tail 30 postgres
+    
+    echo ""
+    echo "=== API Logs (last 30 lines) ==="
+    docker compose -f docker-compose.prod.yml logs --tail 30 api
+    
+    echo ""
     
     if [ "$DB_HAS_DATA" = true ]; then
         echo -e "${YELLOW}Database authentication failed with existing volume${NC}"
@@ -278,7 +306,7 @@ else
             echo "Starting fresh services..."
             docker compose -f docker-compose.prod.yml up -d --build
             
-            sleep 15
+            sleep 20
             
             # Set to first install mode to trigger seed
             FIRST_INSTALL=true
@@ -292,8 +320,14 @@ else
         fi
     else
         echo -e "${RED}Fresh install but database connection failed!${NC}"
-        echo "This is unusual. Check Docker logs:"
-        echo "  docker compose -f docker-compose.prod.yml logs postgres"
+        echo ""
+        echo -e "${YELLOW}Possible causes:${NC}"
+        echo "  - API container still starting up (check: docker logs ems-api)"
+        echo "  - PostgreSQL not fully initialized (check: docker logs ems-postgres)"
+        echo "  - Network issues between containers"
+        echo ""
+        echo "Try waiting 30 more seconds and running again:"
+        echo "  sleep 30 && ./deploy.sh --first-install"
         exit 1
     fi
 fi
