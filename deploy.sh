@@ -456,8 +456,9 @@ echo -e "\n${YELLOW}[11/11] Configuring SSL certificates...${NC}"
 # Check if SSL certificates exist
 SSL_EXISTS=false
 
-if [ -f "/etc/letsencrypt/live/attendee.fr/fullchain.pem" ]; then
-    echo -e "${GREEN}✓ SSL certificates found on host${NC}"
+# Use sudo to check file existence because /etc/letsencrypt usually requires root privileges to read
+if sudo test -f "/etc/letsencrypt/live/attendee.fr/fullchain.pem"; then
+    echo -e "${GREEN}✓ SSL certificates found on host (via sudo)${NC}"
     SSL_EXISTS=true
     
     # Copy to Docker volume if not already there
