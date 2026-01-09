@@ -219,15 +219,15 @@ if [ "$DB_HAS_DATA" = true ]; then
     echo "Stopping containers..."
     docker compose -f docker-compose.prod.yml down 2>/dev/null || true
     
-    # Start with latest code, rebuild images
-    echo "Starting services with updated code..."
-    docker compose -f docker-compose.prod.yml up -d --build
+    # Start services WITHOUT nginx first (we'll handle nginx separately based on SSL)
+    echo "Starting backend services with updated code..."
+    docker compose -f docker-compose.prod.yml up -d --build postgres api certbot
     
     # Wait for services to be ready
     echo "Waiting for services to initialize..."
     sleep 10
     
-    echo -e "${GREEN}✓ Services updated successfully${NC}"
+    echo -e "${GREEN}✓ Backend services updated successfully${NC}"
     
 else
     # FIRST INSTALL MODE - Fresh setup
@@ -237,15 +237,15 @@ else
     echo "Cleaning up any existing containers..."
     docker compose -f docker-compose.prod.yml down -v 2>/dev/null || true
     
-    # Start fresh services
-    echo "Starting fresh services..."
-    docker compose -f docker-compose.prod.yml up -d --build
+    # Start services WITHOUT nginx first (we'll handle nginx separately based on SSL)
+    echo "Starting backend services..."
+    docker compose -f docker-compose.prod.yml up -d --build postgres api certbot
     
     # Wait for database initialization
     echo "Waiting for PostgreSQL initialization..."
     sleep 20
     
-    echo -e "${GREEN}✓ Fresh services started successfully${NC}"
+    echo -e "${GREEN}✓ Backend services started successfully${NC}"
 fi
 
 # Test database connection directly (not through API)
@@ -483,17 +483,14 @@ if [ "$SSL_EXISTS" = false ]; then
     if [ -f "nginx/conf.d/attendee.fr.conf.http" ] && [ -f "nginx/conf.d/api.attendee.fr.conf.http" ]; then
         echo "Switching to HTTP-only Nginx configuration..."
         
-        # Stop Nginx to break any crash loop
-        docker compose -f docker-compose.prod.yml stop nginx 2>/dev/null
-        
-        # Replace SSL configs with HTTP-only versions on host (mounted into container)
+        # Replace SSL configs with HTTP-only versions on host (will be mounted into container)
         cp nginx/conf.d/attendee.fr.conf.http nginx/conf.d/attendee.fr.conf
         cp nginx/conf.d/api.attendee.fr.conf.http nginx/conf.d/api.attendee.fr.conf
-        echo -e "${GREEN}✓ HTTP-only configs copied${NC}"
+        echo -e "${GREEN}✓ HTTP-only configs prepared${NC}"
         
-        # Start Nginx with new configs
+        # Now start Nginx with HTTP-only configs
         echo "Starting Nginx with HTTP-only configuration..."
-        docker compose -f docker-compose.prod.yml start nginx
+        docker compose -f docker-compose.prod.yml up -d nginx
         
         # Wait for startup
         sleep 3
@@ -524,6 +521,20 @@ if [ "$SSL_EXISTS" = false ]; then
     echo ""
 else
     echo -e "${GREEN}✓ SSL certificates found - using HTTPS configuration${NC}"
+    
+    # Start Nginx with SSL configs
+    echo "Starting Nginx with SSL configuration..."
+    docker compose -f docker-compose.prod.yml up -d nginx
+    
+    sleep 3
+    
+    if docker ps --filter "name=ems-nginx" --format "{{.Status}}" | grep -q "Up"; then
+        echo -e "${GREEN}✓ Nginx started successfully with SSL${NC}"
+    else
+        echo -e "${RED}✗ Nginx failed to start!${NC}"
+        echo "Checking logs:"
+        docker logs ems-nginx --tail 20
+    fi
 fi
 
 echo ""
