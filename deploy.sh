@@ -266,20 +266,51 @@ if [ "$FORCE_SEED" = true ]; then
     # Force seed requested - using production seed
     echo -e "${YELLOW}Force seed requested - seeding database with production data...${NC}"
     
+    # Verify seed file exists
+    if [ ! -f "$DEPLOY_DIR/backend/seed-production.sql" ]; then
+        echo -e "${RED}ERROR: seed-production.sql not found in $DEPLOY_DIR/backend/${NC}"
+        echo "Attempting to use local copy..."
+        if [ ! -f "seed-production.sql" ]; then
+            echo -e "${RED}FATAL: seed-production.sql not found anywhere!${NC}"
+            exit 1
+        fi
+    fi
+    
     # Generate fresh bcrypt hash for admin123
     echo "Generating secure password hash for admin@choyou.fr..."
-    ADMIN_HASH=$(docker compose -f docker-compose.prod.yml exec -T api node -e "const bcrypt = require('bcrypt'); bcrypt.hash('admin123', 10).then(hash => console.log(hash));" | tr -d '\r\n')
+    ADMIN_HASH=$(docker compose -f docker-compose.prod.yml exec -T api node -e "const bcrypt = require('bcrypt'); bcrypt.hash('admin123', 10).then(hash => console.log(hash));" 2>/dev/null | tr -d '\r\n' | grep '^\$2')
+    
+    if [ -z "$ADMIN_HASH" ]; then
+        echo -e "${RED}ERROR: Failed to generate password hash${NC}"
+        exit 1
+    fi
+    
+    echo "Hash generated: ${ADMIN_HASH:0:20}..."
     
     # Create temporary seed file with actual hash
     echo "Preparing production seed..."
-    sed "s|{{ADMIN_PASSWORD_HASH}}|${ADMIN_HASH}|g" seed-production.sql > /tmp/seed-production-temp.sql
+    if [ -f "$DEPLOY_DIR/backend/seed-production.sql" ]; then
+        sed "s|{{ADMIN_PASSWORD_HASH}}|${ADMIN_HASH}|g" "$DEPLOY_DIR/backend/seed-production.sql" > /tmp/seed-production-temp.sql
+    else
+        sed "s|{{ADMIN_PASSWORD_HASH}}|${ADMIN_HASH}|g" seed-production.sql > /tmp/seed-production-temp.sql
+    fi
+    
+    # Verify temp file was created
+    if [ ! -f "/tmp/seed-production-temp.sql" ]; then
+        echo -e "${RED}ERROR: Failed to create temporary seed file${NC}"
+        exit 1
+    fi
     
     # Execute seed
     echo "Executing production seed..."
-    docker compose -f docker-compose.prod.yml exec -T postgres psql -U ems_prod -d ems_production < /tmp/seed-production-temp.sql
+    if ! docker compose -f docker-compose.prod.yml exec -T postgres psql -U ems_prod -d ems_production < /tmp/seed-production-temp.sql 2>&1 | tee /tmp/seed-output.log; then
+        echo -e "${RED}ERROR: Seed execution failed. Check /tmp/seed-output.log${NC}"
+        cat /tmp/seed-output.log
+        exit 1
+    fi
     
     # Clean up
-    rm -f /tmp/seed-production-temp.sql
+    rm -f /tmp/seed-production-temp.sql /tmp/seed-output.log
     
     echo -e "${GREEN}✓ Production seed completed${NC}"
     echo -e "${GREEN}  Organization: Choyou${NC}"
@@ -289,20 +320,51 @@ elif [ "$FIRST_INSTALL" = true ]; then
     # First install - seed with production data
     echo "First installation detected - seeding database with production data..."
     
+    # Verify seed file exists
+    if [ ! -f "$DEPLOY_DIR/backend/seed-production.sql" ]; then
+        echo -e "${RED}ERROR: seed-production.sql not found in $DEPLOY_DIR/backend/${NC}"
+        echo "Attempting to use local copy..."
+        if [ ! -f "seed-production.sql" ]; then
+            echo -e "${RED}FATAL: seed-production.sql not found anywhere!${NC}"
+            exit 1
+        fi
+    fi
+    
     # Generate fresh bcrypt hash for admin123
     echo "Generating secure password hash for admin@choyou.fr..."
-    ADMIN_HASH=$(docker compose -f docker-compose.prod.yml exec -T api node -e "const bcrypt = require('bcrypt'); bcrypt.hash('admin123', 10).then(hash => console.log(hash));" | tr -d '\r\n')
+    ADMIN_HASH=$(docker compose -f docker-compose.prod.yml exec -T api node -e "const bcrypt = require('bcrypt'); bcrypt.hash('admin123', 10).then(hash => console.log(hash));" 2>/dev/null | tr -d '\r\n' | grep '^\$2')
+    
+    if [ -z "$ADMIN_HASH" ]; then
+        echo -e "${RED}ERROR: Failed to generate password hash${NC}"
+        exit 1
+    fi
+    
+    echo "Hash generated: ${ADMIN_HASH:0:20}..."
     
     # Create temporary seed file with actual hash
     echo "Preparing production seed..."
-    sed "s|{{ADMIN_PASSWORD_HASH}}|${ADMIN_HASH}|g" seed-production.sql > /tmp/seed-production-temp.sql
+    if [ -f "$DEPLOY_DIR/backend/seed-production.sql" ]; then
+        sed "s|{{ADMIN_PASSWORD_HASH}}|${ADMIN_HASH}|g" "$DEPLOY_DIR/backend/seed-production.sql" > /tmp/seed-production-temp.sql
+    else
+        sed "s|{{ADMIN_PASSWORD_HASH}}|${ADMIN_HASH}|g" seed-production.sql > /tmp/seed-production-temp.sql
+    fi
+    
+    # Verify temp file was created
+    if [ ! -f "/tmp/seed-production-temp.sql" ]; then
+        echo -e "${RED}ERROR: Failed to create temporary seed file${NC}"
+        exit 1
+    fi
     
     # Execute seed
     echo "Executing production seed..."
-    docker compose -f docker-compose.prod.yml exec -T postgres psql -U ems_prod -d ems_production < /tmp/seed-production-temp.sql
+    if ! docker compose -f docker-compose.prod.yml exec -T postgres psql -U ems_prod -d ems_production < /tmp/seed-production-temp.sql 2>&1 | tee /tmp/seed-output.log; then
+        echo -e "${RED}ERROR: Seed execution failed. Check /tmp/seed-output.log${NC}"
+        cat /tmp/seed-output.log
+        exit 1
+    fi
     
     # Clean up
-    rm -f /tmp/seed-production-temp.sql
+    rm -f /tmp/seed-production-temp.sql /tmp/seed-output.log
     
     echo -e "${GREEN}✓ Production seed completed${NC}"
     echo -e "${GREEN}  Organization: Choyou${NC}"
@@ -330,119 +392,25 @@ if [ -f "/etc/letsencrypt/live/attendee.fr/fullchain.pem" ]; then
         echo -e "${GREEN}✓ SSL certificates already copied to Docker volume${NC}"
     else
         echo "Copying SSL certificates from host to Docker volume..."
-        sudo docker run --rm -v /etc/letsencrypt:/source -v ems_certbot_conf:/dest alpine sh -c 'cp -r /source/* /dest/'
-        echo -e "${GREEN}✓ SSL certificates copied to Docker volume${NC}"
+        if ! sudo docker run --rm -v /etc/letsencrypt:/source -v ems_certbot_conf:/dest alpine sh -c 'cp -r /source/* /dest/' 2>/dev/null; then
+            echo -e "${YELLOW}WARNING: Could not copy SSL certificates. They may already exist or you may need to run certbot manually.${NC}"
+        else
+            echo -e "${GREEN}✓ SSL certificates copied to Docker volume${NC}"
+        fi
     fi
 elif docker compose -f docker-compose.prod.yml exec -T certbot ls /etc/letsencrypt/live/attendee.fr/fullchain.pem &>/dev/null; then
     echo -e "${GREEN}✓ SSL certificates already exist in Docker volume${NC}"
 else
-    echo "SSL certificates not found, generating them now..."
-    
-    # Save original nginx configurations
-    echo "Creating temporary HTTP-only Nginx configuration..."
-    cp nginx/conf.d/attendee.fr.conf nginx/conf.d/attendee.fr.conf.ssl 2>/dev/null || true
-    cp nginx/conf.d/api.attendee.fr.conf nginx/conf.d/api.attendee.fr.conf.ssl 2>/dev/null || true
-    
-    # Create temporary HTTP-only configuration for attendee.fr
-    cat > nginx/conf.d/attendee.fr.conf <<'NGINX'
-# Configuration temporaire pour attendee.fr (HTTP only - pour obtenir certificats SSL)
-server {
-    listen 80;
-    server_name attendee.fr www.attendee.fr;
+    echo -e "${YELLOW}SSL certificates not found.${NC}"
+    echo "To obtain SSL certificates, you can run certbot manually after deployment:"
+    echo "  docker compose -f docker-compose.prod.yml exec certbot certbot certonly --webroot -w /var/www/certbot -d attendee.fr -d www.attendee.fr -d api.attendee.fr --email contact@attendee.fr --agree-tos --non-interactive"
+    echo "For now, continuing without SSL (services will be accessible via HTTP)."
+fi
 
-    # Let's Encrypt validation
-    location /.well-known/acme-challenge/ {
-        root /var/www/certbot;
-    }
-
-    # Frontend static files
-    root /usr/share/nginx/html;
-    index index.html;
-
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-}
-NGINX
-
-    # Create temporary HTTP-only configuration for api.attendee.fr
-    cat > nginx/conf.d/api.attendee.fr.conf <<'NGINX'
-# Configuration temporaire pour api.attendee.fr (HTTP only - pour obtenir certificats SSL)
-server {
-    listen 80;
-    server_name api.attendee.fr;
-
-    # Let's Encrypt validation
-    location /.well-known/acme-challenge/ {
-        root /var/www/certbot;
-    }
-
-    # Proxy vers l'API
-    location / {
-        proxy_pass http://api:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
-    }
-}
-NGINX
-
-    # Restart Nginx with HTTP-only configuration
-    echo "Restarting Nginx with temporary HTTP-only configuration..."
-    docker compose -f docker-compose.prod.yml restart nginx
-    sleep 5
-    
-    # Generate SSL certificates with Certbot
-    echo "Requesting SSL certificates from Let's Encrypt..."
-    docker compose -f docker-compose.prod.yml exec -T certbot certbot certonly \
-        --webroot \
-        -w /var/www/certbot \
-        -d attendee.fr \
-        -d www.attendee.fr \
-        -d api.attendee.fr \
-        --email contact@attendee.fr \
-        --agree-tos \
-        --no-eff-email \
-        --non-interactive \
-        || {
-            echo -e "${RED}Failed to obtain SSL certificates${NC}"
-            echo "Restoring original configuration..."
-            mv nginx/conf.d/attendee.fr.conf.ssl nginx/conf.d/attendee.fr.conf 2>/dev/null || true
-            mv nginx/conf.d/api.attendee.fr.conf.ssl nginx/conf.d/api.attendee.fr.conf 2>/dev/null || true
-            echo -e "${YELLOW}WARNING: SSL certificates could not be obtained. The site will run on HTTP only.${NC}"
-        }
-    
-    # Check if certificates were successfully created
-    if docker compose -f docker-compose.prod.yml exec -T certbot ls /etc/letsencrypt/live/attendee.fr/fullchain.pem &>/dev/null; then
-        echo -e "${GREEN}✓ SSL certificates obtained successfully${NC}"
-        
-        # Copy certificates from certbot container to the shared volume
-        echo "Ensuring certificates are available in the correct Docker volume..."
-        docker compose -f docker-compose.prod.yml exec -T certbot sh -c 'cp -r /etc/letsencrypt/* /etc/letsencrypt/' 2>/dev/null || true
-        
-        # Also copy from host if available (backup method)
-        if [ -f "/etc/letsencrypt/live/attendee.fr/fullchain.pem" ]; then
-            echo "Copying certificates from host to Docker volume..."
-            sudo docker run --rm -v /etc/letsencrypt:/source -v ems_certbot_conf:/dest alpine sh -c 'cp -r /source/* /dest/'
-        fi
-        
-        # Restore SSL-enabled Nginx configurations
-        echo "Restoring SSL-enabled Nginx configuration..."
-        mv nginx/conf.d/attendee.fr.conf.ssl nginx/conf.d/attendee.fr.conf
-        mv nginx/conf.d/api.attendee.fr.conf.ssl nginx/conf.d/api.attendee.fr.conf
-        
-        # Restart Nginx with SSL configuration
-        echo "Restarting Nginx with SSL configuration..."
-        docker compose -f docker-compose.prod.yml restart nginx
-        sleep 3
-        
-        echo -e "${GREEN}✓ SSL certificates configured and active${NC}"
-    fi
+# Restart Nginx to ensure it picks up any SSL changes
+echo "Restarting Nginx..."
+if ! docker compose -f docker-compose.prod.yml restart nginx 2>/dev/null; then
+    echo -e "${YELLOW}WARNING: Could not restart Nginx. It may already be running correctly.${NC}"
 fi
 
 echo -e "\n${GREEN}========================================${NC}"
