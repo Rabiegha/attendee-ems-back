@@ -251,7 +251,31 @@ fi
 # Ensure API is ready
 echo "Ensuring API is ready..."
 docker compose -f docker-compose.prod.yml restart api
-sleep 10
+
+echo "Waiting for API to fully initialize (this takes time)..."
+sleep 15
+
+# Wait for API health check
+echo "Waiting for API health check to pass..."
+HEALTH_RETRIES=10
+HEALTH_COUNT=0
+
+while [ $HEALTH_COUNT -lt $HEALTH_RETRIES ]; do
+    if docker inspect ems-api --format='{{.State.Health.Status}}' 2>/dev/null | grep -q "healthy"; then
+        echo -e "${GREEN}✓ API is healthy${NC}"
+        break
+    fi
+    
+    HEALTH_COUNT=$((HEALTH_COUNT + 1))
+    if [ $HEALTH_COUNT -lt $HEALTH_RETRIES ]; then
+        echo "Waiting for API health check... ($HEALTH_COUNT/$HEALTH_RETRIES)"
+        sleep 3
+    fi
+done
+
+# Additional wait for Prisma to connect
+echo "Waiting for Prisma client to initialize..."
+sleep 5
 
 # Test database connection with retries
 echo "Testing database connection..."
