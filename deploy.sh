@@ -248,51 +248,22 @@ else
     echo -e "${GREEN}✓ Fresh services started successfully${NC}"
 fi
 
-# Ensure API is ready
-echo "Ensuring API is ready..."
-docker compose -f docker-compose.prod.yml restart api
-
-echo "Waiting for API to fully initialize (this takes time)..."
-sleep 15
-
-# Wait for API health check
-echo "Waiting for API health check to pass..."
-HEALTH_RETRIES=10
-HEALTH_COUNT=0
-
-while [ $HEALTH_COUNT -lt $HEALTH_RETRIES ]; do
-    if docker inspect ems-api --format='{{.State.Health.Status}}' 2>/dev/null | grep -q "healthy"; then
-        echo -e "${GREEN}✓ API is healthy${NC}"
-        break
-    fi
-    
-    HEALTH_COUNT=$((HEALTH_COUNT + 1))
-    if [ $HEALTH_COUNT -lt $HEALTH_RETRIES ]; then
-        echo "Waiting for API health check... ($HEALTH_COUNT/$HEALTH_RETRIES)"
-        sleep 3
-    fi
-done
-
-# Additional wait for Prisma to connect
-echo "Waiting for Prisma client to initialize..."
-sleep 5
-
-# Test database connection with retries
+# Test database connection directly (not through API)
 echo "Testing database connection..."
-MAX_RETRIES=5
+MAX_RETRIES=3
 RETRY_COUNT=0
 DB_CONNECTED=false
 
 while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-    if docker compose -f docker-compose.prod.yml exec -T api npx prisma db execute --stdin <<< "SELECT 1;" &>/dev/null; then
+    if docker compose -f docker-compose.prod.yml exec -T postgres psql -U ems_prod -d ems_production -c "SELECT 1;" &>/dev/null; then
         DB_CONNECTED=true
         break
     fi
     
     RETRY_COUNT=$((RETRY_COUNT + 1))
     if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
-        echo "Connection attempt $RETRY_COUNT failed, retrying in 5 seconds..."
-        sleep 5
+        echo "Connection attempt $RETRY_COUNT failed, retrying in 3 seconds..."
+        sleep 3
     fi
 done
 
@@ -305,10 +276,6 @@ else
     echo ""
     echo "=== PostgreSQL Logs (last 30 lines) ==="
     docker compose -f docker-compose.prod.yml logs --tail 30 postgres
-    
-    echo ""
-    echo "=== API Logs (last 30 lines) ==="
-    docker compose -f docker-compose.prod.yml logs --tail 30 api
     
     echo ""
     
