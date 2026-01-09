@@ -18,16 +18,16 @@ BEGIN
     RAISE NOTICE 'Creating initial production data...';
 END $$;
 
--- Créer le rôle système SUPER_ADMIN (seulement s'il n'existe pas)
+-- Créer le rôle ADMIN (pas SUPER_ADMIN)
 INSERT INTO roles (id, org_id, code, name, description, level, is_system_role, created_at, updated_at)
 VALUES (
   '00000000-0000-0000-0000-000000000001',
-  NULL,
-  'SUPER_ADMIN',
-  'Super Administrator',
-  'System role - Full access across all organizations',
-  0,
-  true,
+  '00000000-0000-0000-0000-000000000002',
+  'ADMIN',
+  'Administrator',
+  'Organization administrator - Full access within organization',
+  1,
+  false,
   NOW(),
   NOW()
 )
@@ -44,7 +44,7 @@ VALUES (
 )
 ON CONFLICT (id) DO NOTHING;
 
--- Créer l'utilisateur admin@attendee.fr (seulement s'il n'existe pas)
+-- Créer l'utilisateur admin@attendee.fr avec rôle ADMIN simple
 -- Le hash sera généré dynamiquement par le script de déploiement
 -- Ce fichier est un template, le hash sera remplacé avant exécution
 INSERT INTO users (id, org_id, email, password_hash, first_name, last_name, role_id, is_active, created_at, updated_at)
