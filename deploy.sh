@@ -1,25 +1,46 @@
 #!/bin/bash
 
 # ========================================
-# Script de déploiement EMS Production
+# 🚀 Script de Déploiement Automatique EMS
 # VPS: 51.75.252.74
 # Domaines: attendee.fr, api.attendee.fr
 # ========================================
 #
-# PREMIER DÉPLOIEMENT SUR NOUVEAU VPS :
-#   1. Exécuter ce script normalement
-#   2. Si erreur d'authentification PostgreSQL, faire:
-#      docker compose -f docker-compose.prod.yml down -v
-#      docker compose -f docker-compose.prod.yml up -d
-#      docker compose -f docker-compose.prod.yml exec -T api npx prisma migrate deploy
-#      docker compose -f docker-compose.prod.yml exec -T api node dist/prisma/seed.js
+# 🎯 UTILISATION :
+#   ./deploy.sh                    # Mise à jour normale (GARDE les données)
+#   ./deploy.sh --force-seed       # Force le reseed (EFFACE les données)
+#   ./deploy.sh --first-install    # Première installation
 #
-# DÉPLOIEMENTS SUIVANTS :
-#   Simplement exécuter: ./deploy.sh
-#   Les volumes sont préservés pour garder les données
+# ✅ Ce script fait TOUT automatiquement :
+#   - Git pull
+#   - Génération des secrets sécurisés
+#   - Build du frontend
+#   - Gestion intelligente de la base de données
+#   - Migrations Prisma
+#   - Seed SEULEMENT si nouvelle DB
+#   - SSL/HTTPS automatique
+#
+# ⚠️ VOS DONNÉES SONT PRÉSERVÉES entre les mises à jour !
 # ========================================
 
 set -e  # Exit on error
+
+# Parse command line arguments
+FORCE_SEED=false
+FIRST_INSTALL=false
+
+for arg in "$@"; do
+    case $arg in
+        --force-seed)
+            FORCE_SEED=true
+            shift
+            ;;
+        --first-install)
+            FIRST_INSTALL=true
+            shift
+            ;;
+    esac
+done
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -44,33 +65,43 @@ sudo chown -R debian:debian "$DEPLOY_DIR"
 cd "$DEPLOY_DIR"
 
 # Step 2: Clone backend repository
-echo -e "\n${YELLOW}[2/8] Cloning backend repository (branch: $BRANCH)...${NC}"
+echo -e "\n${YELLOW}[2/10] Updating backend repository (branch: $BRANCH)...${NC}"
 if [ -d "backend" ]; then
     echo "Backend directory exists, pulling latest changes..."
     cd backend
+    
+    # Stash any local changes to avoid conflicts
+    git stash >/dev/null 2>&1 || true
+    
     git fetch origin
     git checkout "$BRANCH"
     git pull origin "$BRANCH"
+    
     cd ..
 else
     git clone -b "$BRANCH" "$BACKEND_REPO" backend
 fi
 
 # Step 3: Clone frontend repository
-echo -e "\n${YELLOW}[3/8] Cloning frontend repository (branch: $BRANCH)...${NC}"
+echo -e "\n${YELLOW}[3/10] Updating frontend repository (branch: $BRANCH)...${NC}"
 if [ -d "frontend" ]; then
     echo "Frontend directory exists, pulling latest changes..."
     cd frontend
+    
+    # Stash any local changes to avoid conflicts
+    git stash >/dev/null 2>&1 || true
+    
     git fetch origin
     git checkout "$BRANCH"
     git pull origin "$BRANCH"
+    
     cd ..
 else
     git clone -b "$BRANCH" "$FRONTEND_REPO" frontend
 fi
 
 # Step 4: Load .env.vps configuration
-echo -e "\n${YELLOW}[4/8] Loading backend configuration from .env.vps...${NC}"
+echo -e "\n${YELLOW}[4/10] Loading backend configuration from .env.vps...${NC}"
 
 # Check if .env.vps exists
 if [ ! -f "$DEPLOY_DIR/backend/.env.vps" ]; then
@@ -82,67 +113,85 @@ fi
 # Copy .env.vps to .env.production
 cp "$DEPLOY_DIR/backend/.env.vps" "$DEPLOY_DIR/backend/.env.production"
 
-# Step 5: Generate fresh secrets every time
-echo -e "\n${YELLOW}[5/8] Generating fresh secrets...${NC}"
+# Step 5: Detect if this is an update or first install
+echo -e "\n${YELLOW}[5/10] Checking deployment type...${NC}"
 
-# Generate new secrets
-echo "Generating PostgreSQL password..."
-POSTGRES_PASSWORD=$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9')
+# Check if Docker volumes exist (indicates previous deployment)
+POSTGRES_VOLUME_EXISTS=$(docker volume ls -q -f name=ems_postgres_data 2>/dev/null || echo "")
+DB_HAS_DATA=false
 
-echo "Generating JWT secrets..."
-JWT_ACCESS_SECRET=$(openssl rand -base64 64 | tr -d '\n')
-JWT_REFRESH_SECRET=$(openssl rand -base64 64 | tr -d '\n')
-JWT_SECRET=$(openssl rand -base64 64 | tr -d '\n')
+if [ -n "$POSTGRES_VOLUME_EXISTS" ] && [ "$FIRST_INSTALL" = false ]; then
+    echo "Existing PostgreSQL volume found - this is an UPDATE"
+    echo -e "${GREEN}✓ Your data will be PRESERVED${NC}"
+    DB_HAS_DATA=true
+else
+    echo "No existing data found - this is a FIRST INSTALL"
+    FIRST_INSTALL=true
+fi
 
-# Replace secrets in .env.production (robustly, handling both placeholders and existing values)
-echo "Updating .env.production with new secrets..."
+# Step 6: Generate or reuse secrets
+echo -e "\n${YELLOW}[6/10] Managing secrets...${NC}"
 
-# Function to replace or append variable
-update_env() {
-    local key=$1
-    local value=$2
-    local file=$3
+if [ "$DB_HAS_DATA" = true ] && [ -f "$DEPLOY_DIR/backend/.env" ]; then
+    # Reuse existing secrets to avoid breaking database connection
+    echo "Reusing existing secrets to maintain database connection..."
+    echo -e "${GREEN}✓ Existing secrets preserved${NC}"
+else
+    # Generate new secrets for first install
+    echo "Generating fresh secrets..."
     
-    if grep -q "^${key}=" "$file"; then
-        # Key exists, replace it using | as delimiter to handle special chars in value
-        sed -i "s|^${key}=.*|${key}=${value}|g" "$file"
-    else
-        # Key doesn't exist, append it
-        echo "${key}=${value}" >> "$file"
-    fi
-}
-
-update_env "POSTGRES_PASSWORD" "${POSTGRES_PASSWORD}" "$DEPLOY_DIR/backend/.env.production"
-update_env "JWT_ACCESS_SECRET" "${JWT_ACCESS_SECRET}" "$DEPLOY_DIR/backend/.env.production"
-update_env "JWT_REFRESH_SECRET" "${JWT_REFRESH_SECRET}" "$DEPLOY_DIR/backend/.env.production"
-update_env "JWT_SECRET" "${JWT_SECRET}" "$DEPLOY_DIR/backend/.env.production"
-
-# Ensure POSTGRES_USER is consistent
-update_env "POSTGRES_USER" "ems_prod" "$DEPLOY_DIR/backend/.env.production"
-
-# Reconstruct and update DATABASE_URL to ensure it uses the new password
-# This is critical because Prisma uses DATABASE_URL, not POSTGRES_PASSWORD directly
-echo "Updating DATABASE_URL..."
-NEW_DATABASE_URL="postgresql://ems_prod:${POSTGRES_PASSWORD}@postgres:5432/ems_production"
-update_env "DATABASE_URL" "${NEW_DATABASE_URL}" "$DEPLOY_DIR/backend/.env.production"
-
-echo -e "${GREEN}✓ All secrets generated and configured${NC}"
-
-# Create .env file for Docker Compose interpolation (Postgres service needs this)
-echo "Creating .env for Docker Compose..."
-cat > "$DEPLOY_DIR/backend/.env" <<EOF
+    # Generate new secrets
+    echo "Generating PostgreSQL password..."
+    POSTGRES_PASSWORD=$(openssl rand -base64 32 | tr -dc 'a-zA-Z0-9')
+    
+    echo "Generating JWT secrets..."
+    JWT_ACCESS_SECRET=$(openssl rand -base64 64 | tr -d '\n')
+    JWT_REFRESH_SECRET=$(openssl rand -base64 64 | tr -d '\n')
+    JWT_SECRET=$(openssl rand -base64 64 | tr -d '\n')
+    
+    # Function to replace or append variable
+    update_env() {
+        local key=$1
+        local value=$2
+        local file=$3
+        
+        if grep -q "^${key}=" "$file"; then
+            # Key exists, replace it using | as delimiter to handle special chars in value
+            sed -i "s|^${key}=.*|${key}=${value}|g" "$file"
+        else
+            # Key doesn't exist, append it
+            echo "${key}=${value}" >> "$file"
+        fi
+    }
+    
+    update_env "POSTGRES_PASSWORD" "${POSTGRES_PASSWORD}" "$DEPLOY_DIR/backend/.env.production"
+    update_env "JWT_ACCESS_SECRET" "${JWT_ACCESS_SECRET}" "$DEPLOY_DIR/backend/.env.production"
+    update_env "JWT_REFRESH_SECRET" "${JWT_REFRESH_SECRET}" "$DEPLOY_DIR/backend/.env.production"
+    update_env "JWT_SECRET" "${JWT_SECRET}" "$DEPLOY_DIR/backend/.env.production"
+    
+    # Ensure POSTGRES_USER is consistent
+    update_env "POSTGRES_USER" "ems_prod" "$DEPLOY_DIR/backend/.env.production"
+    
+    # Reconstruct DATABASE_URL
+    echo "Updating DATABASE_URL..."
+    NEW_DATABASE_URL="postgresql://ems_prod:${POSTGRES_PASSWORD}@postgres:5432/ems_production"
+    update_env "DATABASE_URL" "${NEW_DATABASE_URL}" "$DEPLOY_DIR/backend/.env.production"
+    
+    # Create .env file for Docker Compose
+    cat > "$DEPLOY_DIR/backend/.env" <<EOF
 POSTGRES_USER=ems_prod
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 POSTGRES_DB=ems_production
 EOF
+    
+    echo -e "${GREEN}✓ New secrets generated and configured${NC}"
+fi
 
-echo -e "${GREEN}✓ Backend .env.production and .env created with secure secrets${NC}"
-
-# Step 6: Build frontend
-echo -e "\n${YELLOW}[6/8] Building frontend for production...${NC}"
+# Step 7: Build frontend
+echo -e "\n${YELLOW}[7/10] Building frontend for production...${NC}"
 cd "$DEPLOY_DIR/frontend"
 
-# Always install dependencies to ensure they are up to date
+# Install dependencies
 echo "Installing frontend dependencies..."
 npm install
 
@@ -152,95 +201,125 @@ VITE_API_URL=https://api.attendee.fr npm run build
 
 echo -e "${GREEN}✓ Frontend built successfully${NC}"
 
-# Step 7: Copy frontend build to nginx directory
-echo -e "\n${YELLOW}[7/8] Preparing frontend for Nginx...${NC}"
+# Step 8: Copy frontend build to nginx directory
+echo -e "\n${YELLOW}[8/10] Preparing frontend for Nginx...${NC}"
 mkdir -p "$DEPLOY_DIR/backend/frontend"
 cp -r "$DEPLOY_DIR/frontend/dist/"* "$DEPLOY_DIR/backend/frontend/"
 echo -e "${GREEN}✓ Frontend files copied${NC}"
 
-# Step 8: Start Docker services with fresh secrets
-echo -e "\n${YELLOW}[8/9] Starting Docker services...${NC}"
+# Step 9: Start or update Docker services
+echo -e "\n${YELLOW}[9/10] Managing Docker services...${NC}"
 cd "$DEPLOY_DIR/backend"
 
-# Check if postgres volume exists (indicates previous deployment)
-POSTGRES_VOLUME_EXISTS=$(docker volume ls -q -f name=ems_postgres_data 2>/dev/null || echo "")
-
-# Function to check if database connection works
-check_db_connection() {
-    docker compose -f docker-compose.prod.yml exec -T api npx prisma db execute --stdin <<< "SELECT 1;" &>/dev/null
-    return $?
-}
-
-if [ -n "$POSTGRES_VOLUME_EXISTS" ]; then
-    echo "Existing PostgreSQL volume found, will verify password compatibility..."
+if [ "$DB_HAS_DATA" = true ]; then
+    # UPDATE MODE - Preserve data
+    echo "Running in UPDATE mode - preserving your data..."
     
-    # Stop existing containers (keep volumes to preserve data)
-    echo "Stopping existing containers..."
+    # Stop containers but keep volumes
+    echo "Stopping containers..."
     docker compose -f docker-compose.prod.yml down 2>/dev/null || true
     
-    # Start services with fresh build and force recreate containers with new secrets
-    echo "Starting services with new configuration..."
-    docker compose -f docker-compose.prod.yml up -d --build --force-recreate
+    # Start with latest code, rebuild images
+    echo "Starting services with updated code..."
+    docker compose -f docker-compose.prod.yml up -d --build
     
-    # Wait for database to be ready
-    echo "Waiting for PostgreSQL to be ready..."
-    sleep 15
+    # Wait for services to be ready
+    echo "Waiting for services to initialize..."
+    sleep 10
     
-    # Test database connection
-    echo "Testing database connection..."
-    if ! check_db_connection; then
-        echo -e "${YELLOW}Database authentication failed with existing volume${NC}"
-        echo -e "${YELLOW}This is expected on first deployment or after password change${NC}"
-        echo -e "${YELLOW}Recreating volumes with new credentials...${NC}"
-        
-        # Stop and remove volumes
-        docker compose -f docker-compose.prod.yml down -v 2>/dev/null || true
-        
-        # Restart with fresh volumes
-        echo "Starting services with fresh database..."
-        docker compose -f docker-compose.prod.yml up -d --build
-        
-        # Wait for fresh database initialization
-        echo "Waiting for fresh PostgreSQL initialization..."
-        sleep 15
-    fi
+    echo -e "${GREEN}✓ Services updated successfully${NC}"
+    
 else
-    # First deployment - no existing volume
-    echo "First deployment detected, starting fresh services..."
+    # FIRST INSTALL MODE - Fresh setup
+    echo "Running in FIRST INSTALL mode - setting up fresh environment..."
     
-    # Stop any existing containers
-    docker compose -f docker-compose.prod.yml down 2>/dev/null || true
+    # Stop any existing containers and clean volumes
+    echo "Cleaning up any existing containers..."
+    docker compose -f docker-compose.prod.yml down -v 2>/dev/null || true
     
-    # Start services with fresh build
+    # Start fresh services
+    echo "Starting fresh services..."
     docker compose -f docker-compose.prod.yml up -d --build
     
     # Wait for database initialization
     echo "Waiting for PostgreSQL initialization..."
     sleep 15
+    
+    echo -e "${GREEN}✓ Fresh services started successfully${NC}"
 fi
-
-echo -e "${GREEN}✓ PostgreSQL initialized with configured password${NC}"
 
 # Ensure API is ready
 echo "Ensuring API is ready..."
 docker compose -f docker-compose.prod.yml restart api
 sleep 5
 
-# Run Prisma migrations and seed
+# Step 10: Run migrations and seed
+echo -e "\n${YELLOW}[10/10] Managing database...${NC}"
+
+# Always run migrations (safe, idempotent)
 echo "Running Prisma migrations..."
 docker compose -f docker-compose.prod.yml exec -T api npx prisma migrate deploy
 echo -e "${GREEN}✓ Migrations applied${NC}"
 
-echo "Running database seed..."
-docker compose -f docker-compose.prod.yml exec -T api node dist/prisma/seed.js
-echo -e "${GREEN}✓ Database seeded${NC}"
+# Seed logic - intelligent decision
+if [ "$FORCE_SEED" = true ]; then
+    # Force seed requested - using production seed
+    echo -e "${YELLOW}Force seed requested - seeding database with production data...${NC}"
+    
+    # Generate fresh bcrypt hash for admin123
+    echo "Generating secure password hash for admin@choyou.fr..."
+    ADMIN_HASH=$(docker compose -f docker-compose.prod.yml exec -T api node -e "const bcrypt = require('bcrypt'); bcrypt.hash('admin123', 10).then(hash => console.log(hash));" | tr -d '\r\n')
+    
+    # Create temporary seed file with actual hash
+    echo "Preparing production seed..."
+    sed "s|{{ADMIN_PASSWORD_HASH}}|${ADMIN_HASH}|g" seed-production.sql > /tmp/seed-production-temp.sql
+    
+    # Execute seed
+    echo "Executing production seed..."
+    docker compose -f docker-compose.prod.yml exec -T postgres psql -U ems_prod -d ems_production < /tmp/seed-production-temp.sql
+    
+    # Clean up
+    rm -f /tmp/seed-production-temp.sql
+    
+    echo -e "${GREEN}✓ Production seed completed${NC}"
+    echo -e "${GREEN}  Organization: Choyou${NC}"
+    echo -e "${GREEN}  Admin: admin@choyou.fr / admin123${NC}"
+    
+elif [ "$FIRST_INSTALL" = true ]; then
+    # First install - seed with production data
+    echo "First installation detected - seeding database with production data..."
+    
+    # Generate fresh bcrypt hash for admin123
+    echo "Generating secure password hash for admin@choyou.fr..."
+    ADMIN_HASH=$(docker compose -f docker-compose.prod.yml exec -T api node -e "const bcrypt = require('bcrypt'); bcrypt.hash('admin123', 10).then(hash => console.log(hash));" | tr -d '\r\n')
+    
+    # Create temporary seed file with actual hash
+    echo "Preparing production seed..."
+    sed "s|{{ADMIN_PASSWORD_HASH}}|${ADMIN_HASH}|g" seed-production.sql > /tmp/seed-production-temp.sql
+    
+    # Execute seed
+    echo "Executing production seed..."
+    docker compose -f docker-compose.prod.yml exec -T postgres psql -U ems_prod -d ems_production < /tmp/seed-production-temp.sql
+    
+    # Clean up
+    rm -f /tmp/seed-production-temp.sql
+    
+    echo -e "${GREEN}✓ Production seed completed${NC}"
+    echo -e "${GREEN}  Organization: Choyou${NC}"
+    echo -e "${GREEN}  Admin: admin@choyou.fr / admin123${NC}"
+    
+else
+    # Update mode - do NOT seed (preserve data)
+    echo "Update mode - skipping seed to preserve existing data"
+    echo -e "${GREEN}✓ Your data has been preserved${NC}"
+fi
 
 # Check if services are running
 echo -e "\n${GREEN}Checking service status:${NC}"
 docker ps --filter "name=ems" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
-# Step 9: Configure SSL certificates automatically
-echo -e "\n${YELLOW}[9/9] Configuring SSL certificates...${NC}"
+# Step 11: Configure SSL certificates automatically
+echo -e "\n${YELLOW}[11/11] Configuring SSL certificates...${NC}"
 
 # Check if SSL certificates exist on host first
 if [ -f "/etc/letsencrypt/live/attendee.fr/fullchain.pem" ]; then
@@ -367,24 +446,32 @@ NGINX
 fi
 
 echo -e "\n${GREEN}========================================${NC}"
-echo -e "${GREEN}   Deployment completed successfully!${NC}"
+echo -e "${GREEN}   🎉 Deployment completed successfully!${NC}"
 echo -e "${GREEN}========================================${NC}"
 
 echo -e "\n${YELLOW}Service Status:${NC}"
 docker ps --filter "name=ems" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 
-echo -e "\n${GREEN}Your application is now available at:${NC}"
+echo -e "\n${GREEN}🌐 Your application is now available at:${NC}"
 echo "   - Frontend: https://attendee.fr"
 echo "   - API: https://api.attendee.fr"
 echo "   - API Health: https://api.attendee.fr/health"
 
-echo -e "\n${YELLOW}Demo credentials (from seed):${NC}"
-echo "   - Super Admin: john.doe@system.com / admin123"
-echo "   - Admin: jane.smith@acme.com / admin123"
-echo "   - Manager: bob.johnson@acme.com / manager123"
+if [ "$FIRST_INSTALL" = true ] || [ "$FORCE_SEED" = true ]; then
+    echo -e "\n${GREEN}🔑 Admin credentials:${NC}"
+    echo "   - Email: admin@choyou.fr"
+    echo "   - Password: admin123"
+    echo "   - Organization: Choyou"
+fi
 
-echo -e "\n${YELLOW}Useful commands:${NC}"
-echo "   - View logs: docker compose -f docker-compose.prod.yml logs -f [api|nginx|postgres]"
-echo "   - Restart service: docker compose -f docker-compose.prod.yml restart [api|nginx]"
-echo "   - Check status: docker compose -f docker-compose.prod.yml ps"
+if [ "$DB_HAS_DATA" = true ] && [ "$FORCE_SEED" = false ]; then
+    echo -e "\n${GREEN}✅ Your existing data has been preserved${NC}"
+fi
+
+echo -e "\n${YELLOW}📋 Useful commands:${NC}"
+echo "   - View logs: cd $DEPLOY_DIR/backend && docker compose -f docker-compose.prod.yml logs -f [api|nginx|postgres]"
+echo "   - Restart service: cd $DEPLOY_DIR/backend && docker compose -f docker-compose.prod.yml restart [api|nginx]"
+echo "   - Check status: cd $DEPLOY_DIR/backend && docker compose -f docker-compose.prod.yml ps"
+echo "   - Update again: ./deploy.sh"
+echo "   - Force reseed: ./deploy.sh --force-seed (⚠️  will erase data!)"
 
